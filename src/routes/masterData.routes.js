@@ -42,7 +42,10 @@ import {
     getAuditCategories, createAuditCategory, updateAuditCategory, deleteAuditCategory,
     getAuditTypes, createAuditType, updateAuditType, deleteAuditType,
     getCriterias, createCriteria, updateCriteria, deleteCriteria,
-    getFiveM1ECategories, createFiveM1ECategory, updateFiveM1ECategory, deleteFiveM1ECategory
+    getFiveM1ECategories, createFiveM1ECategory, updateFiveM1ECategory, deleteFiveM1ECategory,
+    
+    // Registrations
+    getRegistrations, createRegistration, updateRegistration, deleteRegistration
 } from '../controllers/masterData.controller.js';
 
 import { authenticateToken } from '../middleware/auth.middleware.js';
@@ -231,5 +234,11 @@ router.get('/five-m1e-categories', getFiveM1ECategories);
 router.post('/five-m1e-categories', createFiveM1ECategory);
 router.put('/five-m1e-categories/:id', updateFiveM1ECategory);
 router.delete('/five-m1e-categories/:id', deleteFiveM1ECategory);
+
+// REGISTRATIONS
+router.get('/registrations', getRegistrations);
+router.post('/registrations', createRegistration);
+router.put('/registrations/:id', updateRegistration);
+router.delete('/registrations/:id', deleteRegistration);
 
 export default router;

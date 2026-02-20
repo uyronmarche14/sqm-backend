@@ -1845,3 +1845,160 @@ export const deleteFiveM1ECategory = async (req, res) => {
         res.json({message: 'Deleted'});
     } catch(e) { res.status(500).json({error: e.message}); }
 };
+
+
+// ============================================================================
+// REGISTRATIONS (dbo.REGISTRATIONS)
+// ============================================================================
+
+const mapRegistrationToDto = (row) => ({
+    id: row.registration_id,
+    confirmationCode: row.confirmation_code,
+    userId: row.user_id,
+    fullName: row.full_name || '',
+    email: row.email || '',
+    roleName: row.role_name || '',
+    siteName: row.site_name || '',
+    confirmed: row.confirmed ? true : false,
+    confirmationDate: row.confirmation_date,
+    registrationType: row.registration_type,
+    isActive: row.active_flag ? true : false,
+    lastUpdate: row.last_update,
+    updatedBy: row.updateby
+});
+
+export const getRegistrations = async (req, res) => {
+    try {
+        // JOIN with USERS, ROLES, and MFG_SITES tables to get all required details
+        const [rows] = await db.query(`
+            SELECT 
+                r.registration_id,
+                r.confirmation_code,
+                r.user_id,
+                r.registration_type,
+                r.active_flag,
+                r.confirmed,
+                r.confirmation_date,
+                r.last_update,
+                r.updateby,
+                u.full_name,
+                u.email,
+                ro.role_name,
+                s.site_name
+            FROM dbo.REGISTRATIONS r
+            LEFT JOIN dbo.USERS u ON r.user_id = u.user_id
+            LEFT JOIN dbo.ROLES ro ON u.role_id = ro.role_id
+            LEFT JOIN dbo.MFG_SITES s ON u.site_id = s.site_id
+            ORDER BY r.last_update DESC
+        `);
+        res.json(rows.map(mapRegistrationToDto));
+    } catch (error) {
+        console.error('getRegistrations error:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+export const createRegistration = async (req, res) => {
+    try {
+        const { confirmationCode, userId, registrationType } = req.body;
+        
+        if (!confirmationCode || !userId) {
+            return res.status(400).json({ error: 'Missing required fields: confirmationCode, userId' });
+        }
+
+        const id = uuidv4();
+
+        const pool = await db.getPool();
+        const request = pool.request();
+        request.input('id', sql.NVarChar, id);
+        request.input('confirmationCode', sql.NVarChar, confirmationCode);
+        request.input('userId', sql.NVarChar, userId);
+        request.input('registrationType', sql.Int, registrationType || null);
+
+        await request.query(`
+            INSERT INTO dbo.REGISTRATIONS 
+            (registration_id, confirmation_code, user_id, registration_type, confirmed, active_flag, last_update, updateby)
+            VALUES (@id, @confirmationCode, @userId, @registrationType, 0, 1, GETDATE(), 'SYSTEM')
+        `);
+
+        // Fetch back with user details
+        const [rows] = await db.query(`
+            SELECT 
+                r.registration_id,
+                r.confirmation_code,
+                r.user_id,
+                r.registration_type,
+                r.active_flag,
+                r.confirmed,
+                r.confirmation_date,
+                r.last_update,
+                r.updateby,
+                u.full_name,
+                u.email,
+                ro.role_name,
+                s.site_name
+            FROM dbo.REGISTRATIONS r
+            LEFT JOIN dbo.USERS u ON r.user_id = u.user_id
+            LEFT JOIN dbo.ROLES ro ON u.role_id = ro.role_id
+            LEFT JOIN dbo.MFG_SITES s ON u.site_id = s.site_id
+            WHERE r.registration_id = ?
+        `, [id]);
+        
+        res.status(201).json(mapRegistrationToDto(rows[0]));
+    } catch (error) {
+        console.error('createRegistration error', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+export const updateRegistration = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { confirmationCode, userId, registrationType, isActive } = req.body;
+
+        await db.query(`
+            UPDATE dbo.REGISTRATIONS 
+            SET confirmation_code = ?, user_id = ?, registration_type = ?, active_flag = ?, last_update = GETDATE(), updateby = 'SYSTEM'
+            WHERE registration_id = ?
+        `, [confirmationCode, userId, registrationType || null, isActive ? 1 : 0, id]);
+
+        // Fetch back with user details
+        const [rows] = await db.query(`
+            SELECT 
+                r.registration_id,
+                r.confirmation_code,
+                r.user_id,
+                r.registration_type,
+                r.active_flag,
+                r.confirmed,
+                r.confirmation_date,
+                r.last_update,
+                r.updateby,
+                u.full_name,
+                u.email,
+                ro.role_name,
+                s.site_name
+            FROM dbo.REGISTRATIONS r
+            LEFT JOIN dbo.USERS u ON r.user_id = u.user_id
+            LEFT JOIN dbo.ROLES ro ON u.role_id = ro.role_id
+            LEFT JOIN dbo.MFG_SITES s ON u.site_id = s.site_id
+            WHERE r.registration_id = ?
+        `, [id]);
+        
+        res.json(mapRegistrationToDto(rows[0]));
+    } catch (error) {
+        console.error('updateRegistration error', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+export const deleteRegistration = async (req, res) => {
+    try {
+        const { id } = req.params;
+        await db.query('DELETE FROM dbo.REGISTRATIONS WHERE registration_id = ?', [id]);
+        res.json({ message: 'Deleted' });
+    } catch (error) {
+        console.error('deleteRegistration error', error);
+        res.status(500).json({ error: error.message });
+    }
+};

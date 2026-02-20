@@ -12,6 +12,7 @@ import ogiRoutes from './routes/ogi.routes.js';
 import npiRoutes from './routes/npi.routes.js';
 import sqprRoutes from './routes/sqpr.routes.js';
 import sqmpRoutes from './routes/sqmp.routes.js';
+import qmqaRoutes from './routes/qmqa.routes.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/ogi', ogiRoutes);
 app.use('/api/npi', npiRoutes);
 app.use('/api/sqpr', sqprRoutes);
 app.use('/api/sqm-plan', sqmpRoutes);
+app.use('/api/qmqa', qmqaRoutes);
 
 // Health check
 app.get('/health', async (req, res) => {
