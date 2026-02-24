@@ -13,6 +13,7 @@ import npiRoutes from './routes/npi.routes.js';
 import sqprRoutes from './routes/sqpr.routes.js';
 import sqmpRoutes from './routes/sqmp.routes.js';
 import qmqaRoutes from './routes/qmqa.routes.js';
+import { errorHandler } from './middleware/error-handler.middleware.js';
 
 dotenv.config();
 
@@ -45,6 +46,9 @@ app.get('/health', async (req, res) => {
     res.status(500).json({ status: 'error', database: 'disconnected', error: error.message });
   }
 });
+
+// Error handler middleware (must be last)
+app.use(errorHandler);
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

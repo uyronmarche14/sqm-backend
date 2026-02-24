@@ -6,6 +6,7 @@
 import db, { sql } from '../config/db.js';
 import { qmqaRepository } from '../repositories/qmqa.repository.js';
 import { toDBStatus, fromDBStatus } from '../utils/qmqa/status-mapper.js';
+import logger from '../utils/logger.js';
 
 /**
  * Valid workflow transitions map
@@ -100,6 +101,21 @@ export const submitForApproval = async (id, userId) => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Submit for approval', {
+            operation: 'submitForApproval',
+            controlNo: record.control_no,
+            userId,
+            fromStatus: currentStatus,
+            toStatus: 'AWAITING_APPROVAL',
+            timestamp: now.toISOString(),
+            correlationId: record.correlationId || 'unknown'
+        });
+        
+        console.log('✅ [QMQA-WORKFLOW] Submitted for Approval');
+        
+        await transaction.commit();
         console.log('✅ [QMQA-WORKFLOW] Submitted for approval');
         
         return await qmqaRepository.findRecordById(id);
@@ -178,6 +194,20 @@ export const approveCycle1 = async (id, userId, remarks, role = 'approver') => {
         await qmqaRepository.updateQMQA(transaction, id, updates);
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        const finalStatus = updates.request_status ? fromDBStatus(updates.request_status) : currentStatus;
+        logger.info('Workflow transition: Cycle 1 approval', {
+            operation: 'approveCycle1',
+            controlNo: record.control_no,
+            userId,
+            role,
+            fromStatus: currentStatus,
+            toStatus: finalStatus,
+            timestamp: now.toISOString(),
+            remarks
+        });
+        
         console.log(`✅ [QMQA-WORKFLOW] ${role} approval recorded`);
         
         return await qmqaRepository.findRecordById(id);
@@ -248,6 +278,19 @@ export const rejectCycle1 = async (id, userId, remarks, role = 'approver') => {
         await qmqaRepository.updateQMQA(transaction, id, updates);
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Cycle 1 rejection', {
+            operation: 'rejectCycle1',
+            controlNo: record.control_no,
+            userId,
+            role,
+            fromStatus: currentStatus,
+            toStatus: 'REJECTED',
+            timestamp: now.toISOString(),
+            remarks
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Rejected');
         
         return await qmqaRepository.findRecordById(id);
@@ -295,6 +338,17 @@ export const issueToSupplier = async (id, userId) => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Issue to supplier', {
+            operation: 'issueToSupplier',
+            controlNo: record.control_no,
+            userId,
+            fromStatus: currentStatus,
+            toStatus: 'ISSUED',
+            timestamp: now.toISOString()
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Issued to supplier');
         
         return await qmqaRepository.findRecordById(id);
@@ -347,6 +401,18 @@ export const cancelAudit = async (id, userId, remarks) => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Cancel audit', {
+            operation: 'cancelAudit',
+            controlNo: record.control_no,
+            userId,
+            fromStatus: currentStatus,
+            toStatus: 'CANCELLED',
+            timestamp: now.toISOString(),
+            remarks
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Audit cancelled');
         
         return await qmqaRepository.findRecordById(id);
@@ -406,6 +472,17 @@ export const saveInitialReport = async (id, data) => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Save initial report', {
+            operation: 'saveInitialReport',
+            controlNo: record.control_no,
+            userId: 'supplier',
+            fromStatus: currentStatus,
+            toStatus: 'WITH_INITIAL_REPORT',
+            timestamp: now.toISOString()
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Initial report saved');
         
         return await qmqaRepository.findRecordById(id);
@@ -459,6 +536,17 @@ export const submitFinalReport = async (id, data) => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Submit final report', {
+            operation: 'submitFinalReport',
+            controlNo: record.control_no,
+            userId: 'supplier',
+            fromStatus: currentStatus,
+            toStatus: 'WITH_FINAL_REPORT',
+            timestamp: now.toISOString()
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Final report submitted');
         
         return await qmqaRepository.findRecordById(id);
@@ -514,6 +602,17 @@ export const submitVerification = async (id, data, userId) => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Submit verification', {
+            operation: 'submitVerification',
+            controlNo: record.control_no,
+            userId,
+            fromStatus: currentStatus,
+            toStatus: 'RESPONSE_AWAITING_APPROVAL',
+            timestamp: now.toISOString()
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Verification submitted');
         
         return await qmqaRepository.findRecordById(id);
@@ -571,6 +670,19 @@ export const approveCycle2 = async (id, userId, remarks, role = 'approver') => {
         await qmqaRepository.updateQMQA(transaction, id, updates);
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Cycle 2 approval', {
+            operation: 'approveCycle2',
+            controlNo: record.control_no,
+            userId,
+            role,
+            fromStatus: currentStatus,
+            toStatus: 'CLOSED',
+            timestamp: now.toISOString(),
+            remarks
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Cycle 2 approved - CLOSED');
         
         return await qmqaRepository.findRecordById(id);
@@ -622,6 +734,19 @@ export const rejectCycle2 = async (id, userId, remarks, role = 'approver') => {
         });
         
         await transaction.commit();
+        
+        // Log workflow transition with structured context
+        logger.info('Workflow transition: Cycle 2 rejection', {
+            operation: 'rejectCycle2',
+            controlNo: record.control_no,
+            userId,
+            role,
+            fromStatus: currentStatus,
+            toStatus: 'RESPONSE_REJECTED',
+            timestamp: now.toISOString(),
+            remarks
+        });
+        
         console.log('✅ [QMQA-WORKFLOW] Cycle 2 rejected');
         
         return await qmqaRepository.findRecordById(id);

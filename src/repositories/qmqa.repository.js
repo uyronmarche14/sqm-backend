@@ -5,6 +5,7 @@
 
 import db, { sql } from '../config/db.js';
 import { QMQA_QUERIES } from './queries/qmqa.queries.js';
+import logger from '../utils/logger.js';
 
 export const qmqaRepository = {
     
@@ -42,6 +43,14 @@ export const qmqaRepository = {
                 @stat, @last, @by
             )
         `);
+        
+        // Log database operation with structured context
+        logger.info('Database operation: Insert schedule', {
+            operation: 'insertSchedule',
+            table: 'QMQA_AUDIT_PLAN',
+            recordId: data.qmqa_audit_plan_id,
+            controlNo: data.control_no
+        });
         
         console.log('✅ [QMQA-REPO] Schedule inserted');
     },
@@ -103,6 +112,15 @@ export const qmqaRepository = {
                 SET ${sqlUpdates.join(', ')} 
                 WHERE qmqa_audit_plan_id = @id
             `);
+            
+            // Log database operation with structured context
+            logger.info('Database operation: Update schedule', {
+                operation: 'updateSchedule',
+                table: 'QMQA_AUDIT_PLAN',
+                recordId: id,
+                updatedFields: Object.keys(updates)
+            });
+            
             console.log('✅ [QMQA-REPO] Schedule updated');
         }
     },
@@ -182,6 +200,13 @@ export const qmqaRepository = {
                 @stat, @last, @by
             )
         `);
+        
+        // Log database operation with structured context
+        logger.info('Database operation: Insert QMQA record', {
+            operation: 'insertQMQA',
+            table: 'QMQA',
+            recordId: data.qmqa_id
+        });
         
         console.log('✅ [QMQA-REPO] QMQA Record inserted');
     },
@@ -264,6 +289,15 @@ export const qmqaRepository = {
                 SET ${sqlUpdates.join(', ')} 
                 WHERE qmqa_id = @id
             `);
+            
+            // Log database operation with structured context
+            logger.info('Database operation: Update QMQA record', {
+                operation: 'updateQMQA',
+                table: 'QMQA',
+                recordId: id,
+                updatedFields: Object.keys(updates)
+            });
+            
             console.log('✅ [QMQA-REPO] QMQA Record updated');
         }
     },
