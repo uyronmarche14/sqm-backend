@@ -65,7 +65,7 @@ export const sqmpService = {
     /**
      * Create New SQMP Record
      */
-    async createRecord(data, userId) {
+    async createRecord(data, userId, files = []) {
         const pool = await db.getPool();
         const transaction = new sql.Transaction(pool);
 
@@ -125,30 +125,48 @@ export const sqmpService = {
             // 2. Insert Documents
             if (data.main_documents?.length) {
                 console.log('🔄 [SQMP-SERVICE] Processing Main Documents...');
-                const docs = data.main_documents.map(doc => ({
-                    sqmp_document_id: uuidv4(),
-                    sqmp_id: sqmpId,
-                    file_name: doc.file_name,
-                    file_extension: doc.file_extension || 'dat',
-                    remarks: doc.remarks,
-                    last_update: now,
-                    updateby: userId
-                }));
+                const docs = data.main_documents.map(doc => {
+                    const uploadedFile = (files || []).find(f => f.originalname === doc.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
+                    const originalName = doc.file_name;
+                    const ext = diskFileName.split('.').pop();
+                    
+                    const finalRemarks = doc.remarks ? `${doc.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        sqmp_document_id: uuidv4(),
+                        sqmp_id: sqmpId,
+                        file_name: diskFileName,
+                        file_extension: ext,
+                        remarks: finalRemarks,
+                        last_update: now,
+                        updateby: userId
+                    };
+                });
                 await sqmpRepository.insertDocuments(transaction, docs);
             }
 
             // 3. Insert Appendices
             if (data.appendix_documents?.length) {
                 console.log('🔄 [SQMP-SERVICE] Processing Appendices...');
-                const apps = data.appendix_documents.map(app => ({
-                    sqmp_appendix_id: uuidv4(),
-                    sqmp_id: sqmpId,
-                    file_name: app.file_name,
-                    file_extension: app.file_extension || 'dat',
-                    remarks: app.remarks,
-                    last_update: now,
-                    updateby: userId
-                }));
+                const apps = data.appendix_documents.map(app => {
+                    const uploadedFile = (files || []).find(f => f.originalname === app.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
+                    const originalName = app.file_name;
+                    const ext = diskFileName.split('.').pop();
+                    
+                    const finalRemarks = app.remarks ? `${app.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        sqmp_appendix_id: uuidv4(),
+                        sqmp_id: sqmpId,
+                        file_name: diskFileName,
+                        file_extension: ext,
+                        remarks: finalRemarks,
+                        last_update: now,
+                        updateby: userId
+                    };
+                });
                 await sqmpRepository.insertAppendices(transaction, apps);
             }
 
@@ -253,14 +271,14 @@ export const sqmpService = {
             
             // Sub-tables (mapped to camelCase)
             mainDocuments: (subs.documents || []).map(doc => ({
-                id: doc.sqmp_doc_id,
+                id: doc.sqmp_document_id,
                 fileName: doc.file_name,
                 fileUrl: doc.file_url,
                 fileExtension: doc.file_extension,
                 remarks: doc.remarks
             })),
             appendixDocuments: (subs.appendices || []).map(app => ({
-                id: app.sqmp_app_id,
+                id: app.sqmp_appendix_id,
                 fileName: app.file_name,
                 fileUrl: app.file_url,
                 fileExtension: app.file_extension,
@@ -358,7 +376,7 @@ export const sqmpService = {
     /**
      * Update Record
      */
-    async updateRecord(id, data, userId) {
+    async updateRecord(id, data, userId, files = []) {
         console.log('📥 [SQMP-SERVICE] Update Request:', id);
         const pool = await db.getPool();
         const transaction = new sql.Transaction(pool);
@@ -409,15 +427,24 @@ export const sqmpService = {
                 console.log('🔄 [SQMP-SERVICE] Updating Documents...');
                 await sqmpRepository.deleteSubTable(transaction, sqmpId, 'SQMP_DOCUMENT');
                 if (data.main_documents.length) {
-                    const docs = data.main_documents.map(doc => ({
-                        sqmp_document_id: uuidv4(),
-                        sqmp_id: sqmpId,
-                        file_name: doc.file_name,
-                        file_extension: doc.file_extension || 'dat',
-                        remarks: doc.remarks,
-                        last_update: now,
-                        updateby: userId
-                    }));
+                    const docs = data.main_documents.map(doc => {
+                        const uploadedFile = (files || []).find(f => f.originalname === doc.file_name);
+                        const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
+                        const originalName = doc.file_name;
+                        const ext = diskFileName.split('.').pop();
+                        
+                        const finalRemarks = doc.remarks ? `${doc.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                        return {
+                            sqmp_document_id: uuidv4(),
+                            sqmp_id: sqmpId,
+                            file_name: diskFileName,
+                            file_extension: ext,
+                            remarks: finalRemarks,
+                            last_update: now,
+                            updateby: userId
+                        };
+                    });
                     await sqmpRepository.insertDocuments(transaction, docs);
                 }
             }
@@ -427,15 +454,24 @@ export const sqmpService = {
                 console.log('🔄 [SQMP-SERVICE] Updating Appendices...');
                 await sqmpRepository.deleteSubTable(transaction, sqmpId, 'SQMP_APPENDIX');
                 if (data.appendix_documents.length) {
-                    const apps = data.appendix_documents.map(app => ({
-                        sqmp_appendix_id: uuidv4(),
-                        sqmp_id: sqmpId,
-                        file_name: app.file_name,
-                        file_extension: app.file_extension || 'dat',
-                        remarks: app.remarks,
-                        last_update: now,
-                        updateby: userId
-                    }));
+                    const apps = data.appendix_documents.map(app => {
+                        const uploadedFile = (files || []).find(f => f.originalname === app.file_name);
+                        const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
+                        const originalName = app.file_name;
+                        const ext = diskFileName.split('.').pop();
+                        
+                        const finalRemarks = app.remarks ? `${app.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                        return {
+                            sqmp_appendix_id: uuidv4(),
+                            sqmp_id: sqmpId,
+                            file_name: diskFileName,
+                            file_extension: ext,
+                            remarks: finalRemarks,
+                            last_update: now,
+                            updateby: userId
+                        };
+                    });
                     await sqmpRepository.insertAppendices(transaction, apps);
                 }
             }

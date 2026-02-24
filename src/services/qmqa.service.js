@@ -303,7 +303,7 @@ export const qmqaService = {
     /**
      * Create Audit Report (from schedule or direct)
      */
-    async createRecord(data, userId) {
+    async createRecord(data, userId, files = []) {
         console.log('---------------------------------------------------');
         console.log('📥 [QMQA-SERVICE] Create Audit Report Request');
         console.log('---------------------------------------------------');
@@ -461,27 +461,45 @@ export const qmqaService = {
             // Insert sub-tables
             if (data.audit_plan_attachments?.length) {
                 console.log('🔄 [QMQA-SERVICE] Processing Plan Attachments...');
-                const attachments = data.audit_plan_attachments.map(att => ({
-                    qmqa_plan_attachment_id: uuidv4(),
-                    file_name: att.file_name,
-                    file_extension: att.file_extension,
-                    remarks: att.remarks,
-                    last_update: now,
-                    updateby: userId
-                }));
+                const attachments = data.audit_plan_attachments.map(att => {
+                    const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                    const originalName = att.file_name;
+                    const ext = diskFileName.split('.').pop();
+                    
+                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    
+                    return {
+                        qmqa_plan_attachment_id: uuidv4(),
+                        file_name: diskFileName,
+                        file_extension: ext,
+                        remarks: finalRemarks,
+                        last_update: now,
+                        updateby: userId
+                    };
+                });
                 await qmqaRepository.insertPlanAttachments(transaction, qmqaId, attachments);
             }
             
             if (data.attachments?.length) {
                 console.log('🔄 [QMQA-SERVICE] Processing Attachments...');
-                const attachments = data.attachments.map(att => ({
-                    qmqa_attachment_id: uuidv4(),
-                    file_name: att.file_name,
-                    file_extension: att.file_extension,
-                    remarks: att.remarks,
-                    last_update: now,
-                    updateby: userId
-                }));
+                const attachments = data.attachments.map(att => {
+                    const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                    const originalName = att.file_name;
+                    const ext = diskFileName.split('.').pop();
+                    
+                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        qmqa_attachment_id: uuidv4(),
+                        file_name: diskFileName,
+                        file_extension: ext,
+                        remarks: finalRemarks,
+                        last_update: now,
+                        updateby: userId
+                    };
+                });
                 await qmqaRepository.insertAttachments(transaction, qmqaId, attachments);
             }
             
@@ -541,7 +559,7 @@ export const qmqaService = {
     /**
      * Update Audit Report
      */
-    async updateRecord(id, data, userId) {
+    async updateRecord(id, data, userId, files = []) {
         console.log('📝 [QMQA-SERVICE] Updating Record:', id);
         
         // Validate audit rating if provided
@@ -633,14 +651,23 @@ export const qmqaService = {
                 // Delete existing and insert new
                 await qmqaRepository.deleteSubTable(transaction, id, 'QMQA_ATTACHMENT');
                 if (data.attachments.length > 0) {
-                    const attachments = data.attachments.map(att => ({
-                        qmqa_attachment_id: uuidv4(),
-                        file_name: att.file_name,
-                        file_extension: att.file_extension,
-                        remarks: att.remarks,
-                        last_update: now,
-                        updateby: userId
-                    }));
+                    const attachments = data.attachments.map(att => {
+                        const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                        const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                        const originalName = att.file_name;
+                        const ext = diskFileName.split('.').pop();
+                        
+                        const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                        return {
+                            qmqa_attachment_id: uuidv4(),
+                            file_name: diskFileName,
+                            file_extension: ext,
+                            remarks: finalRemarks,
+                            last_update: now,
+                            updateby: userId
+                        };
+                    });
                     await qmqaRepository.insertAttachments(transaction, id, attachments);
                 }
             }

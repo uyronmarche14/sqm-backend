@@ -8,7 +8,7 @@ export const createRecord = async (req, res) => {
         const userId = req.user?.id || 'SYSTEM';
         const data = req.body;
         
-        const fullRecord = await fiveM1EService.createDraft(data, userId);
+        const fullRecord = await fiveM1EService.createDraft(data, userId, req.files);
         
         res.status(201).json({ data: fullRecord, message: 'Draft created successfully' });
     } catch (error) {
@@ -43,7 +43,7 @@ export const updateRecord = async (req, res) => {
     const { id } = req.params;
     try {
         const userId = req.user?.id || 'SYSTEM';
-        const result = await fiveM1EService.updateRecord(id, req.body, userId);
+        const result = await fiveM1EService.updateRecord(id, req.body, userId, req.files);
         
         if (!result) {
             return res.status(404).json({ error: 'Record not found' });

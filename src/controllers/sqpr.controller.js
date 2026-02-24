@@ -3,7 +3,7 @@ import { sqprService } from '../services/sqpr.service.js';
 export const createRecord = async (req, res) => {
     try {
         const userId = req.user?.id || 'SYSTEM';
-        const result = await sqprService.createRecord(req.body, userId);
+        const result = await sqprService.createRecord(req.body, userId, req.files);
         res.status(201).json({ data: result });
     } catch (error) {
         console.error('Error creating SQPR record:', error);
@@ -37,7 +37,7 @@ export const updateRecord = async (req, res) => {
     const { id } = req.params;
     try {
         const userId = req.user?.id || 'SYSTEM';
-        const result = await sqprService.updateRecord(id, req.body, userId);
+        const result = await sqprService.updateRecord(id, req.body, userId, req.files);
         
         if (!result) return res.status(404).json({ error: 'Record not found' });
         res.json({ data: result });

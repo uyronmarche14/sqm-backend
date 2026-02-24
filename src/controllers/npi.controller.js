@@ -43,7 +43,7 @@ export const createRecord = async (req, res) => {
     console.log('------------------------------------------------');
 
     try {
-        const result = await npiService.createRecord(req.body);
+        const result = await npiService.createRecord(req.body, req.files);
         res.status(201).json(result);
     } catch (error) {
         console.error('Create NPI Error Detail:', error);
@@ -68,7 +68,7 @@ export const updateRecord = async (req, res) => {
     }
 
     try {
-        const result = await npiService.updateRecord(id, req.body);
+        const result = await npiService.updateRecord(id, req.body, req.files);
         res.json(result);
     } catch (error) {
         console.error('Update NPI Error Detail:', error);

@@ -16,7 +16,7 @@ export const sqprService = {
     /**
      * Create New SQPR Record
      */
-    async createRecord(data, userId) {
+    async createRecord(data, userId, files = []) {
         const pool = await db.getPool();
         const transaction = new sql.Transaction(pool);
 
@@ -63,20 +63,31 @@ export const sqprService = {
 
             // 2. Insert Attachments (if any)
             if (data.attachments?.length) {
-                const attData = data.attachments.map(att => ({
-                    sqpr_attachment_id: uuidv4(),
-                    sqpr_id: sqprId,
-                    file_name: att.file_name,
-                    file_extension: att.file_extension || 'dat',
-                    attachment_type: att.attachment_type || 'COVER',
-                    remarks: att.remarks,
-                    last_update: now,
-                    updateby: userId
-                }));
+                const attData = data.attachments.map(att => {
+                    // Match uploaded file (Multer's unique name vs original)
+                    const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                    const originalName = att.file_name;
+                    
+                    // Preserve original filename in remarks
+                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        sqpr_attachment_id: uuidv4(),
+                        sqpr_id: sqprId,
+                        file_name: diskFileName || 'Unknown',
+                        file_extension: diskFileName ? diskFileName.split('.').pop() : (att.file_extension || 'dat'),
+                        attachment_type: att.attachment_type || 'COVER',
+                        remarks: finalRemarks,
+                        last_update: now,
+                        updateby: userId
+                    };
+                });
                 console.log('💾 [SQPR-BACKEND] Saving to SQPR_ATTACHMENT:', attData);
                 await sqprRepository.insertAttachments(transaction, attData);
                 console.log('✅ [SQPR-BACKEND] Attachments saved:', attData.length);
-            } else {
+            }
+ else {
                 console.log('⚠️ [SQPR-BACKEND] No attachments to save');
             }
 
@@ -159,7 +170,7 @@ export const sqprService = {
     /**
      * Update Record
      */
-    async updateRecord(id, data, userId) {
+    async updateRecord(id, data, userId, files = []) {
         const pool = await db.getPool();
         const transaction = new sql.Transaction(pool);
 
@@ -218,16 +229,26 @@ export const sqprService = {
                 
                 // Insert new attachments
                 if (data.attachments?.length) {
-                    const attData = data.attachments.map(att => ({
-                        sqpr_attachment_id: att.sqpr_attachment_id || uuidv4(),
-                        sqpr_id: sqprId,
-                        file_name: att.file_name,
-                        file_extension: att.file_extension || 'dat',
-                        attachment_type: att.attachment_type || 'COVER',
-                        remarks: att.remarks,
-                        last_update: now,
-                        updateby: userId
-                    }));
+                    const attData = data.attachments.map(att => {
+                        // Match uploaded file (Multer's unique name vs original)
+                        const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                        const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                        const originalName = att.file_name;
+                        
+                        // Preserve original filename in remarks
+                        const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                        return {
+                            sqpr_attachment_id: att.sqpr_attachment_id || uuidv4(),
+                            sqpr_id: sqprId,
+                            file_name: diskFileName || 'Unknown',
+                            file_extension: diskFileName ? diskFileName.split('.').pop() : (att.file_extension || 'dat'),
+                            attachment_type: att.attachment_type || 'COVER',
+                            remarks: finalRemarks,
+                            last_update: now,
+                            updateby: userId
+                        };
+                    });
                     await sqprRepository.insertAttachments(transaction, attData);
                 }
             }

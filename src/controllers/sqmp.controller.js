@@ -1,10 +1,12 @@
 import { sqmpService } from '../services/sqmp.service.js';
+import path from 'path';
+import fs from 'fs';
 
 export const createRecord = async (req, res) => {
     console.log('▶️ [SQMP-CONTROLLER] createRecord called');
     try {
         const userId = req.user?.id || '6a15b66a-079b-433b-b70f-dc15dce25631'; // Fallback to valid Test User ID
-        const result = await sqmpService.createRecord(req.body, userId);
+        const result = await sqmpService.createRecord(req.body, userId, req.files);
         res.status(201).json({ data: result });
     } catch (error) {
         console.error('❌ [SQMP-CONTROLLER] Error creating record:', error);
@@ -42,7 +44,7 @@ export const updateRecord = async (req, res) => {
     console.log('▶️ [SQMP-CONTROLLER] updateRecord called:', id);
     try {
         const userId = req.user?.id || '6a15b66a-079b-433b-b70f-dc15dce25631'; // Fallback to valid Test User ID
-        const result = await sqmpService.updateRecord(id, req.body, userId);
+        const result = await sqmpService.updateRecord(id, req.body, userId, req.files);
         
         if (!result) return res.status(404).json({ error: 'Record not found' });
         res.json({ data: result });
@@ -103,5 +105,42 @@ export const rejectRecord = async (req, res) => {
         res.json({ data: result });
     } catch (error) {
         res.status(500).json({ error: 'Error rejecting record' });
+    }
+};
+
+export const downloadAttachment = async (req, res) => {
+    const { attachmentId } = req.params;
+    console.log('▶️ [SQMP-CONTROLLER] downloadAttachment called:', attachmentId);
+
+    try {
+        const pool = await db.getPool();
+        // Check for main documents
+        let doc = await pool.request()
+            .input('id', sql.UniqueIdentifier, attachmentId)
+            .query('SELECT file_name FROM SQMP_DOCUMENT WHERE sqmp_document_id = @id');
+
+        if (doc.recordset.length === 0) {
+            // Check for appendix documents
+            doc = await pool.request()
+                .input('id', sql.UniqueIdentifier, attachmentId)
+                .query('SELECT file_name FROM SQMP_APPENDIX WHERE sqmp_appendix_id = @id');
+        }
+
+        if (doc.recordset.length === 0) {
+            return res.status(404).json({ error: 'Attachment not found' });
+        }
+
+        const fileName = doc.recordset[0].file_name;
+        const filePath = path.join(process.cwd(), 'uploads/sqmp', fileName);
+
+        if (!fs.existsSync(filePath)) {
+            console.error('❌ [SQMP-CONTROLLER] File not found on disk:', filePath);
+            return res.status(404).json({ error: 'File not found on disk' });
+        }
+
+        res.download(filePath);
+    } catch (error) {
+        console.error('❌ [SQMP-CONTROLLER] Download error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 };

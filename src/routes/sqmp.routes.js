@@ -11,10 +11,8 @@ router.get('/:id', sqmpController.getRecordById);
 router.post('/', upload.any(), logUploads, handleUploadError, sqmpController.createRecord);
 router.put('/:id', upload.any(), logUploads, handleUploadError, sqmpController.updateRecord);
 
-// Workflow Actions
-router.post('/:id/submit', sqmpController.submitRecord);
-router.post('/:id/approve', sqmpController.approveRecord);
-router.post('/:id/reject', sqmpController.rejectRecord);
+// File Management
+router.get('/attachments/:attachmentId', sqmpController.downloadAttachment);
 
 export default router;
 

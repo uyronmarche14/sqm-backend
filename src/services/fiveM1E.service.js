@@ -13,7 +13,7 @@ export const fiveM1EService = {
     /**
      * Create a new Draft Record
      */
-    async createDraft(data, userId) {
+    async createDraft(data, userId, files = []) {
         const pool = await db.getPool();
         const transaction = new sql.Transaction(pool);
         
@@ -83,14 +83,24 @@ export const fiveM1EService = {
             // 5. Insert Attachments
             if (data.attachments && Array.isArray(data.attachments)) {
                 let nextAttId = await fiveM1ERepository.getNextId('TBL_5M1E_Attachment', transaction, 'ID');
-                const attData = data.attachments.map(att => ({
-                    ID: nextAttId++,
-                    ControlNo: controlNo,
-                    FileName: att.file_name || 'Unknown',
-                    CreateDate: now,
-                    Attribute1: att.attribute_1 || '',
-                    Attribute2: att.attribute_2 || ''
-                }));
+                const attData = data.attachments.map(att => {
+                    // Match uploaded file (Multer's unique name vs original)
+                    const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                    const originalName = att.file_name;
+                    
+                    // Preserve original filename in Attribute1
+                    const finalRemarks = att.attribute_1 ? `${att.attribute_1} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        ID: nextAttId++,
+                        ControlNo: controlNo,
+                        FileName: diskFileName || 'Unknown',
+                        CreateDate: now,
+                        Attribute1: finalRemarks,
+                        Attribute2: att.attribute_2 || ''
+                    };
+                });
                 await fiveM1ERepository.insertAttachments(transaction, attData);
             }
 
@@ -174,7 +184,7 @@ export const fiveM1EService = {
     /**
      * Update Existing Record
      */
-    async updateRecord(id, data, userId) {
+    async updateRecord(id, data, userId, files = []) {
         const pool = await db.getPool();
         const transaction = new sql.Transaction(pool);
 
@@ -254,14 +264,24 @@ export const fiveM1EService = {
             if (data.attachments) {
                 await fiveM1ERepository.deleteChildRecords(transaction, 'TBL_5M1E_Attachment', controlNo);
                 let nextAttId = await fiveM1ERepository.getNextId('TBL_5M1E_Attachment', transaction, 'ID');
-                const attData = data.attachments.map(att => ({
-                    ID: nextAttId++,
-                    ControlNo: controlNo,
-                    FileName: att.file_name,
-                    CreateDate: now,
-                    Attribute1: att.attribute_1,
-                    Attribute2: att.attribute_2
-                }));
+                const attData = data.attachments.map(att => {
+                    // Match uploaded file (Multer's unique name vs original)
+                    const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                    const originalName = att.file_name;
+                    
+                    // Preserve original filename in Attribute1
+                    const finalRemarks = att.attribute_1 ? `${att.attribute_1} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        ID: nextAttId++,
+                        ControlNo: controlNo,
+                        FileName: diskFileName || 'Unknown',
+                        CreateDate: now,
+                        Attribute1: finalRemarks,
+                        Attribute2: att.attribute_2 || ''
+                    };
+                });
                 if (attData.length > 0) await fiveM1ERepository.insertAttachments(transaction, attData);
             }
 

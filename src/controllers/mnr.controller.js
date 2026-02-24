@@ -510,18 +510,27 @@ export const createRecord = async (req, res) => {
 
             // 8. Insert Attachments
             if (data.attachments && Array.isArray(data.attachments)) {
-                 const attQuery = `INSERT INTO MNR_ATTACHMENT (mnr_attachment_id, mnr_id, file_name, file_extension, remarks, last_update, updateby) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-                 for (const att of data.attachments) {
-                     const attId = uuidv4();
-                     const ext = att.fileName ? att.fileName.split('.').pop() : 'dat';
-                     await conn.execute(attQuery, [
-                         attId, id, 
-                         att.fileName || 'Unknown', 
-                         ext, 
-                         att.remarks || null, 
-                         now, userId
-                     ]);
-                 }
+                const attQuery = `INSERT INTO MNR_ATTACHMENT (mnr_attachment_id, mnr_id, file_name, file_extension, remarks, last_update, updateby) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+                for (const att of data.attachments) {
+                    const attId = uuidv4();
+                    
+                    // Match uploaded file (Multer's unique name vs original)
+                    const uploadedFile = (req.files || []).find(f => f.originalname === att.fileName);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.fileName;
+                    const originalName = att.fileName;
+                    const ext = diskFileName ? diskFileName.split('.').pop() : (att.fileName ? att.fileName.split('.').pop() : 'dat');
+                    
+                    // Preserve original filename in remarks
+                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    await conn.execute(attQuery, [
+                        attId, id, 
+                        diskFileName || 'Unknown', 
+                        ext, 
+                        finalRemarks, 
+                        now, userId
+                    ]);
+                }
             }
 
             return { id, controlNo, status };
@@ -1073,12 +1082,21 @@ export const updateRecord = async (req, res) => {
                      const attQuery = `INSERT INTO MNR_ATTACHMENT (mnr_attachment_id, mnr_id, file_name, file_extension, remarks, last_update, updateby) VALUES (?, ?, ?, ?, ?, ?, ?)`;
                      for (const att of data.attachments) {
                          const attId = uuidv4();
-                         const ext = att.fileName ? att.fileName.split('.').pop() : 'dat';
+                         
+                         // Match uploaded file (Multer's unique name vs original)
+                         const uploadedFile = (req.files || []).find(f => f.originalname === att.fileName);
+                         const diskFileName = uploadedFile ? uploadedFile.filename : att.fileName;
+                         const originalName = att.fileName;
+                         const ext = diskFileName ? diskFileName.split('.').pop() : (att.fileName ? att.fileName.split('.').pop() : 'dat');
+                        
+                         // Preserve original filename in remarks
+                         const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
                          await conn.execute(attQuery, [
                              attId, recordId, 
-                             att.fileName || 'Unknown', 
+                             diskFileName || 'Unknown', 
                              ext, 
-                             att.remarks || null, 
+                             finalRemarks, 
                              now, userId
                          ]);
                      }

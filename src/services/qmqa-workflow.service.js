@@ -6,6 +6,7 @@
 import db, { sql } from '../config/db.js';
 import { qmqaRepository } from '../repositories/qmqa.repository.js';
 import { toDBStatus, fromDBStatus } from '../utils/qmqa/status-mapper.js';
+import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger.js';
 
 /**
@@ -430,7 +431,7 @@ export const cancelAudit = async (id, userId, remarks) => {
  * @param {Object} data - Initial report data
  * @returns {Promise<Object>} Updated record
  */
-export const saveInitialReport = async (id, data) => {
+export const saveInitialReport = async (id, data, files = []) => {
     console.log('📝 [QMQA-WORKFLOW] Save Initial Report:', id);
     
     const pool = await db.getPool();
@@ -470,6 +471,28 @@ export const saveInitialReport = async (id, data) => {
             last_update: now,
             updateby: 'supplier'
         });
+
+        // Insert initial attachments if provided
+        if (data.initial_attachments?.length) {
+            console.log('🔄 [QMQA-WORKFLOW] Processing Initial Attachments...');
+            for (const att of data.initial_attachments) {
+                const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                const originalName = att.file_name;
+                const ext = diskFileName.split('.').pop();
+                
+                const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                await qmqaRepository.insertInitialAttachment(transaction, responseData.qmqa_response_id, {
+                    qmqa_response_initial_attachment_id: uuidv4(),
+                    file_name: diskFileName,
+                    file_extension: ext,
+                    remarks: finalRemarks,
+                    last_update: now,
+                    updateby: 'supplier'
+                });
+            }
+        }
         
         await transaction.commit();
         
@@ -500,7 +523,7 @@ export const saveInitialReport = async (id, data) => {
  * @param {Object} data - Final report data
  * @returns {Promise<Object>} Updated record
  */
-export const submitFinalReport = async (id, data) => {
+export const submitFinalReport = async (id, data, files = []) => {
     console.log('📋 [QMQA-WORKFLOW] Submit Final Report:', id);
     
     const pool = await db.getPool();
@@ -520,7 +543,7 @@ export const submitFinalReport = async (id, data) => {
         // Validate transition
         validateTransition(currentStatus, 'WITH_FINAL_REPORT');
         
-        if (!data.final_attachment) {
+        if (!data.final_attachments?.length) {
             throw new Error('Final report attachment is required');
         }
         
@@ -534,6 +557,36 @@ export const submitFinalReport = async (id, data) => {
             last_update: now,
             updateby: 'supplier'
         });
+
+        // Get response ID
+        const subs = await qmqaRepository.findSubTables(id);
+        const responseId = subs.response?.qmqa_response_id;
+        
+        if (!responseId) {
+            throw new Error('Response record not found');
+        }
+
+        // Insert final attachments
+        if (data.final_attachments?.length) {
+            console.log('🔄 [QMQA-WORKFLOW] Processing Final Attachments...');
+            for (const att of data.final_attachments) {
+                const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                const originalName = att.file_name;
+                const ext = diskFileName.split('.').pop();
+                
+                const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                await qmqaRepository.insertFinalAttachment(transaction, responseId, {
+                    qmqa_response_final_attachment_id: uuidv4(),
+                    file_name: diskFileName,
+                    file_extension: ext,
+                    remarks: finalRemarks,
+                    last_update: now,
+                    updateby: 'supplier'
+                });
+            }
+        }
         
         await transaction.commit();
         
@@ -565,7 +618,7 @@ export const submitFinalReport = async (id, data) => {
  * @param {string} userId - User performing the action
  * @returns {Promise<Object>} Updated record
  */
-export const submitVerification = async (id, data, userId) => {
+export const submitVerification = async (id, data, userId, files = []) => {
     console.log('🔍 [QMQA-WORKFLOW] Submit Verification:', id);
     
     const pool = await db.getPool();
@@ -600,6 +653,36 @@ export const submitVerification = async (id, data, userId) => {
             last_update: now,
             updateby: userId
         });
+
+        // Get response ID
+        const subs = await qmqaRepository.findSubTables(id);
+        const responseId = subs.response?.qmqa_response_id;
+
+        if (!responseId) {
+            throw new Error('Response record not found');
+        }
+
+        // Insert verification attachments if provided
+        if (data.verification_attachments?.length) {
+            console.log('🔄 [QMQA-WORKFLOW] Processing Verification Attachments...');
+            for (const att of data.verification_attachments) {
+                const uploadedFile = (files || []).find(f => f.originalname === att.file_name);
+                const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
+                const originalName = att.file_name;
+                const ext = diskFileName.split('.').pop();
+                
+                const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                await qmqaRepository.insertVerificationAttachment(transaction, responseId, {
+                    qmqa_response_verification_attachment_id: uuidv4(),
+                    file_name: diskFileName,
+                    file_extension: ext,
+                    remarks: finalRemarks,
+                    last_update: now,
+                    updateby: userId
+                });
+            }
+        }
         
         await transaction.commit();
         

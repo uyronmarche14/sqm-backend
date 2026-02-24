@@ -18,7 +18,7 @@ export const npiService = {
         return mapToDTO({ ...row, ...children });
     },
 
-    async createRecord(data) {
+    async createRecord(data, files = []) {
         const pool = await getDb();
         const transaction = new sql.Transaction(pool);
         
@@ -84,14 +84,24 @@ export const npiService = {
             if (data.attachments) {
                 const atts = typeof data.attachments === 'string' ? JSON.parse(data.attachments) : data.attachments;
                 if (Array.isArray(atts) && atts.length > 0) {
-                    const items = atts.map(att => ({
-                        npi_attachment_id: crypto.randomUUID(),
-                        npi_lot_id: npiId,
-                        file_name: att.fileName,
-                        remarks: att.remarks || '',
-                        last_update: new Date(),
-                        updateby: userId
-                    }));
+                    const items = atts.map(att => {
+                        // Match uploaded file (Multer's unique name vs original)
+                        const uploadedFile = (files || []).find(f => f.originalname === att.fileName);
+                        const diskFileName = uploadedFile ? uploadedFile.filename : att.fileName;
+                        const originalName = att.fileName;
+                        
+                        // Preserve original filename in remarks
+                        const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                        return {
+                            npi_attachment_id: crypto.randomUUID(),
+                            npi_lot_id: npiId,
+                            file_name: diskFileName || 'Unknown',
+                            remarks: finalRemarks,
+                            last_update: new Date(),
+                            updateby: userId
+                        };
+                    });
                     await npiRepository.attRepo.insertBulk(transaction, items);
                 }
             }
@@ -158,7 +168,7 @@ export const npiService = {
         }
     },
 
-    async updateRecord(id, data) {
+    async updateRecord(id, data, files = []) {
         const pool = await getDb();
         const transaction = new sql.Transaction(pool);
 
@@ -257,6 +267,25 @@ export const npiService = {
                 }));
             }
             
+            if (data.attachments && data.attachments !== 'undefined') {
+                const atts = typeof data.attachments === 'string' ? JSON.parse(data.attachments) : data.attachments;
+                await updateChild(npiRepository.attRepo, atts, att => {
+                    const uploadedFile = (files || []).find(f => f.originalname === att.fileName);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : att.fileName;
+                    const originalName = att.fileName;
+                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
+                    return {
+                        npi_attachment_id: crypto.randomUUID(),
+                        npi_lot_id: realId,
+                        file_name: diskFileName || 'Unknown',
+                        remarks: finalRemarks,
+                        last_update: new Date(),
+                        updateby: userId
+                    };
+                });
+            }
+
             if (data.cc_list && data.cc_list !== 'undefined') {
                 const cclist = typeof data.cc_list === 'string' ? JSON.parse(data.cc_list) : data.cc_list;
                 await updateChild(npiRepository.ccRepo, cclist ? cclist.filter(c=>c.user_id) : [], cc => ({

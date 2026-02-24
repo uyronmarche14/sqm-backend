@@ -252,7 +252,7 @@ export const createRecord = async (req, res) => {
             });
         }
 
-        const record = await qmqaService.createRecord(req.body, userId);
+        const record = await qmqaService.createRecord(req.body, userId, req.files);
         
         res.status(201).json({
             success: true,
@@ -365,7 +365,7 @@ export const updateRecord = async (req, res) => {
         }
 
         const { id } = req.params;
-        const record = await qmqaService.updateRecord(id, req.body, userId);
+        const record = await qmqaService.updateRecord(id, req.body, userId, req.files);
         
         res.status(200).json({
             success: true,
@@ -746,7 +746,7 @@ export const saveInitialReport = async (req, res) => {
         // Validate token
         const decoded = qmqaTokenService.validateToken(token);
         
-        const record = await qmqaWorkflowService.saveInitialReport(decoded.qmqaId, req.body);
+        const record = await qmqaWorkflowService.saveInitialReport(decoded.qmqaId, req.body, req.files);
         
         // Send notification email
         await qmqaEmailService.sendInitialReportEmail(record, req.body.skip_initial);
@@ -789,7 +789,7 @@ export const submitFinalReport = async (req, res) => {
         // Validate token
         const decoded = qmqaTokenService.validateToken(token);
         
-        const record = await qmqaWorkflowService.submitFinalReport(decoded.qmqaId, req.body);
+        const record = await qmqaWorkflowService.submitFinalReport(decoded.qmqaId, req.body, req.files);
         
         // Send notification email
         await qmqaEmailService.sendFinalReportEmail(record);
@@ -841,7 +841,7 @@ export const submitVerification = async (req, res) => {
         }
 
         const { id } = req.params;
-        const record = await qmqaWorkflowService.submitVerification(id, req.body, userId);
+        const record = await qmqaWorkflowService.submitVerification(id, req.body, userId, req.files);
         
         // Send Cycle 2 approval emails
         await qmqaEmailService.sendCycle2SubmitEmail(record);
