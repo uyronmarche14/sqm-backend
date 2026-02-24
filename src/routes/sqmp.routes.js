@@ -1,13 +1,15 @@
 import express from 'express';
 import * as sqmpController from '../controllers/sqmp.controller.js';
+import { createModuleUpload, logUploads, handleUploadError } from '../middleware/upload.middleware.js';
 
 const router = express.Router();
+const upload = createModuleUpload('sqmp');
 
 // CRUD
 router.get('/', sqmpController.getAllRecords);
 router.get('/:id', sqmpController.getRecordById);
-router.post('/', sqmpController.createRecord);
-router.put('/:id', sqmpController.updateRecord);
+router.post('/', upload.any(), logUploads, handleUploadError, sqmpController.createRecord);
+router.put('/:id', upload.any(), logUploads, handleUploadError, sqmpController.updateRecord);
 
 // Workflow Actions
 router.post('/:id/submit', sqmpController.submitRecord);
@@ -15,3 +17,4 @@ router.post('/:id/approve', sqmpController.approveRecord);
 router.post('/:id/reject', sqmpController.rejectRecord);
 
 export default router;
+

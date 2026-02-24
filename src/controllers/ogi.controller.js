@@ -21,6 +21,22 @@ const mapStatusFromDB = (code) => {
   return map[code] || 'DRAFT';
 };
 
+/**
+ * Safely parses a JSON string field from FormData.
+ * Multer doesn't parse JSON strings automatically.
+ */
+const parseJsonField = (field) => {
+    if (typeof field === 'string') {
+        try {
+            return JSON.parse(field);
+        } catch (e) {
+            console.error('❌ [OGI Controller] Failed to parse JSON field:', e.message);
+            return [];
+        }
+    }
+    return field || [];
+};
+
 const mapToDTO = (record) => {
   if (!record) return null;
   return {
@@ -195,9 +211,12 @@ export const createRecord = async (req, res) => {
   const { 
     id, controlNo, status,
     siteId, supplierId, partId,
-    remarks, lots, attachments,
-    createdBy 
+    remarks, createdBy 
   } = req.body;
+
+  // Parse JSON-stringified arrays from FormData
+  const lots = parseJsonField(req.body.lots);
+  const attachments = parseJsonField(req.body.attachments);
 
   const transaction = new sql.Transaction(await getDb());
   
@@ -256,13 +275,19 @@ export const createRecord = async (req, res) => {
     // 3. Insert Attachments
     if (attachments && attachments.length > 0) {
         for (const att of attachments) {
+             // Find matching file in req.files (Multer's disk name vs original name)
+             const uploadedFile = (req.files || []).find(f => f.originalname === att.fileName);
+             const diskFileName = uploadedFile ? uploadedFile.filename : att.fileName;
+             const originalName = att.fileName;
+             const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
              const attReq = new sql.Request(transaction);
              await attReq
                 .input('ogi_attachment_id', sql.VarChar, att.id || crypto.randomUUID())
                 .input('ogi_id', sql.VarChar, recordId)
-                .input('file_name', sql.VarChar, att.fileName)
+                .input('file_name', sql.VarChar, diskFileName)
                 .input('updateby', sql.VarChar, userId)
-                .input('remarks', sql.VarChar, att.remarks)
+                .input('remarks', sql.VarChar, finalRemarks)
                 .query(`
                     INSERT INTO OGI_ATTACHMENT (ogi_attachment_id, ogi_id, file_name, updateby, remarks, last_update)
                     VALUES (@ogi_attachment_id, @ogi_id, @file_name, @updateby, @remarks, GETDATE())
@@ -285,9 +310,12 @@ export const updateRecord = async (req, res) => {
     const { 
         status, 
         siteId, supplierId, partId,
-        remarks, lots, attachments,
-        updatedBy 
+        remarks, updatedBy 
     } = req.body;
+
+    // Parse JSON-stringified arrays from FormData
+    const lots = parseJsonField(req.body.lots);
+    const attachments = parseJsonField(req.body.attachments);
 
     const transaction = new sql.Transaction(await getDb());
 
@@ -359,13 +387,22 @@ export const updateRecord = async (req, res) => {
 
          if (attachments && attachments.length > 0) {
             for (const att of attachments) {
+                 // Match uploaded file (Multer's unique name vs original)
+                 const uploadedFile = (req.files || []).find(f => f.originalname === att.fileName);
+                 const diskFileName = uploadedFile ? uploadedFile.filename : att.fileName;
+                 const originalName = att.fileName;
+                 
+                 // If it's a new upload (has diskFileName different from original name), or if it's existing
+                 // Note: If att.fileName already contains a timestamp (existing), uploadedFile will be undefined
+                 const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+
                  const attReq = new sql.Request(transaction);
                  await attReq
                     .input('ogi_attachment_id', sql.VarChar, att.id || crypto.randomUUID())
                     .input('ogi_id', sql.VarChar, realOgiId)
-                    .input('file_name', sql.VarChar, att.fileName)
+                    .input('file_name', sql.VarChar, diskFileName)
                     .input('updateby', sql.VarChar, userId)
-                    .input('remarks', sql.VarChar, att.remarks)
+                    .input('remarks', sql.VarChar, finalRemarks)
                     .query(`
                         INSERT INTO OGI_ATTACHMENT (ogi_attachment_id, ogi_id, file_name, updateby, remarks, last_update)
                         VALUES (@ogi_attachment_id, @ogi_id, @file_name, @updateby, @remarks, GETDATE())
@@ -380,5 +417,50 @@ export const updateRecord = async (req, res) => {
         if (transaction) await transaction.rollback();
         console.error('Error updating OGI record:', error);
         res.status(500).json({ message: 'Failed to update record', error: error.message });
+    }
+};
+
+/**
+ * GET /api/ogi/attachments/:attachmentId
+ * Download attachment file
+ */
+export const downloadAttachment = async (req, res) => {
+    try {
+        const { attachmentId } = req.params;
+
+        // Get attachment metadata
+        const pool = await getDb();
+        const result = await pool.request()
+            .input('attachmentId', sql.VarChar, attachmentId)
+            .query('SELECT * FROM OGI_ATTACHMENT WHERE ogi_attachment_id = @attachmentId');
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const attachment = result.recordset[0];
+        const fileName = attachment.file_name;
+        
+        // Construct file path - OGI files are in uploads/ogi/
+        const fs = await import('fs');
+        const path = await import('path');
+        const filePath = path.join(process.cwd(), 'uploads', 'ogi', fileName);
+
+        if (!fs.existsSync(filePath)) {
+            console.error(`❌ [OGI Controller] File not found on disk: ${filePath}`);
+            return res.status(404).json({ message: 'File not found on server' });
+        }
+
+        // Set appropriate headers
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+
+        // Stream file to response
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+
+    } catch (error) {
+        console.error('❌ [OGI Controller] Download Error:', error);
+        res.status(500).json({ message: 'Failed to download attachment', error: error.message });
     }
 };
