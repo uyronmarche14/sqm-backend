@@ -13,13 +13,16 @@ export class AuthController {
                 sameSite: 'strict',
                 maxAge: 7 * 24 * 60 * 60 * 1000, // 7 Days
             });
-            // Send Access Token in the JSON body
+            // Send Exact Legacy Payload Shape
             res.status(200).json({
-                status: 'success',
-                data: {
-                    user: result.user,
-                    accessToken: result.tokens.accessToken,
-                },
+                success: result.success,
+                message: result.message,
+                isSupplier: result.isSupplier,
+                userData: result.userData,
+                accessToken: result.tokens.accessToken,
+                mustChangePassword: result.mustChangePassword,
+                userMenu: result.userMenu,
+                accessibleForms: result.accessibleForms
             });
         }
         catch (error) {
@@ -29,7 +32,7 @@ export class AuthController {
     /**
      * Handles logging out by clearing the HttpOnly cookie
      */
-    async logout(req, res, next) {
+    async logout(_req, res, next) {
         try {
             res.clearCookie('refreshToken');
             res.status(200).json({

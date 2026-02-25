@@ -20,6 +20,23 @@ export class FiveM1EController {
   }
 
   /**
+   * Fetch all 5M1E Applications
+   */
+  async getAllApplications(req: Request, res: Response, next: NextFunction) {
+    try {
+      const status = req.query.status as string | undefined;
+      const records = await fiveM1EService.getAllApplications(status);
+      
+      res.status(200).json({
+        success: true,
+        data: records
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Fetch a specific Application by its Control Number
    */
   async getApplication(req: Request, res: Response, next: NextFunction) {

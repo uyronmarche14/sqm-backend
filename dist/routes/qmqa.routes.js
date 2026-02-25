@@ -2,6 +2,8 @@
  * QMQA Routes
  * HTTP endpoint definitions for QMQA module with validation middleware
  */
+// @ts-nocheck
+// Legacy Route File - To be refactored to TS in Phase 3
 import express from 'express';
 import * as qmqaController from '../controllers/qmqa.controller.js';
 import { authenticateToken } from '../middleware/auth.middleware.js';

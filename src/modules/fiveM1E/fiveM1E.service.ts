@@ -62,6 +62,26 @@ export class FiveM1EService {
   }
 
   /**
+   * Retrieves all 5M1E Applications
+   */
+  async getAllApplications(status?: string) {
+    const records = await fiveM1ERepository.findAllWithApproval(status);
+    
+    return records.map(record => {
+      const dto = SmartMapper.toDTO(record as unknown as FiveM1EApplicationTable, applicationSchema);
+      return {
+        ...dto,
+        id: record.ID,
+        control_no: record.ControlNo,
+        status: record.approval_status,
+        mpd_pic: record.mpd_pic,
+        mpd_approver: record.mpd_approver,
+        created_at: record.CreateDate
+      };
+    });
+  }
+
+  /**
    * Retrieves a 5M1E Application with its Status
    */
   async getApplication(controlNo: string) {
@@ -93,11 +113,17 @@ export class FiveM1EService {
       throw new NotFoundError(`5M1E Application ${controlNo} not found`);
     }
 
+    // 1. Map and update Application table fields (if any)
     const updateDbData = SmartMapper.toDB(data, applicationSchema) as FiveM1EAppUpdate;
     
-    // Only execute update if there are fields to change
     if (Object.keys(updateDbData).length > 0) {
       await fiveM1ERepository.updateByControlNo(controlNo, updateDbData);
+    }
+
+    // 2. Update Approval table status (if status is provided)
+    if (data.status) {
+      console.log(`[5M1E] Updating approval status for ${existing.ControlNo}: ${data.status}`);
+      await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, data.status);
     }
     
     return {

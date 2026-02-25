@@ -52,6 +52,13 @@ app.get('/health', async (_req: Request, res: Response) => {
   });
 });
 
+import mnrRoutes from './modules/mnr/mnr.routes.js';
+import sqprRoutes from './modules/sqpr/sqpr.routes.js';
+import sqmpRoutes from './modules/sqmp/sqmp.routes.js';
+import npiRoutes from './modules/npi/npi.routes.js';
+import ogiRoutes from './modules/ogi/ogi.routes.js';
+import qmqaRoutes from './modules/qmqa/qmqa.routes.js';
+
 // ==========================================
 // 3. Routes (To be modularized)
 // ==========================================
@@ -59,6 +66,12 @@ app.use('/api/5m1e', fiveM1ERoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/master', masterDataRoutes);
+app.use('/api/mnr', mnrRoutes);
+app.use('/api/sqpr', sqprRoutes);
+app.use('/api/sqmp', sqmpRoutes);
+app.use('/api/npi', npiRoutes);
+app.use('/api/ogi', ogiRoutes);
+app.use('/api/qmqa', qmqaRoutes);
 
 // ==========================================
 // 4. Error Handling

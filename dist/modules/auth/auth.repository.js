@@ -4,13 +4,14 @@ export class AuthRepository extends BaseRepository {
         super('USERS');
     }
     /**
-     * Retrieves a User by their exact username.
-     * Fully Type-Safe query on the USERS table.
+     * Retrieves a User by their exact email, joining their role name.
      */
-    async findByUsername(username) {
+    async findByEmail(email) {
         return await this.getQuery()
-            .selectAll()
-            .where('username', '=', username)
+            .leftJoin('ROLES', 'ROLES.role_id', 'USERS.role_id')
+            .selectAll('USERS')
+            .select('ROLES.role_name')
+            .where('email', '=', email)
             .executeTakeFirst();
     }
     // NOTE: If your users are authenticated against AD (Active Directory), 
@@ -19,7 +20,7 @@ export class AuthRepository extends BaseRepository {
     /**
      * Updates the User's last login date or refresh token (if stored in DB)
      */
-    async updateUserToken(userId, refreshToken) {
+    async updateUserToken(_userId, _refreshToken) {
         // Implement token saving logic if storing in DB for revoking later.
         // Example: await db.updateTable('USERS').set({ refresh_token: refreshToken }).where('user_id', '=', userId).execute();
     }

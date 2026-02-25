@@ -4,7 +4,7 @@ import { UnauthorizedError } from '../errors/AppError.js';
  * Middleware: Requires a valid Access Token to proceed
  * Checks both Authorization header (Bearer) and Cookies (for browser clients)
  */
-export const requireAuth = (req, res, next) => {
+export const requireAuth = (req, _res, next) => {
     try {
         let token;
         // 1. Check Authorization Header

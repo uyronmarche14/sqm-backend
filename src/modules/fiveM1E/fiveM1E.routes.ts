@@ -12,6 +12,15 @@ const router = express.Router();
 router.use(requireAuth);
 
 /**
+ * @route   GET /api/5m1e
+ * @desc    Retrieve all 5M1E Records
+ */
+router.get(
+  '/', 
+  fiveM1EController.getAllApplications
+);
+
+/**
  * @route   POST /api/5m1e
  * @desc    Create a new 5M1E Record
  */
