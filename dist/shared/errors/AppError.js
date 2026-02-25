@@ -1,0 +1,43 @@
+// ============================================================================
+// Global Error Infrastructure
+// ============================================================================
+export class AppError extends Error {
+    statusCode;
+    status;
+    isOperational;
+    constructor(message, statusCode) {
+        super(message);
+        this.statusCode = statusCode;
+        this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
+        this.isOperational = true;
+        // Capture stack trace, excluding constructor call
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+export class NotFoundError extends AppError {
+    constructor(message = 'Resource not found') {
+        super(message, 404);
+    }
+}
+export class BadRequestError extends AppError {
+    constructor(message = 'Invalid request data') {
+        super(message, 400);
+    }
+}
+export class ValidationError extends AppError {
+    errors; // Store Zod format errors
+    constructor(errors, message = 'Validation failed') {
+        super(message, 400);
+        this.errors = errors;
+    }
+}
+export class UnauthorizedError extends AppError {
+    constructor(message = 'You are not authorized') {
+        super(message, 401);
+    }
+}
+export class ForbiddenError extends AppError {
+    constructor(message = 'You do not have permission') {
+        super(message, 403);
+    }
+}
