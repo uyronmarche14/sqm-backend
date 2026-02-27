@@ -124,7 +124,7 @@ export class SqmpController {
 
       // Attempt to look for it from db pool
       // @ts-ignore
-      const { db } = await import('../../config/db.js');
+      const { db } = await import('../../shared/infrastructure/db.js');
       
       let match = await db.selectFrom('SQMP_DOCUMENT').select('file_name').where('sqmp_document_id', '=', attachmentId).executeTakeFirst();
       if (!match) {

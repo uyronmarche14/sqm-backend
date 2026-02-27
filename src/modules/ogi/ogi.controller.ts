@@ -71,7 +71,7 @@ export class OgiController {
       if (!attachmentId) throw new Error('Attachment ID is required');
 
       // @ts-ignore
-      const { db } = await import('../../config/db.js');
+      const { db } = await import('../../shared/infrastructure/db.js');
       
       const match = await db.selectFrom('OGI_ATTACHMENT').select('file_name').where('ogi_attachment_id', '=', attachmentId).executeTakeFirst();
       if (!match) return res.status(404).json({ error: 'Attachment not found' });

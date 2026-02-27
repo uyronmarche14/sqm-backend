@@ -58,7 +58,7 @@ export class NpiController {
   async getStats(_req: Request, res: Response, next: NextFunction) {
       try {
           // @ts-ignore
-          const { db } = await import('../../config/db.js');
+          const { db } = await import('../../shared/infrastructure/db.js');
           // @ts-ignore
           const stats = await db.selectFrom('NPI_LOTS')
               .select(['request_status as status', db.fn.count('npi_lot_id').as('count')])
@@ -89,7 +89,7 @@ export class NpiController {
 
       // Attempt to look for it from db pool
       // @ts-ignore
-      const { db } = await import('../../config/db.js');
+      const { db } = await import('../../shared/infrastructure/db.js');
       
       const match = await db.selectFrom('NPI_ATTACHMENT').select('file_name').where('npi_attachment_id', '=', attachmentId).executeTakeFirst();
       
