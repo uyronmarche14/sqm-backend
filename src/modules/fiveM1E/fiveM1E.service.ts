@@ -117,10 +117,13 @@ export class FiveM1EService {
       await fiveM1ERepository.insertAttachments(cn, data.attachments);
     }
     if (data.action_items && data.action_items.length > 0) {
-      await fiveM1ERepository.insertActionItems(cn, data.action_items);
+      await fiveM1ERepository.replaceActionItems(cn, data.action_items);
     }
     if (data.check_items && data.check_items.length > 0) {
-      await fiveM1ERepository.insertCheckItems(cn, data.check_items);
+      await fiveM1ERepository.replaceCheckItems(cn, data.check_items);
+    }
+    if (data.status_remarks && data.status_remarks.length > 0) {
+      await fiveM1ERepository.replaceStatusRemarks(cn, data.status_remarks);
     }
 
     return {
@@ -168,11 +171,12 @@ export class FiveM1EService {
     
     // Fetch child tables
     const cn = record.ControlNo;
-    const [parts, attachments, actionItems, checkItems] = await Promise.all([
+    const [parts, attachments, actionItems, checkItems, statusRemarks] = await Promise.all([
       fiveM1ERepository.findParts(cn),
       fiveM1ERepository.findAttachments(cn),
       fiveM1ERepository.findActionItems(cn),
       fiveM1ERepository.findCheckItems(cn),
+      fiveM1ERepository.findStatusRemarks(cn),
     ]);
 
     return {
@@ -198,13 +202,22 @@ export class FiveM1EService {
         attribute_1: a.Attribute1, attribute_2: a.Attribute2,
       })),
       action_items: actionItems.map((ai: any) => ({
-        id: ai.ID, action_item: ai.ActionItem, pic: ai.PIC,
-        first_target_dt: ai.FirstTargetDt,
+        id: ai.ID, action_item: ai.ActionItem, pic: ai.PIC, pic_name: ai.PICName,
+        first_target_dt: ai.FirstTargetDt, second_target_dt: ai.SecondTargetDt, third_target_dt: ai.ThirdTargetDt,
         verification_result: ai.VerificationResult, remarks: ai.Remarks,
+        attribute_01: ai.Attribute01, attribute_02: ai.Attribute02, attribute_03: ai.Attribute03,
+        attribute_04: ai.Attribute04, attribute_05: ai.Attribute05,
       })),
       check_items: checkItems.map((ci: any) => ({
         id: ci.ID, check_item: ci.CheckItem, judgement: ci.Judgement,
         remarks: ci.Remarks, attribute_1: ci.Attribute1, attribute_2: ci.Attribute2,
+        attribute_3: ci.Attribute3, attribute_4: ci.Attribute4, attribute_5: ci.Attribute5,
+      })),
+      status_remarks: statusRemarks.map((sr: any) => ({
+        id: sr.ID, remarks: sr.Remarks, remark_by: sr.RemarkBy, status: sr.Status,
+        create_date: sr.CreateDate,
+        attribute1: sr.attribute1, attribute2: sr.attribute2, attribute3: sr.attribute3,
+        attribute4: sr.attribute4, attribute5: sr.attribute5,
       })),
     };
   }
@@ -261,10 +274,14 @@ export class FiveM1EService {
     if (data.check_items) {
       await fiveM1ERepository.replaceCheckItems(cn, data.check_items);
     }
+    if (data.status_remarks) {
+      await fiveM1ERepository.replaceStatusRemarks(cn, data.status_remarks);
+    }
     
     return {
       success: true,
-      message: 'Application updated successfully'
+      message: 'Application updated successfully',
+      data: { controlNo }
     };
   }
 
@@ -287,7 +304,7 @@ export class FiveM1EService {
     await fiveM1ERepository.deleteApproval(cn);
     await fiveM1ERepository.deleteByControlNo(cn);
 
-    return { success: true, message: 'Application deleted successfully' };
+    return { success: true, message: 'Application deleted successfully', data: { controlNo } };
   }
 
   /**
@@ -306,7 +323,7 @@ export class FiveM1EService {
       ModifiedDate: new Date(),
       ModifiedBy: userId,
     });
-    return { success: true, message: 'Application submitted successfully' };
+    return { success: true, message: 'Application submitted successfully', data: { controlNo } };
   }
 
   /**
@@ -321,7 +338,7 @@ export class FiveM1EService {
       ModifiedBy: userId,
       ...(remarks ? { ApproverRemarks: remarks } : {}),
     });
-    return { success: true, message: 'Application approved successfully' };
+    return { success: true, message: 'Application approved successfully', data: { controlNo } };
   }
 
   /**
@@ -336,7 +353,7 @@ export class FiveM1EService {
       RejectedBy: userId,
       ...(remarks ? { RejectedRemarks: remarks } : {}),
     });
-    return { success: true, message: 'Application rejected successfully' };
+    return { success: true, message: 'Application rejected successfully', data: { controlNo } };
   }
 
   /**
@@ -350,7 +367,7 @@ export class FiveM1EService {
       ModifiedDate: new Date(),
       ModifiedBy: userId,
     });
-    return { success: true, message: 'Application released successfully' };
+    return { success: true, message: 'Application released successfully', data: { controlNo } };
   }
 }
 

@@ -1,7 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { npiService } from './npi.service.js';
 import { NpiCreateSchema, NpiUpdateSchema, NpiIdParamSchema, NpiActionSchema } from './npi.schema.js';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
+import { successResponse, createResponse } from '../../shared/utils/api-response.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UPLOAD_DIR = path.join(__dirname, '../../../uploads/npi');
 
 export class NpiController {
   
@@ -96,8 +103,7 @@ export class NpiController {
       if (!match) return res.status(404).json({ error: 'Attachment not found' });
 
       const fs = await import('fs');
-      const path = await import('path');
-      const filePath = path.join(process.cwd(), 'uploads/npi', match.file_name);
+      const filePath = path.join(UPLOAD_DIR, match.file_name);
       
       if (!fs.existsSync(filePath)) {
           return res.status(404).json({ error: 'File not found on disk' });

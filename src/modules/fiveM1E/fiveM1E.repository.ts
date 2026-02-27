@@ -262,6 +262,72 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     await db.deleteFrom('TBL_5M1E_CheckItems').where('ControlNo', '=', controlNo).execute();
     await this.insertCheckItems(controlNo, items);
   }
+
+  // =========================================================================
+  // Child Table: Action Item Attachments (TBL_5M1E_AI_Attachment)
+  // =========================================================================
+
+  async insertActionItemAttachments(actionItemId: number, attachments: Array<{ file_name?: string; attribute1?: string; attribute2?: string }>) {
+    const now = new Date();
+    for (const att of attachments) {
+      if (!att.file_name) continue;
+      await db.insertInto('TBL_5M1E_AI_Attachment').values({
+        ChkItemID: actionItemId,
+        FileName: att.file_name,
+        attribute1: att.attribute1 || null,
+        attribute2: att.attribute2 || null,
+        CreateDate: now,
+      } as any).execute();
+    }
+  }
+
+  // =========================================================================
+  // Child Table: Check Item Attachments (TBL_5M1E_CI_Attachment)
+  // =========================================================================
+
+  async insertCheckItemAttachments(checkItemId: number, attachments: Array<{ file_name?: string; attribute1?: string; attribute2?: string }>) {
+    const now = new Date();
+    for (const att of attachments) {
+      if (!att.file_name) continue;
+      await db.insertInto('TBL_5M1E_CI_Attachment').values({
+        ChkItemID: checkItemId,
+        FileName: att.file_name,
+        attribute1: att.attribute1 || null,
+        attribute2: att.attribute2 || null,
+        CreateDate: now,
+      } as any).execute();
+    }
+  }
+
+  // =========================================================================
+  // Child Table: Status Remarks (TBL_5M1E_Status_Remarks)
+  // =========================================================================
+
+  async findStatusRemarks(controlNo: string) {
+    return await db
+      .selectFrom('TBL_5M1E_Status_Remarks')
+      .selectAll()
+      .where('ControlNo', '=', controlNo)
+      .orderBy('CreateDate', 'desc')
+      .execute();
+  }
+
+  async insertStatusRemark(controlNo: string, remark: { remarks?: string; remark_by: string; status: string }) {
+    await db.insertInto('TBL_5M1E_Status_Remarks').values({
+      ControlNo: controlNo,
+      Remarks: remark.remarks || null,
+      RemarkBy: remark.remark_by,
+      Status: remark.status,
+      CreateDate: new Date(),
+    } as any).execute();
+  }
+
+  async replaceStatusRemarks(controlNo: string, remarks: Array<{ remarks?: string; remark_by: string; status: string; create_date?: string }>) {
+    await db.deleteFrom('TBL_5M1E_Status_Remarks').where('ControlNo', '=', controlNo).execute();
+    for (const remark of remarks) {
+      await this.insertStatusRemark(controlNo, remark);
+    }
+  }
 }
 
 export const fiveM1ERepository = new FiveM1ERepository();

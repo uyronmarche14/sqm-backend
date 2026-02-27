@@ -1,6 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { sqmpService } from './sqmp.service.js';
 import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema } from './sqmp.schema.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UPLOAD_DIR = path.join(__dirname, '../../../uploads/sqmp');
 
 export class SqmpController {
   async getAll(_req: Request, res: Response, next: NextFunction) {
@@ -134,8 +140,7 @@ export class SqmpController {
       if (!match) return res.status(404).json({ error: 'Attachment not found' });
 
       const fs = await import('fs');
-      const path = await import('path');
-      const filePath = path.join(process.cwd(), 'uploads/sqmp', match.file_name);
+      const filePath = path.join(UPLOAD_DIR, match.file_name);
       
       if (!fs.existsSync(filePath)) {
           return res.status(404).json({ error: 'File not found on disk' });

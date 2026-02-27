@@ -19,10 +19,28 @@ const ActionItemSchema = z.object({
   id: z.string().optional(),
   action_item: z.string().optional(),
   pic: z.string().optional(),
+  pic_name: z.string().optional(),
   first_target_dt: z.string().optional(),
+  second_target_dt: z.string().optional(),
+  third_target_dt: z.string().optional(),
   verification_result: z.string().optional(),
   remarks: z.string().optional(),
   create_date: z.string().optional(),
+  attribute_01: z.string().optional(),
+  attribute_02: z.string().optional(),
+  attribute_03: z.string().optional(),
+  attribute_04: z.string().optional(),
+  attribute_05: z.string().optional(),
+  // Action item attachments
+  attachments: z.array(z.object({
+    id: z.string().optional(),
+    file_name: z.string(),
+    attribute1: z.string().optional(),
+    attribute2: z.string().optional(),
+    attribute3: z.string().optional(),
+    attribute4: z.string().optional(),
+    attribute5: z.string().optional(),
+  })).optional(),
 });
 
 const CheckItemSchema = z.object({
@@ -32,7 +50,20 @@ const CheckItemSchema = z.object({
   remarks: z.string().optional(),
   attribute_1: z.string().optional(),
   attribute_2: z.string().optional(),
+  attribute_3: z.string().optional(),
+  attribute_4: z.string().optional(),
+  attribute_5: z.string().optional(),
   create_date: z.string().optional(),
+  // Check item attachments
+  attachments: z.array(z.object({
+    id: z.string().optional(),
+    file_name: z.string(),
+    attribute1: z.string().optional(),
+    attribute2: z.string().optional(),
+    attribute3: z.string().optional(),
+    attribute4: z.string().optional(),
+    attribute5: z.string().optional(),
+  })).optional(),
 });
 
 // ============================================================================
@@ -134,6 +165,28 @@ export const CreateFiveM1ESchema = z.object({
     qa_checker_id: z.string().optional(),
     qa_checker_name: z.string().optional(),
     qa_checker_dt_aprd: z.string().optional(),
+    qa_checker_status: z.union([z.boolean(), z.number()]).optional(),
+
+    // Final Approver
+    fa_status: z.string().optional(),
+
+    // Rejection
+    rejected_by: z.string().optional(),
+    rejected_date: z.string().optional(),
+
+    // --- Status Remarks History ---
+    status_remarks: z.array(z.object({
+      id: z.string().optional(),
+      remarks: z.string().optional(),
+      remark_by: z.string(),
+      status: z.string(),
+      create_date: z.string().optional(),
+      attribute1: z.string().optional(),
+      attribute2: z.string().optional(),
+      attribute3: z.string().optional(),
+      attribute4: z.string().optional(),
+      attribute5: z.string().optional(),
+    })).optional(),
 
     // --- Child Tables ---
     parts: z.array(PartSchema).optional(),

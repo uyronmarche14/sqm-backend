@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { npiRepository } from './npi.repository.js';
+import { userRepository } from '../users/user.repository.js';
 import { NPICreationInput, NPIUpdateInput } from './npi.schema.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
@@ -22,6 +23,15 @@ export class NpiService {
       }
     }
     return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+  }
+
+  private async resolveCcUserId(cc: { user_id?: string; email?: string }): Promise<string | null> {
+    if (cc.user_id) return cc.user_id;
+    if (cc.email) {
+      const user = await userRepository.findByEmail(cc.email);
+      return user?.user_id || null;
+    }
+    return null;
   }
 
   private parseDate(d?: Date | string | null): Date | null {
@@ -189,13 +199,15 @@ export class NpiService {
         }
       }
 
-      // 6. CC List
+      // 6. CC List - resolve email to user_id if needed
       if (payload.cc_list && payload.cc_list.length > 0) {
         for (const cc of payload.cc_list) {
+          const resolvedUserId = await this.resolveCcUserId(cc);
+          if (!resolvedUserId) continue; // Skip if can't resolve
           await trx.insertInto('NPI_CC').values({
             npi_cc_id: uuidv4(),
             npi_lot_id: npiId,
-            user_id: cc.user_id,
+            user_id: resolvedUserId,
             last_update: now,
             updateby: effectiveUserId
           }).execute();
@@ -350,14 +362,16 @@ export class NpiService {
           }
       }
 
-      // 6. CC List
+      // 6. CC List - resolve email to user_id if needed
       if (payload.cc_list !== undefined) {
          await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', existing.record.npi_lot_id).execute();
          for (const cc of payload.cc_list) {
+            const resolvedUserId = await this.resolveCcUserId(cc);
+            if (!resolvedUserId) continue; // Skip if can't resolve
             await trx.insertInto('NPI_CC').values({
               npi_cc_id: uuidv4(),
               npi_lot_id: existing.record.npi_lot_id,
-              user_id: cc.user_id,
+              user_id: resolvedUserId,
               last_update: now,
               updateby: effectiveUserId
             }).execute();

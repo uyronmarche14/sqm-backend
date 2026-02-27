@@ -36,8 +36,13 @@ const NpiDimensionCategorySchema = z.object({
 });
 
 const NpiCcListSchema = z.object({
-  user_id: z.string().uuid()
-});
+  user_id: z.string().uuid().optional(),
+  email: z.string().email().optional()
+}).transform((data) => ({
+  // Return whichever is provided - service layer will resolve email to user_id
+  user_id: data.user_id,
+  email: data.email
+}));
 
 // A helper for handling JSON strings from FormData or actual arrays
 const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>

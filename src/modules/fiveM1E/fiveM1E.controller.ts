@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { fiveM1EService } from './fiveM1E.service.js';
+import { successResponse } from '../../shared/utils/api-response.js';
 
 export class FiveM1EController {
   
@@ -13,7 +14,7 @@ export class FiveM1EController {
       
       const result = await fiveM1EService.createApplication(req.body, userId);
       
-      res.status(201).json(result);
+      res.status(201).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
     }
@@ -27,10 +28,7 @@ export class FiveM1EController {
       const status = req.query.status as string | undefined;
       const records = await fiveM1EService.getAllApplications(status);
       
-      res.status(200).json({
-        success: true,
-        data: records
-      });
+      res.status(200).json(successResponse(records));
     } catch (error) {
       next(error);
     }
@@ -45,10 +43,7 @@ export class FiveM1EController {
       
       const record = await fiveM1EService.getApplication(id);
       
-      res.status(200).json({
-        success: true,
-        data: record
-      });
+      res.status(200).json(successResponse(record));
     } catch (error) {
       next(error);
     }
@@ -63,7 +58,7 @@ export class FiveM1EController {
       
       const result = await fiveM1EService.updateApplication(id, req.body);
       
-      res.status(200).json(result);
+      res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
     }
@@ -76,7 +71,7 @@ export class FiveM1EController {
     try {
       const id = req.params.id as string;
       const result = await fiveM1EService.deleteApplication(id);
-      res.status(200).json(result);
+      res.status(200).json(successResponse({ id }, result.message));
     } catch (error) {
       next(error);
     }
@@ -90,7 +85,7 @@ export class FiveM1EController {
       const id = req.params.id as string;
       const userId = req.user!.userId;
       const result = await fiveM1EService.submitApplication(id, userId);
-      res.status(200).json(result);
+      res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
     }
@@ -104,7 +99,7 @@ export class FiveM1EController {
       const id = req.params.id as string;
       const userId = req.user!.userId;
       const result = await fiveM1EService.approveApplication(id, userId, req.body?.remarks);
-      res.status(200).json(result);
+      res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
     }
@@ -118,7 +113,7 @@ export class FiveM1EController {
       const id = req.params.id as string;
       const userId = req.user!.userId;
       const result = await fiveM1EService.rejectApplication(id, userId, req.body?.remarks);
-      res.status(200).json(result);
+      res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
     }
@@ -132,7 +127,7 @@ export class FiveM1EController {
       const id = req.params.id as string;
       const userId = req.user!.userId;
       const result = await fiveM1EService.releaseApplication(id, userId);
-      res.status(200).json(result);
+      res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
     }
