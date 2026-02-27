@@ -20,23 +20,18 @@ export class BaseRepository<TableName extends keyof Database> {
    * Note: This is an example generic method. In practice, Kysely expects explicit column names,
    * so specific repositories often handle exact ID mapping.
    */
-  async findById(columnName: keyof Database[TableName] & string, id: any) {
-    return (await this.getQuery()
-      .selectAll()
-      // @ts-ignore - Kysely generic typings can be strict here, but we know it's a valid column
-      .where(columnName, '=', id)
-      .executeTakeFirst()) || null;
+  async findById(columnName: keyof Database[TableName] & string, id: string | number): Promise<Database[TableName] | null> {
+    const query = this.getQuery().selectAll();
+    // Cast query to any strictly for the where compilation to avoid Kysely generic union overload limits
+    return (await (query as any).where(columnName, '=', id).executeTakeFirst()) || null;
   }
 
   /**
    * Delete a record by a primary key column
    */
-  async deleteById(columnName: keyof Database[TableName] & string, id: any) {
-     return await db
-      .deleteFrom(this.tableName)
-      // @ts-ignore
-      .where(columnName, '=', id)
-      .executeTakeFirst();
+  async deleteById(columnName: keyof Database[TableName] & string, id: string | number) {
+    const query = db.deleteFrom(this.tableName);
+    return await (query as any).where(columnName, '=', id).executeTakeFirst();
   }
 
   // Derived repos will implement insert/update logic using fully-typed `.insertInto()` methods

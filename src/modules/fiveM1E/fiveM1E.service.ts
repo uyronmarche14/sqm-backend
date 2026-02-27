@@ -3,6 +3,7 @@ import { CreateFiveM1EInput, UpdateFiveM1EInput } from './fiveM1E.schema.js';
 import { SmartMapper, MapperSchema } from '../../shared/infrastructure/SmartMapper.js';
 import { FiveM1EApplicationTable, NewFiveM1EApp, FiveM1EAppUpdate } from '../../shared/infrastructure/db.types.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * 5M1E Domain Service
@@ -39,7 +40,7 @@ export class FiveM1EService {
    */
   async createApplication(data: CreateFiveM1EInput, userId: string) {
     // 1. Generate temp control number (In production, a sequence system replaces this)
-    const controlNo = '5M-' + process.hrtime()[1]; 
+    const controlNo = '5M-' + uuidv4().split('-')[0].toUpperCase(); 
 
     // 2. Automap Frontend Fields to DB Columns using SmartMapper
     const dbData = SmartMapper.toDB(data, applicationSchema) as NewFiveM1EApp;
