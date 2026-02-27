@@ -2,9 +2,25 @@ import { authRepository } from './auth.repository.js';
 import { LoginInput } from './auth.schema.js';
 import { UnauthorizedError } from '../../shared/errors/AppError.js';
 import { verifyPassword } from '../../shared/utils/hash.js';
-import { generateAccessToken, generateRefreshToken } from '../../shared/utils/jwt.js';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 
 export class AuthService {
+  async refreshTokens(refreshToken: string) {
+    const decoded = verifyRefreshToken(refreshToken);
+    
+    const payload = {
+      userId: decoded.userId,
+      roleId: decoded.roleId,
+    };
+    
+    const accessToken = generateAccessToken(payload);
+    const newRefreshToken = generateRefreshToken(payload);
+    
+    return {
+      accessToken,
+      refreshToken: newRefreshToken
+    };
+  }
   async login(input: LoginInput) {
     // 1. Find User (Fully Typed Result)
     const user = await authRepository.findByEmail(input.email);

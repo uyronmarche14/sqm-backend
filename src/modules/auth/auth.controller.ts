@@ -36,6 +36,37 @@ export class AuthController {
   }
 
   /**
+   * Handles refreshing the access token using the HttpOnly Refresh Token cookie
+   */
+  async refresh(req: Request, res: Response, next: NextFunction) {
+    try {
+      const token = req.cookies?.refreshToken || req.body?.refreshToken;
+      
+      if (!token) {
+        // Here we could throw UnauthorizedError, but inline is fine to avoid importing AppError
+        return res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
+      }
+      
+      const result = await authService.refreshTokens(token);
+      
+      res.cookie('refreshToken', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+      
+      return res.status(200).json({
+        success: true,
+        accessToken: result.accessToken
+      });
+    } catch (error) {
+      res.clearCookie('refreshToken');
+      return next(error);
+    }
+  }
+
+  /**
    * Handles logging out by clearing the HttpOnly cookie
    */
   async logout(_req: Request, res: Response, next: NextFunction) {
