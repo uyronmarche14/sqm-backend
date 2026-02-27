@@ -214,7 +214,7 @@ export class NpiService {
         }
       }
 
-      return { success: true, id: npiId, message: 'Record created successfully' };
+      return { success: true, data: { id: npiId }, message: 'Record created successfully' };
     });
   }
 
@@ -378,7 +378,7 @@ export class NpiService {
           }
       }
 
-      return { success: true, message: 'Record updated successfully' };
+      return { success: true, data: { id }, message: 'Record updated successfully' };
     });
   }
 
@@ -398,7 +398,7 @@ export class NpiService {
       await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', npiLotId).execute();
       await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', npiLotId).execute();
       await trx.deleteFrom('NPI_LOTS').where('npi_lot_id', '=', npiLotId).execute();
-      return { success: true, message: 'NPI Record deleted successfully' };
+      return { success: true, data: { id }, message: 'NPI Record deleted successfully' };
     });
   }
 }

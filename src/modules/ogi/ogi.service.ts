@@ -146,7 +146,7 @@ export class OgiService {
         }
       }
 
-      return { success: true, id: recordId, message: 'OGI Record created successfully' };
+      return { success: true, data: { id: recordId }, message: 'OGI Record created successfully' };
     });
   }
 
@@ -223,7 +223,7 @@ export class OgiService {
           }
       }
 
-      return { success: true, message: 'OGI Record updated successfully' };
+      return { success: true, data: { id }, message: 'OGI Record updated successfully' };
     });
   }
   /**
@@ -254,7 +254,7 @@ export class OgiService {
         .execute();
 
       console.log(`[OGI] submitRecord: SUCCESS — status changed to SU for ogi_id=${existing.record.ogi_id}`);
-      return { success: true, message: 'OGI Record submitted successfully' };
+      return { success: true, data: { id: existing.record.ogi_id }, message: 'OGI Record submitted successfully' };
     });
   }
   /**
@@ -270,7 +270,7 @@ export class OgiService {
       await trx.deleteFrom('OGI_LOTS').where('ogi_id', '=', ogiId).execute();
       await trx.deleteFrom('OGI_ATTACHMENT').where('ogi_id', '=', ogiId).execute();
       await trx.deleteFrom('OGI').where('ogi_id', '=', ogiId).execute();
-      return { success: true, message: 'OGI Record deleted successfully' };
+      return { success: true, data: { id }, message: 'OGI Record deleted successfully' };
     });
   }
 }

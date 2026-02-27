@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
+import { successResponse } from '../../shared/utils/api-response.js';
 
 export class OgiController {
   
   async getAll(_req: Request, res: Response, next: NextFunction) {
     try {
       const records = await ogiService.getAllRecords();
-      return res.json(records);
+      return res.json(successResponse(records));
     } catch (error) {
       console.error('[OGI] GET ALL error:', error);
       return next(error);
@@ -18,7 +19,7 @@ export class OgiController {
     try {
       const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
       const record = await ogiService.getRecordById(id);
-      return res.json(record);
+      return res.json(successResponse(record));
     } catch (error) {
       console.error('[OGI] GET BY ID error:', error);
       return next(error);
@@ -32,7 +33,7 @@ export class OgiController {
       const files = (req as any).files || [];
       
       const result = await ogiService.createRecord(payload, userId, files);
-      return res.status(201).json(result);
+      return res.status(201).json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] CREATE error:', error);
       return next(error);
@@ -47,7 +48,7 @@ export class OgiController {
       const files = (req as any).files || [];
 
       const result = await ogiService.updateRecord(id, payload, userId, files);
-      return res.json(result);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] UPDATE error:', error);
       return next(error);
@@ -59,7 +60,7 @@ export class OgiController {
           const siteId = req.query.siteId as string;
           if (!siteId) return res.status(400).json({ message: 'Site Code required' });
           const sequence = await ogiService.generateSequence(siteId);
-          return res.json({ sequence });
+          return res.json(successResponse({ sequence }));
       } catch (error) {
           return next(error);
       }
@@ -98,7 +99,7 @@ export class OgiController {
       
       console.log(`[OGI] SUBMIT called for id=${id}, userId=${userId}`);
       const result = await ogiService.submitRecord(id, userId);
-      return res.json(result);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] SUBMIT error:', error);
       return next(error);
@@ -109,7 +110,7 @@ export class OgiController {
     try {
       const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
       const result = await ogiService.deleteRecord(id);
-      return res.json(result);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] DELETE error:', error);
       return next(error);

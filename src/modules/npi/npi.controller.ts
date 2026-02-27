@@ -15,7 +15,7 @@ export class NpiController {
   async getAll(_req: Request, res: Response, next: NextFunction) {
     try {
       const records = await npiService.getAllRecords();
-      res.json(records);
+      res.json(successResponse(records));
     } catch (error) {
       console.error('[NPI] GET ALL error:', error);
       next(error);
@@ -26,7 +26,7 @@ export class NpiController {
     try {
       const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
       const record = await npiService.getRecordById(id);
-      res.json(record);
+      res.json(successResponse(record));
     } catch (error) {
       console.error('[NPI] GET BY ID error:', error);
       next(error);
@@ -40,7 +40,7 @@ export class NpiController {
       const files = (req as any).files || [];
       
       const result = await npiService.createRecord(payload, userId, files);
-      res.status(201).json(result);
+      res.status(201).json(createResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] CREATE error:', error);
       next(error);
@@ -55,7 +55,7 @@ export class NpiController {
       const files = (req as any).files || [];
 
       const result = await npiService.updateRecord(id, payload, userId, files);
-      res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] UPDATE error:', error);
       next(error);
@@ -72,7 +72,7 @@ export class NpiController {
               .groupBy('request_status')
               .execute();
 
-          res.json(stats);
+          res.json(successResponse(stats));
       } catch (error) {
           next(error);
       }
@@ -83,7 +83,7 @@ export class NpiController {
           const siteId = req.query.siteId as string;
           if (!siteId) return res.status(400).json({ message: 'Site Code required' });
           const sequence = await npiService.generateSequence(siteId);
-          return res.json({ sequence });
+          return res.json(successResponse({ sequence }));
       } catch (error) {
           return next(error);
       }
@@ -127,7 +127,7 @@ export class NpiController {
         status: WorkflowStatusEnum.SUBMITTED 
       }, userId, []);
       
-      res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] SUBMIT error:', error);
       next(error);
@@ -145,7 +145,7 @@ export class NpiController {
         approverRemarks: req.body?.remarks || undefined
       }, userId, []);
       
-      res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] APPROVE error:', error);
       next(error);
@@ -163,7 +163,7 @@ export class NpiController {
         approverRemarks: body?.remarks
       }, userId, []);
       
-      res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] REJECT error:', error);
       next(error);
@@ -174,7 +174,7 @@ export class NpiController {
     try {
       const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
       const result = await npiService.deleteRecord(id);
-      res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] DELETE error:', error);
       next(error);

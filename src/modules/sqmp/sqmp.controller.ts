@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sqmpService } from './sqmp.service.js';
 import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema } from './sqmp.schema.js';
+import { successResponse, createResponse } from '../../shared/utils/api-response.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,7 @@ export class SqmpController {
   async getAll(_req: Request, res: Response, next: NextFunction) {
     try {
       const records = await sqmpService.getAllRecords();
-      res.json({ data: records });
+      res.json(successResponse(records));
     } catch (error) {
       console.error('[SQMP] GET ALL error:', error);
       next(error);
@@ -23,10 +24,10 @@ export class SqmpController {
     try {
       const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
       const record = await sqmpService.getRecordById(id);
-      res.json({ data: record });
+      return res.json(successResponse(record));
     } catch (error) {
       console.error('[SQMP] GET BY ID error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -37,10 +38,10 @@ export class SqmpController {
       const files = (req as any).files || [];
       
       const result = await sqmpService.createRecord(payload, userId, files);
-      res.status(201).json(result);
+      return res.status(201).json(createResponse(result.data || { sqmp_id: result.sqmp_id }, result.message));
     } catch (error) {
       console.error('[SQMP] CREATE error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -52,10 +53,10 @@ export class SqmpController {
       const files = (req as any).files || [];
 
       const result = await sqmpService.updateRecord(id, payload, userId, files);
-      res.json(result);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP] UPDATE error:', error);
-      next(error);
+      return next(error);
     }
   }
 

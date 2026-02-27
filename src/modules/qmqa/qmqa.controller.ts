@@ -5,6 +5,7 @@ import {
   QmqaRecordCreateSchema, QmqaRecordUpdateSchema, 
   QmqaIdParamSchema, QmqaVerificationSchema
 } from './qmqa.schema.js';
+import { successResponse, createResponse } from '../../shared/utils/api-response.js';
 
 export class QmqaController {
   
@@ -14,10 +15,9 @@ export class QmqaController {
   async getAllSchedules(_req: Request, res: Response, next: NextFunction) {
     try {
       const records = await qmqaService.getAllSchedules();
-      return res.json({ data: records });
+      res.json(successResponse(records));
     } catch (error) {
-      console.error('[QMQA] GET ALL SCHEDULES error:', error);
-      return next(error);
+      next(error);
     }
   }
 
@@ -25,10 +25,9 @@ export class QmqaController {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
       const record = await qmqaService.getScheduleById(id);
-      return res.json({ data: record });
+      res.json(successResponse(record));
     } catch (error) {
-      console.error('[QMQA] GET SCHEDULE BY ID error:', error);
-      return next(error);
+      next(error);
     }
   }
 
@@ -38,10 +37,9 @@ export class QmqaController {
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       
       const result = await qmqaService.createSchedule(payload, userId);
-      return res.status(201).json(result);
+      res.status(201).json(createResponse(result.data || result, result.message));
     } catch (error) {
-      console.error('[QMQA] CREATE SCHEDULE error:', error);
-      return next(error);
+      next(error);
     }
   }
 
@@ -52,10 +50,9 @@ export class QmqaController {
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
 
       const result = await qmqaService.updateSchedule(id, payload, userId);
-      return res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
-      console.error('[QMQA] UPDATE SCHEDULE error:', error);
-      return next(error);
+      next(error);
     }
   }
 
@@ -63,10 +60,9 @@ export class QmqaController {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
       const result = await qmqaService.deleteSchedule(id);
-      return res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
-      console.error('[QMQA] DELETE SCHEDULE error:', error);
-      return next(error);
+      next(error);
     }
   }
 

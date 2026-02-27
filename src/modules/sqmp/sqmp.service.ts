@@ -142,7 +142,7 @@ export class SqmpService {
         }
       }
 
-      return { success: true, sqmp_id: sqmpId, message: 'Record created successfully' };
+      return { success: true, data: { sqmp_id: sqmpId }, message: 'Record created successfully' };
     });
   }
 
@@ -251,7 +251,7 @@ export class SqmpService {
           }
       }
 
-      return { success: true, message: 'Record updated successfully' };
+      return { success: true, data: { id }, message: 'Record updated successfully' };
     });
   }
 
@@ -264,7 +264,7 @@ export class SqmpService {
           await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
           await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
           await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-          return { success: true, message: 'Record deleted successfully' };
+          return { success: true, data: { id }, message: 'Record deleted successfully' };
       });
   }
 
@@ -287,7 +287,7 @@ export class SqmpService {
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
-      return { success: true, message: 'SQM Plan issued successfully' };
+      return { success: true, data: { id }, message: 'SQM Plan issued successfully' };
     });
   }
 
@@ -309,7 +309,7 @@ export class SqmpService {
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
-      return { success: true, message: 'SQM Plan cancelled successfully' };
+      return { success: true, data: { id }, message: 'SQM Plan cancelled successfully' };
     });
   }
 
@@ -331,7 +331,7 @@ export class SqmpService {
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
-      return { success: true, message: 'SQM Plan closed successfully' };
+      return { success: true, data: { id }, message: 'SQM Plan closed successfully' };
     });
   }
 }
