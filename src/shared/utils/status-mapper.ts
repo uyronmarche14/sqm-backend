@@ -41,6 +41,7 @@ export const mapStatusFromDB = (code: string): string => {
   const map: Record<string, string> = {
       'DR': 'DRAFT',
       'NW': 'NEW',
+      'PD': 'PENDING',
       'PN': 'PENDING',
       'SU': 'SUBMITTED',
       'AA': 'AAPPROVAL',

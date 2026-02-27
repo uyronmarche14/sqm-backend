@@ -61,22 +61,6 @@ export class MnrService {
       attention_id: r.attention_id,
       reference_no: r.reference_no,
       
-      mainDetails: {
-        mfgSites: r.site_id,
-        supplier: r.supplier_id,
-        model: r.model_id,
-        product: r.product_id,
-        mfgAreas: r.mfg_area_id,
-        category: r.defectcategory_id,
-        mnrType: r.mnrtype_id,
-        attention: r.attention_id,
-        reference: r.reference_no,
-        reportIssuance8D: r.report_issuance_8d === 1,
-        issueDate: r.issued_date,
-        initialReport: r.initial_report_date,
-        dueDate: r.due_date,
-      },
-      
       part_name: r.part_name,
       part_code: r.part_code,
       last_update: r.last_update,
