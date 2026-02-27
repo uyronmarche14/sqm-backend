@@ -21,7 +21,10 @@ export class UserRepository extends BaseRepository<'USERS'> {
   }
 
   async create(user: Insertable<Database['USERS']>) {
-    return await db.insertInto('USERS').values(user).returningAll().executeTakeFirstOrThrow();
+    // SQL Server doesn't support RETURNING clause - insert then select
+    await db.insertInto('USERS').values(user).execute();
+    // Fetch using user_id which is the primary key
+    return await db.selectFrom('USERS').selectAll().where('user_id', '=', user.user_id as string).executeTakeFirstOrThrow();
   }
 
   async createWithSupplier(
@@ -30,7 +33,9 @@ export class UserRepository extends BaseRepository<'USERS'> {
     supplierUser: Insertable<Database['SUPPLIERSUSER']>
   ) {
     return await db.transaction().execute(async (trx) => {
-      const createdUser = await trx.insertInto('USERS').values(user).returningAll().executeTakeFirstOrThrow();
+      // SQL Server doesn't support RETURNING clause - insert then select
+      await trx.insertInto('USERS').values(user).execute();
+      const createdUser = await trx.selectFrom('USERS').selectAll().where('user_id', '=', user.user_id as string).executeTakeFirstOrThrow();
       
       await trx.insertInto('SUPPLIERS').values(supplier).execute();
       await trx.insertInto('SUPPLIERSUSER').values(supplierUser).execute();
@@ -40,11 +45,12 @@ export class UserRepository extends BaseRepository<'USERS'> {
   }
 
   async update(id: string, updateData: Updateable<Database['USERS']>) {
-    return await db.updateTable('USERS')
+    // SQL Server doesn't support RETURNING clause - update then select
+    await db.updateTable('USERS')
       .set(updateData)
       .where('user_id', '=', id)
-      .returningAll()
-      .executeTakeFirstOrThrow();
+      .execute();
+    return await db.selectFrom('USERS').selectAll().where('user_id', '=', id).executeTakeFirstOrThrow();
   }
 
   async changePassword(id: string, passwordHash: string) {

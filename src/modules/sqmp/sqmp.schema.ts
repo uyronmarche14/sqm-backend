@@ -52,7 +52,7 @@ export const SqmpCreateSchema = z.object({
  */
 export const SqmpUpdateSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid SQMP ID format')
+    id: z.string().min(1, 'Invalid SQMP ID format')
   }),
   body: z.object({
     registration_date: z.string().datetime().or(z.date()).optional(),
@@ -96,7 +96,7 @@ export const SqmpUpdateSchema = z.object({
  */
 export const SqmpActionSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid SQMP ID format')
+    id: z.string().min(1, 'Invalid SQMP ID format')
   }),
   body: z.object({
     remarks: z.string().optional()
@@ -108,8 +108,8 @@ export const SqmpActionSchema = z.object({
  */
 export const SqmpIdParamSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid SQMP ID format'),
-    attachmentId: z.string().uuid('Invalid Attachment ID format').optional()
+    id: z.string().min(1, 'Invalid SQMP ID format'),
+    attachmentId: z.string().min(1, 'Invalid Attachment ID format').optional()
   })
 });
 

@@ -10,6 +10,18 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     super('TBL_5M1E_Application');
   }
 
+  /**
+   * Helper to fetch the next ID for a table lacking an identity column.
+   * This is a workaround for production SQL Server identity mismatch.
+   */
+  private async getNextId(trx: any, tableName: string): Promise<number> {
+    const result = await trx
+      .selectFrom(tableName)
+      .select(db.fn.max('ID').as('maxId'))
+      .executeTakeFirst();
+    return (Number(result?.maxId) || 0) + 1;
+  }
+
   // =========================================================================
   // Application + Approval Queries
   // =========================================================================
@@ -62,15 +74,59 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     approvalData: Record<string, unknown> = {}
   ) {
     return await db.transaction().execute(async (trx) => {
-      const newApp = await trx
+      // SQL Server doesn't support RETURNING clause - insert then select
+      // WORKAROUND: Manually fetch IDs for tables missing identity property
+      const nextAppId = await this.getNextId(trx, 'TBL_5M1E_Application');
+      const nextApprovalId = await this.getNextId(trx, 'TBL_5M1E_Approval');
+
+      const insertData = {
+        ID: nextAppId,
+        ControlNo: appData.ControlNo,
+        Title: appData.Title,
+        SupplierID: appData.SupplierID,
+        SupplierCN: appData.SupplierCN,
+        VendorID: appData.VendorID,
+        ItemID: appData.ItemID,
+        SiteID: appData.SiteID,
+        CommodityID: appData.CommodityID,
+        ModelID: appData.ModelID,
+        EngineerRemarks: appData.EngineerRemarks,
+        ReportNo: appData.ReportNo,
+        DateRegister: appData.DateRegister,
+        Class: appData.Class,
+        ClassType: appData.ClassType,
+        ImpactDate: appData.ImpactDate,
+        Attribute01: appData.Attribute01,
+        Attribute02: appData.Attribute02,
+        Attribute03: appData.Attribute03,
+        Attribute04: appData.Attribute04,
+        Attribute05: appData.Attribute05,
+        Attribute06: appData.Attribute06,
+        Attribute07: appData.Attribute07,
+        Attribute08: appData.Attribute08,
+        Attribute09: appData.Attribute09,
+        Attribute10: appData.Attribute10,
+        CreatedBy: appData.CreatedBy,
+        CreateDate: appData.CreateDate,
+        ModifiedDate: appData.ModifiedDate,
+      };
+      
+      await trx
         .insertInto('TBL_5M1E_Application')
-        .values(appData)
-        .returningAll()
+        .values(insertData)
+        .execute();
+
+      // Fetch the newly inserted record using ControlNo
+      const newApp = await trx
+        .selectFrom('TBL_5M1E_Application')
+        .selectAll()
+        .where('ControlNo', '=', appData.ControlNo)
         .executeTakeFirstOrThrow();
 
       await trx
         .insertInto('TBL_5M1E_Approval')
         .values({
+          ID: nextApprovalId,
           ControlNo: newApp.ControlNo,
           Status: approvalStatus,
           CreateDate: new Date(),
@@ -105,7 +161,24 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
       query = query.where('ControlNo', '=', idOrControlNo);
     }
 
-    return await query.returningAll().executeTakeFirst();
+    // SQL Server doesn't support RETURNING clause - update then select
+    await query.execute();
+
+    // Fetch the updated record
+    let selectQuery = db
+      .selectFrom('TBL_5M1E_Application')
+      .selectAll();
+
+    if (isNumeric(idOrControlNo)) {
+      selectQuery = selectQuery.where((eb: any) => eb.or([
+        eb('ControlNo', '=', idOrControlNo),
+        eb('ID', '=', parseInt(idOrControlNo, 10)),
+      ]));
+    } else {
+      selectQuery = selectQuery.where('ControlNo', '=', idOrControlNo);
+    }
+
+    return await selectQuery.executeTakeFirst();
   }
 
   async updateApprovalStatus(controlNo: string, status: string, extraFields?: Record<string, unknown>) {
@@ -155,7 +228,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   async insertParts(controlNo: string, parts: Array<{ part_id?: string }>) {
     for (const part of parts) {
       if (!part.part_id) continue;
+      // Manual TagID increment
+      const nextIdResult = await db.selectFrom('TBL_5M1E_PartsPerReport').select(db.fn.max('TagID').as('maxId')).executeTakeFirst();
+      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
       await db.insertInto('TBL_5M1E_PartsPerReport').values({
+        TagID: nextId,
         PartsTag: controlNo,
         part_id: part.part_id,
         DateAdded: new Date(),
@@ -184,7 +262,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     const now = new Date();
     for (const att of attachments) {
       if (!att.file_name) continue;
+      // Manual ID increment
+      const nextIdResult = await db.selectFrom('TBL_5M1E_Attachment').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
+      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
       await db.insertInto('TBL_5M1E_Attachment').values({
+        ID: nextId,
         ControlNo: controlNo,
         FileName: att.file_name,
         Attribute1: att.attribute_1 || null,
@@ -214,7 +297,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   async insertActionItems(controlNo: string, items: Array<{ action_item?: string; pic?: string; first_target_dt?: string; verification_result?: string; remarks?: string }>) {
     const now = new Date();
     for (const item of items) {
+      // Manual ID increment
+      const nextIdResult = await db.selectFrom('TBL_5M1E_ActionItems').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
+      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
       await db.insertInto('TBL_5M1E_ActionItems').values({
+        ID: nextId,
         ControlNo: controlNo,
         ActionItem: item.action_item || null,
         PIC: item.pic || null,
@@ -246,7 +334,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   async insertCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
     const now = new Date();
     for (const item of items) {
+      // Manual ID increment
+      const nextIdResult = await db.selectFrom('TBL_5M1E_CheckItems').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
+      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
       await db.insertInto('TBL_5M1E_CheckItems').values({
+        ID: nextId,
         ControlNo: controlNo,
         CheckItem: item.check_item || '',
         Judgement: item.judgement || '',
@@ -271,7 +364,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     const now = new Date();
     for (const att of attachments) {
       if (!att.file_name) continue;
+      // Manual ID increment
+      const nextIdResult = await db.selectFrom('TBL_5M1E_AI_Attachment').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
+      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
       await db.insertInto('TBL_5M1E_AI_Attachment').values({
+        ID: nextId,
         ChkItemID: actionItemId,
         FileName: att.file_name,
         attribute1: att.attribute1 || null,
@@ -289,7 +387,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     const now = new Date();
     for (const att of attachments) {
       if (!att.file_name) continue;
+      // Manual ID increment
+      const nextIdResult = await db.selectFrom('TBL_5M1E_CI_Attachment').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
+      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
       await db.insertInto('TBL_5M1E_CI_Attachment').values({
+        ID: nextId,
         ChkItemID: checkItemId,
         FileName: att.file_name,
         attribute1: att.attribute1 || null,
@@ -313,7 +416,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   }
 
   async insertStatusRemark(controlNo: string, remark: { remarks?: string; remark_by: string; status: string }) {
+    // Manual ID increment
+    const nextIdResult = await db.selectFrom('TBL_5M1E_Status_Remarks').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
+    const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+
     await db.insertInto('TBL_5M1E_Status_Remarks').values({
+      ID: nextId,
       ControlNo: controlNo,
       Remarks: remark.remarks || null,
       RemarkBy: remark.remark_by,
