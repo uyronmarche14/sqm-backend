@@ -26,3 +26,9 @@ Thumbs.db
 
 # Module specific
 uploads/
+
+# Build output
+dist/
+
+# Legacy code archive (reference only)
+.legacy/
