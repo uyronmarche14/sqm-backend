@@ -105,6 +105,17 @@ export class OgiController {
     }
   }
 
+  async delete(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
+      const result = await ogiService.deleteRecord(id);
+      return res.json(result);
+    } catch (error) {
+      console.error('[OGI] DELETE error:', error);
+      return next(error);
+    }
+  }
+
 }
 
 export const ogiController = new OgiController();

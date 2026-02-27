@@ -12,16 +12,26 @@ const NpiAttachmentSchema = z.object({
 const NpiVisualCategorySchema = z.object({
   defectclass_id: z.string().uuid(),
   defect_id: z.string().uuid(),
-  quantity: z.number().int().min(0)
+  quantity: z.coerce.number().int().min(0)
 });
 
 const NpiDataCategorySchema = z.object({
   partdatacategory_name: z.string(),
-  std_min: z.number(),
-  std_max: z.number(),
-  actual_min: z.number().nullable().optional(),
-  actual_max: z.number().nullable().optional(),
-  cpk: z.number().nullable().optional(),
+  std_min: z.coerce.number(),
+  std_max: z.coerce.number(),
+  actual_min: z.coerce.number().nullable().optional(),
+  actual_max: z.coerce.number().nullable().optional(),
+  cpk: z.coerce.number().nullable().optional(),
+  remarks: z.string().optional()
+});
+
+const NpiDimensionCategorySchema = z.object({
+  partdimensioncategory_name: z.string(),
+  std_min: z.coerce.number(),
+  std_max: z.coerce.number(),
+  actual_min: z.coerce.number().nullable().optional(),
+  actual_max: z.coerce.number().nullable().optional(),
+  cpk: z.coerce.number().nullable().optional(),
   remarks: z.string().optional()
 });
 
@@ -90,6 +100,7 @@ export const NpiCreateSchema = z.object({
     attachments: JsonParsedArray(NpiAttachmentSchema),
     visual_categories: JsonParsedArray(NpiVisualCategorySchema),
     data_categories: JsonParsedArray(NpiDataCategorySchema),
+    dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
     cc_list: JsonParsedArray(NpiCcListSchema),
   })
 });
@@ -147,6 +158,7 @@ export const NpiUpdateSchema = z.object({
     attachments: JsonParsedArray(NpiAttachmentSchema),
     visual_categories: JsonParsedArray(NpiVisualCategorySchema),
     data_categories: JsonParsedArray(NpiDataCategorySchema),
+    dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
     cc_list: JsonParsedArray(NpiCcListSchema),
   })
 });

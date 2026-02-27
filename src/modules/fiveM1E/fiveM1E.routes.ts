@@ -49,4 +49,21 @@ router.put(
   fiveM1EController.updateApplication
 );
 
+/**
+ * @route   DELETE /api/5m1e/:id
+ * @desc    Delete 5M1E Record and all child data
+ */
+router.delete(
+  '/:id',
+  fiveM1EController.deleteApplication
+);
+
+/**
+ * Workflow Action Subroutes
+ */
+router.post('/:id/submit', fiveM1EController.submitApplication);
+router.post('/:id/approve', fiveM1EController.approveApplication);
+router.post('/:id/reject', fiveM1EController.rejectApplication);
+router.post('/:id/release', fiveM1EController.releaseApplication);
+
 export default router;

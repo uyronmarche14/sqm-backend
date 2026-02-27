@@ -160,8 +160,28 @@ export class MnrService {
     const controlNo = await this.generateControlNo();
     const now = new Date();
 
-    const main = payload.mainDetails || {};
-    const disp = payload.disposition || {};
+    // Build mainDetails from nested object OR flat FormData fields
+    const main = payload.mainDetails || {
+      mfgSites: payload.site_id,
+      supplier: payload.supplier_id,
+      product: payload.product_id || payload.productId || payload.product,
+      model: payload.model_id || payload.model,
+      mfgAreas: payload.mfg_area_id,
+      category: payload.defectcategory_id,
+      mnrType: payload.mnrType,
+      attention: payload.attention_id,
+      reference: payload.reference,
+      remarks: payload.remarks,
+      reportIssuance8D: payload.reportIssuance8D,
+      recurrenceReference: payload.recurrenceRef,
+      issueDate: payload.issueDate,
+      initialReport: payload.initialReport,
+      dueDate: payload.dueDate,
+      actualInitialReport: payload.actualInitialReport,
+      actualFinalReport: payload.actualFinalReport,
+    };
+    // Accept both 'disposition' and 'disposition_data' (frontend sends 'disposition_data')
+    const disp = payload.disposition || (payload as any).disposition_data || {};
     const nc = payload.nonConformity || {};
 
     const dbStatus = mapStatusToDB('DRAFT');
@@ -270,18 +290,25 @@ export class MnrService {
           updateby: userId
       }).execute();
 
-      // 4. Copied Users CC Data
+      // 4. Copied Users CC Data (accept both 'copiedUsers' and 'ccList')
+      const ccUsers: string[] = [];
       if (payload.copiedUsers && Array.isArray(payload.copiedUsers)) {
-        for (const ccId of payload.copiedUsers) {
-          if (!ccId) continue;
-          await trx.insertInto('MNR_CC').values({
-              mnr_cc_id: uuidv4(),
-              mnr_id: mnrId,
-              user_id: ccId,
-              last_update: now,
-              updateby: userId
-          }).execute();
+        ccUsers.push(...payload.copiedUsers);
+      } else if ((payload as any).ccList && Array.isArray((payload as any).ccList)) {
+        for (const cc of (payload as any).ccList) {
+          if (typeof cc === 'string') ccUsers.push(cc);
+          else if (cc.id) ccUsers.push(cc.id);
         }
+      }
+      for (const ccId of ccUsers) {
+        if (!ccId) continue;
+        await trx.insertInto('MNR_CC').values({
+            mnr_cc_id: uuidv4(),
+            mnr_id: mnrId,
+            user_id: ccId,
+            last_update: now,
+            updateby: userId
+        }).execute();
       }
 
       // 5. Attachments
@@ -337,8 +364,8 @@ export class MnrService {
          if (main.actualFinalReport) dbUpdates.actual_final_report_date = this.formatDate(main.actualFinalReport);
          if (main.remarks !== undefined) dbUpdates.remarks = main.remarks;
 
-         // Disposition
-         const disp: any = updates.disposition || {};
+         // Disposition (accept both 'disposition' and 'disposition_data')
+         const disp: any = updates.disposition || (updates as any).disposition_data || {};
          if (disp.rtv !== undefined) {
             dbUpdates.rtv = typeof disp.rtv === 'object' ? (disp.rtv.selected ? 1 : 0) : (disp.rtv ? 1 : 0);
             if (typeof disp.rtv === 'object') {

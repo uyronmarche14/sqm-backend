@@ -255,7 +255,7 @@ export class SqmpService {
     });
   }
 
-  async deleteRecord(id: string) {
+    async deleteRecord(id: string) {
       const existing = await sqmpRepository.findByIdDetailed(id);
       if (!existing) throw new NotFoundError('Record not found');
 
@@ -266,6 +266,73 @@ export class SqmpService {
           await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
           return { success: true, message: 'Record deleted successfully' };
       });
+  }
+
+  /**
+   * Workflow: Issue the plan (APPROVED → ISSUED)
+   */
+  async issueRecord(id: string, userId: string, remarks?: string) {
+    const existing = await sqmpRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    const now = new Date();
+    return await sqmpRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQMP')
+        .set({
+          request_status: 'ISS',
+          issuer_id: userId,
+          issuer_remarks: remarks || null,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqmp_id', '=', existing.record.sqmp_id)
+        .execute();
+      return { success: true, message: 'SQM Plan issued successfully' };
+    });
+  }
+
+  /**
+   * Workflow: Cancel the plan
+   */
+  async cancelRecord(id: string, userId: string, remarks?: string) {
+    const existing = await sqmpRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    const now = new Date();
+    return await sqmpRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQMP')
+        .set({
+          request_status: 'CA',
+          issuer_remarks: remarks || existing.record.issuer_remarks,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqmp_id', '=', existing.record.sqmp_id)
+        .execute();
+      return { success: true, message: 'SQM Plan cancelled successfully' };
+    });
+  }
+
+  /**
+   * Workflow: Close the plan
+   */
+  async closeRecord(id: string, userId: string, remarks?: string) {
+    const existing = await sqmpRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    const now = new Date();
+    return await sqmpRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQMP')
+        .set({
+          request_status: 'CL',
+          issuer_remarks: remarks || existing.record.issuer_remarks,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqmp_id', '=', existing.record.sqmp_id)
+        .execute();
+      return { success: true, message: 'SQM Plan closed successfully' };
+    });
   }
 }
 

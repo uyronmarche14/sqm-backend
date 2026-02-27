@@ -43,7 +43,7 @@ export class NpiService {
     const data = await npiRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('NPI Record not found');
 
-    const { record, attachments, visual_categories, data_categories, cc_list } = data;
+    const { record, attachments, visual_categories, data_categories, dimension_categories, cc_list } = data;
 
     return {
       ...record,
@@ -51,6 +51,7 @@ export class NpiService {
       attachments: attachments || [],
       visual_categories: visual_categories || [],
       data_categories: data_categories || [],
+      dimension_categories: dimension_categories || [],
       cc_list: cc_list || []
     };
   }
@@ -169,7 +170,26 @@ export class NpiService {
         }
       }
 
-      // 5. CC List
+      // 5. Dimension Categories
+      if (payload.dimension_categories && payload.dimension_categories.length > 0) {
+        for (const dim of payload.dimension_categories) {
+          await trx.insertInto('NPI_DIMENSIONCAT').values({
+            npi_dimensioncat_id: uuidv4(),
+            npi_lot_id: npiId,
+            partdimensioncategory_name: dim.partdimensioncategory_name,
+            std_min: dim.std_min,
+            std_max: dim.std_max,
+            actual_min: dim.actual_min ?? null,
+            actual_max: dim.actual_max ?? null,
+            cpk: dim.cpk ?? null,
+            remarks: dim.remarks || null,
+            last_update: now,
+            updateby: effectiveUserId
+          }).execute();
+        }
+      }
+
+      // 6. CC List
       if (payload.cc_list && payload.cc_list.length > 0) {
         for (const cc of payload.cc_list) {
           await trx.insertInto('NPI_CC').values({
@@ -310,7 +330,27 @@ export class NpiService {
           }
       }
 
-      // 5. CC List
+      // 5. Dimension Categories
+      if (payload.dimension_categories !== undefined) {
+         await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', existing.record.npi_lot_id).execute();
+         for (const dim of payload.dimension_categories) {
+            await trx.insertInto('NPI_DIMENSIONCAT').values({
+              npi_dimensioncat_id: uuidv4(),
+              npi_lot_id: existing.record.npi_lot_id,
+              partdimensioncategory_name: dim.partdimensioncategory_name,
+              std_min: dim.std_min,
+              std_max: dim.std_max,
+              actual_min: dim.actual_min ?? null,
+              actual_max: dim.actual_max ?? null,
+              cpk: dim.cpk ?? null,
+              remarks: dim.remarks || null,
+              last_update: now,
+              updateby: effectiveUserId
+            }).execute();
+          }
+      }
+
+      // 6. CC List
       if (payload.cc_list !== undefined) {
          await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', existing.record.npi_lot_id).execute();
          for (const cc of payload.cc_list) {
@@ -325,6 +365,26 @@ export class NpiService {
       }
 
       return { success: true, message: 'Record updated successfully' };
+    });
+  }
+
+  /**
+   * Deletes an NPI record and all child tables
+   */
+  async deleteRecord(id: string) {
+    const existing = await npiRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('NPI Record not found');
+
+    const npiLotId = existing.record.npi_lot_id;
+
+    return await npiRepository.executeTransaction(async (trx) => {
+      await trx.deleteFrom('NPI_ATTACHMENT').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_VISUALCAT').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_DATACAT').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_LOTS').where('npi_lot_id', '=', npiLotId).execute();
+      return { success: true, message: 'NPI Record deleted successfully' };
     });
   }
 }

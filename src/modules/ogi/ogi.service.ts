@@ -257,6 +257,22 @@ export class OgiService {
       return { success: true, message: 'OGI Record submitted successfully' };
     });
   }
+  /**
+   * Deletes an OGI record and all child tables
+   */
+  async deleteRecord(id: string) {
+    const existing = await ogiRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('OGI Record not found');
+
+    const ogiId = existing.record.ogi_id;
+
+    return await ogiRepository.executeTransaction(async (trx) => {
+      await trx.deleteFrom('OGI_LOTS').where('ogi_id', '=', ogiId).execute();
+      await trx.deleteFrom('OGI_ATTACHMENT').where('ogi_id', '=', ogiId).execute();
+      await trx.deleteFrom('OGI').where('ogi_id', '=', ogiId).execute();
+      return { success: true, message: 'OGI Record deleted successfully' };
+    });
+  }
 }
 
 export const ogiService = new OgiService();

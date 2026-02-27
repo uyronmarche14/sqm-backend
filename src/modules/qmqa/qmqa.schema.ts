@@ -122,7 +122,27 @@ export const QmqaRecordUpdateSchema = z.object({
 });
 
 // =====================================
-// 3. RESPONSES
+// 3. VERIFICATION (Cycle 2 Approval)
+// =====================================
+export const QmqaVerificationSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid QMQA ID format')
+  }),
+  body: z.object({
+    verified_by: z.string().uuid(),
+    verification_remarks: z.string().optional(),
+    verification_date: z.string().datetime().or(z.date()).optional(),
+    // Cycle 2 approval fields
+    cycle2_checker_id: z.string().uuid().optional(),
+    cycle2_checker_remarks: z.string().optional(),
+    cycle2_approver_id: z.string().uuid().optional(),
+    cycle2_approver_remarks: z.string().optional(),
+    attachments: JsonParsedArray(QmqaAttachmentSchema).optional()
+  })
+});
+
+// =====================================
+// 4. RESPONSES
 // =====================================
 export const QmqaResponseReportSchema = z.object({
     body: z.object({

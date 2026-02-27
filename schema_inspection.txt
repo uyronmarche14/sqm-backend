@@ -1,0 +1,766 @@
+[dotenv@17.2.3] injecting env (11) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+--- TBL_5M1E_Application Schema ---
+[
+  {
+    "COLUMN_NAME": "ID",
+    "DATA_TYPE": "int",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ControlNo",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Title",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 255,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "SupplierID",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "SupplierCN",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "VendorID",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 72,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ItemID",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "SiteID",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 72,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "CommodityID",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 72,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ModelID",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 72,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EngineerRemarks",
+    "DATA_TYPE": "text",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 2147483647,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ReportNo",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DateRegister",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Class",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 72,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ClassType",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 72,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "CreatedBy",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "CreateDate",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ModifiedDate",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ImpactDate",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute10",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute09",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute08",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute07",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute06",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute05",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute04",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute03",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute02",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Attribute01",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  }
+]
+--- TBL_5M1E_Approval Schema ---
+[
+  {
+    "COLUMN_NAME": "ID",
+    "DATA_TYPE": "int",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ControlNo",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDPIC",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 40,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDChecker",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 20,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDCheckerName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDCheckerStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDChkrDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDApprover",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDApproverName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDApproverStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "MPDAprDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "HDEPIC",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Reviewer",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ReviewerName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ReviewerStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "IssueDate",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Checker",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "CheckerName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ChkrDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ChkrStatus",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Approver",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ApproverName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ApproverDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "AprStatus",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "FinalApprover",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "FAName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "FADtAprd",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "FAStatus",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ApprovalSeq",
+    "DATA_TYPE": "int",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "Status",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "CreateDate",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "ModifiedDate",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DSCheckerNecessary",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 3,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignCheckerID",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 40,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignCheckerName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignCheckerStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignCheckerDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DSAppproverNecessary",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 3,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignApproverID",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 40,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignApproverName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignApproverStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "DesignApproverDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviCheckerNecessary",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 3,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviCheckerID",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 40,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviCheckerName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 250,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviCheckerStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviCheckerDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 40,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviAppproverNecessary",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 3,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviApproverID",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 40,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviApproveName",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 500,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviApproveStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EnviApproveDtAprd",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 500,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "QACheckerID",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "QACheckerName",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 500,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "QACheckerStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "QACheckerDtAprd",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "RevisedSequence",
+    "DATA_TYPE": "int",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "CR",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 3,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EvaluationIC",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EvaluationICName",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EvaluationICDtAprd",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "EvaluationICStatus",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "RejectedBy",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "RejectedDate",
+    "DATA_TYPE": "varchar",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": 50,
+    "IsIdentity": 0
+  }
+]
+--- USERS Schema ---
+[
+  {
+    "COLUMN_NAME": "user_id",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "full_name",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "email",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 100,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "password",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 200,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "role_id",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "site_id",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "creation_date",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "active_flag",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "last_pasword_change",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "local_user",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "login_flag",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "last_update",
+    "DATA_TYPE": "datetime",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "updateby",
+    "DATA_TYPE": "nvarchar",
+    "IS_NULLABLE": "NO",
+    "CHARACTER_MAXIMUM_LENGTH": 36,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "new_flag",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  },
+  {
+    "COLUMN_NAME": "change_pw",
+    "DATA_TYPE": "bit",
+    "IS_NULLABLE": "YES",
+    "CHARACTER_MAXIMUM_LENGTH": null,
+    "IsIdentity": 0
+  }
+]

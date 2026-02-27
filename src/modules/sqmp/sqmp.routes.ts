@@ -25,5 +25,8 @@ router.delete('/:id', sqmpController.delete);
 router.post('/:id/submit', sqmpController.submit);
 router.post('/:id/approve', sqmpController.approve);
 router.post('/:id/reject', sqmpController.reject);
+router.post('/:id/issue', sqmpController.issue);
+router.post('/:id/cancel', sqmpController.cancel);
+router.post('/:id/close', sqmpController.close);
 
 export default router;

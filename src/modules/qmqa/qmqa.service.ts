@@ -384,6 +384,82 @@ export class QmqaService {
     });
   }
 
+  /**
+   * Delete a schedule (Audit Plan)
+   */
+  async deleteSchedule(id: string) {
+    const existing = await qmqaRepository.findScheduleById(id);
+    if (!existing) throw new NotFoundError('Schedule not found');
+
+    return await qmqaRepository.executeTransaction(async (trx) => {
+      await trx.deleteFrom('QMQA_AUDIT_PLAN')
+        .where('qmqa_audit_plan_id', '=', id)
+        .execute();
+      return { success: true, message: 'Schedule deleted successfully' };
+    });
+  }
+
+  /**
+   * Delete a QMQA record and all child data
+   */
+  async deleteRecord(id: string) {
+    const existing = await qmqaRepository.findRecordByIdDetailed(id);
+    if (!existing) throw new NotFoundError('QMQA Record not found');
+
+    return await qmqaRepository.executeTransaction(async (trx) => {
+      await trx.deleteFrom('QMQA_CC').where('qmqa_id', '=', id).execute();
+      await trx.deleteFrom('QMQA_ATTACHMENT').where('qmqa_id', '=', id).execute();
+      await trx.deleteFrom('QMQA_NC').where('qmqa_id', '=', id).execute();
+      await trx.deleteFrom('QMQA_SCORE').where('qmqa_id', '=', id).execute();
+      await trx.deleteFrom('QMQA').where('qmqa_id', '=', id).execute();
+      return { success: true, message: 'QMQA Record deleted successfully' };
+    });
+  }
+  /**
+   * Verification endpoint with Cycle 2 approval fields
+   */
+  async verify(id: string, userId: string, payload: {
+    verified_by: string;
+    verification_remarks?: string;
+    verification_date?: Date;
+    cycle2_checker_id?: string;
+    cycle2_checker_remarks?: string;
+    cycle2_approver_id?: string;
+    cycle2_approver_remarks?: string;
+  }) {
+    const record = await qmqaRepository.findRecordByIdDetailed(id);
+    if (!record) throw new NotFoundError('QMQA Record not found');
+
+    const now = new Date();
+    return await qmqaRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('QMQA')
+        .set({
+          request_status: mapStatusToDB('VERIFIED'),
+          verification_remarks: payload.verification_remarks || null,
+          last_update: now,
+          updateby: userId
+        })
+        .where('qmqa_id', '=', id)
+        .execute();
+
+      // Update QMQA_RESPONSE with Cycle 2 approval info
+      await trx.updateTable('QMQA_RESPONSE')
+        .set({
+          verification_remarks: payload.verification_remarks || null,
+          checker_id: payload.cycle2_checker_id || null,
+          checker_remarks: payload.cycle2_checker_remarks || null,
+          approver_id: payload.cycle2_approver_id || null,
+          approver_remarks: payload.cycle2_approver_remarks || null,
+          last_update: now,
+          updateby: userId
+        })
+        .where('qmqa_id', '=', id)
+        .execute();
+
+      return { success: true, message: 'Record verified with Cycle 2 approval' };
+    });
+  }
+
 }
 
 export const qmqaService = new QmqaService();

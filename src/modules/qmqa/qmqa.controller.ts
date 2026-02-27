@@ -3,7 +3,7 @@ import { qmqaService } from './qmqa.service.js';
 import { 
   QmqaScheduleCreateSchema, QmqaScheduleUpdateSchema, 
   QmqaRecordCreateSchema, QmqaRecordUpdateSchema, 
-  QmqaIdParamSchema 
+  QmqaIdParamSchema, QmqaVerificationSchema
 } from './qmqa.schema.js';
 
 export class QmqaController {
@@ -59,6 +59,17 @@ export class QmqaController {
     }
   }
 
+  async deleteSchedule(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+      const result = await qmqaService.deleteSchedule(id);
+      return res.json(result);
+    } catch (error) {
+      console.error('[QMQA] DELETE SCHEDULE error:', error);
+      return next(error);
+    }
+  }
+
   // ==========================================
   // RECORDS (Execution)
   // ==========================================
@@ -107,6 +118,17 @@ export class QmqaController {
       return res.json(result);
     } catch (error) {
       console.error('[QMQA] UPDATE RECORD error:', error);
+      return next(error);
+    }
+  }
+
+  async deleteRecord(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+      const result = await qmqaService.deleteRecord(id);
+      return res.json(result);
+    } catch (error) {
+      console.error('[QMQA] DELETE RECORD error:', error);
       return next(error);
     }
   }
@@ -172,6 +194,33 @@ export class QmqaController {
       return res.json(result);
     } catch (error) {
       console.error('[QMQA] CANCEL error:', error);
+      return next(error);
+    }
+  }
+
+  async verify(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = QmqaVerificationSchema.parse({ params: req.params, body: req.body }).params;
+      const payload = QmqaVerificationSchema.parse({ params: req.params, body: req.body }).body;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      
+      // Parse verification_date if it's a string
+      const verificationDate = payload.verification_date 
+        ? new Date(payload.verification_date) 
+        : undefined;
+      
+      const result = await qmqaService.verify(id, userId, {
+        verified_by: payload.verified_by,
+        verification_remarks: payload.verification_remarks,
+        verification_date: verificationDate,
+        cycle2_checker_id: payload.cycle2_checker_id,
+        cycle2_checker_remarks: payload.cycle2_checker_remarks,
+        cycle2_approver_id: payload.cycle2_approver_id,
+        cycle2_approver_remarks: payload.cycle2_approver_remarks,
+      });
+      return res.json(result);
+    } catch (error) {
+      console.error('[QMQA] VERIFY error:', error);
       return next(error);
     }
   }

@@ -1,6 +1,6 @@
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 import { db } from '../../shared/infrastructure/db.js';
-import { NewFiveM1EApp, FiveM1EAppUpdate } from '../../shared/infrastructure/db.types.js';
+import { NewFiveM1EApp, FiveM1EAppUpdate } from './fiveM1E.db.types.js';
 
 /** Check if value is a pure numeric string (matches int ID column) */
 const isNumeric = (val: string) => /^\d+$/.test(val);
@@ -10,14 +10,16 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     super('TBL_5M1E_Application');
   }
 
-  /**
-   * Complex find joining the Approval table
-   */
+  // =========================================================================
+  // Application + Approval Queries
+  // =========================================================================
+
   async findWithApproval(idOrControlNo: string) {
     let query = db
       .selectFrom('TBL_5M1E_Application as app')
       .leftJoin('TBL_5M1E_Approval as approval', 'app.ControlNo', 'approval.ControlNo')
       .selectAll('app')
+      .selectAll('approval')
       .select([
         'approval.Status as approval_status',
         'approval.MPDPIC as mpd_pic',
@@ -36,9 +38,6 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     return await query.executeTakeFirst();
   }
 
-  /**
-   * Fetch all applications with their approval status
-   */
   async findAllWithApproval(statusFilter?: string) {
     let query = db
       .selectFrom('TBL_5M1E_Application as app')
@@ -57,26 +56,31 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     return await query.orderBy('app.CreateDate', 'desc').execute();
   }
 
-  /**
-   * Create both Application and initial Approval record in a transaction
-   */
-  async createWithApproval(appData: NewFiveM1EApp, approvalStatus = 'DRAFT') {
+  async createWithApproval(
+    appData: NewFiveM1EApp, 
+    approvalStatus = 'DRAFT',
+    approvalData: Record<string, unknown> = {}
+  ) {
     return await db.transaction().execute(async (trx) => {
-      // 1. Insert Application
       const newApp = await trx
         .insertInto('TBL_5M1E_Application')
         .values(appData)
-        // Note: MSSQL returning clause equivalent
         .returningAll()
         .executeTakeFirstOrThrow();
 
-      // 2. Insert Initial Approval State
       await trx
         .insertInto('TBL_5M1E_Approval')
         .values({
           ControlNo: newApp.ControlNo,
           Status: approvalStatus,
           CreateDate: new Date(),
+          // NOT NULL defaults required by DB schema
+          DSCheckerNecessary: 'NO',
+          DSAppproverNecessary: 'NO',
+          EnviCheckerNecessary: 'NO',
+          EnviAppproverNecessary: 'NO',
+          // Spread any extra approval fields from frontend
+          ...approvalData,
         })
         .execute();
 
@@ -84,9 +88,6 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     });
   }
 
-  /**
-   * Updates application by ControlNo instead of ID
-   */
   async updateByControlNo(idOrControlNo: string, updateData: FiveM1EAppUpdate) {
     let query = db
       .updateTable('TBL_5M1E_Application')
@@ -107,9 +108,6 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     return await query.returningAll().executeTakeFirst();
   }
 
-  /**
-   * Updates approval status in TBL_5M1E_Approval
-   */
   async updateApprovalStatus(controlNo: string, status: string, extraFields?: Record<string, unknown>) {
     const updateData: Record<string, unknown> = {
       Status: status,
@@ -122,6 +120,147 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
       .set(updateData)
       .where('ControlNo', '=', controlNo)
       .execute();
+  }
+
+  // =========================================================================
+  // Delete Operations
+  // =========================================================================
+
+  async deleteApproval(controlNo: string) {
+    return await db
+      .deleteFrom('TBL_5M1E_Approval')
+      .where('ControlNo', '=', controlNo)
+      .execute();
+  }
+
+  async deleteByControlNo(controlNo: string) {
+    return await db
+      .deleteFrom('TBL_5M1E_Application')
+      .where('ControlNo', '=', controlNo)
+      .execute();
+  }
+
+  // =========================================================================
+  // Child Table: Parts (TBL_5M1E_PartsPerReport)
+  // =========================================================================
+
+  async findParts(controlNo: string) {
+    return await db
+      .selectFrom('TBL_5M1E_PartsPerReport')
+      .selectAll()
+      .where('PartsTag', '=', controlNo)
+      .execute();
+  }
+
+  async insertParts(controlNo: string, parts: Array<{ part_id?: string }>) {
+    for (const part of parts) {
+      if (!part.part_id) continue;
+      await db.insertInto('TBL_5M1E_PartsPerReport').values({
+        PartsTag: controlNo,
+        part_id: part.part_id,
+        DateAdded: new Date(),
+      } as any).execute();
+    }
+  }
+
+  async replaceParts(controlNo: string, parts: Array<{ part_id?: string }>) {
+    await db.deleteFrom('TBL_5M1E_PartsPerReport').where('PartsTag', '=', controlNo).execute();
+    await this.insertParts(controlNo, parts);
+  }
+
+  // =========================================================================
+  // Child Table: Attachments (TBL_5M1E_Attachment)
+  // =========================================================================
+
+  async findAttachments(controlNo: string) {
+    return await db
+      .selectFrom('TBL_5M1E_Attachment')
+      .selectAll()
+      .where('ControlNo', '=', controlNo)
+      .execute();
+  }
+
+  async insertAttachments(controlNo: string, attachments: Array<{ id?: string; file_name?: string; attribute_1?: string; attribute_2?: string }>) {
+    const now = new Date();
+    for (const att of attachments) {
+      if (!att.file_name) continue;
+      await db.insertInto('TBL_5M1E_Attachment').values({
+        ControlNo: controlNo,
+        FileName: att.file_name,
+        Attribute1: att.attribute_1 || null,
+        Attribute2: att.attribute_2 || null,
+        CreateDate: now,
+      } as any).execute();
+    }
+  }
+
+  async replaceAttachments(controlNo: string, attachments: Array<{ id?: string; file_name?: string; attribute_1?: string; attribute_2?: string }>) {
+    await db.deleteFrom('TBL_5M1E_Attachment').where('ControlNo', '=', controlNo).execute();
+    await this.insertAttachments(controlNo, attachments);
+  }
+
+  // =========================================================================
+  // Child Table: Action Items (TBL_5M1E_ActionItems)
+  // =========================================================================
+
+  async findActionItems(controlNo: string) {
+    return await db
+      .selectFrom('TBL_5M1E_ActionItems')
+      .selectAll()
+      .where('ControlNo', '=', controlNo)
+      .execute();
+  }
+
+  async insertActionItems(controlNo: string, items: Array<{ action_item?: string; pic?: string; first_target_dt?: string; verification_result?: string; remarks?: string }>) {
+    const now = new Date();
+    for (const item of items) {
+      await db.insertInto('TBL_5M1E_ActionItems').values({
+        ControlNo: controlNo,
+        ActionItem: item.action_item || null,
+        PIC: item.pic || null,
+        FirstTargetDt: item.first_target_dt || null,
+        VerificationResult: item.verification_result || null,
+        Remarks: item.remarks || null,
+        CreateDate: now,
+      } as any).execute();
+    }
+  }
+
+  async replaceActionItems(controlNo: string, items: Array<{ action_item?: string; pic?: string; first_target_dt?: string; verification_result?: string; remarks?: string }>) {
+    await db.deleteFrom('TBL_5M1E_ActionItems').where('ControlNo', '=', controlNo).execute();
+    await this.insertActionItems(controlNo, items);
+  }
+
+  // =========================================================================
+  // Child Table: Check Items (TBL_5M1E_CheckItems)
+  // =========================================================================
+
+  async findCheckItems(controlNo: string) {
+    return await db
+      .selectFrom('TBL_5M1E_CheckItems')
+      .selectAll()
+      .where('ControlNo', '=', controlNo)
+      .execute();
+  }
+
+  async insertCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
+    const now = new Date();
+    for (const item of items) {
+      await db.insertInto('TBL_5M1E_CheckItems').values({
+        ControlNo: controlNo,
+        CheckItem: item.check_item || '',
+        Judgement: item.judgement || '',
+        Remarks: item.remarks || null,
+        Attribute1: item.attribute_1 || null,
+        Attribute2: item.attribute_2 || null,
+        CreateDate: now,
+      } as any).execute();
+    }
+  }
+
+  async replaceCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
+    await db.deleteFrom('TBL_5M1E_CheckItems').where('ControlNo', '=', controlNo).execute();
+    await this.insertCheckItems(controlNo, items);
   }
 }
 

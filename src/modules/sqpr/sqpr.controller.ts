@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sqprService } from './sqpr.service.js';
-import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema } from './sqpr.schema.js';
+import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema, SqprAttachmentParamSchema } from './sqpr.schema.js';
 
 export class SqprController {
   async getAll(_req: Request, res: Response, next: NextFunction) {
@@ -111,6 +111,70 @@ export class SqprController {
       res.json(result);
     } catch (error) {
       console.error('[SQPR] DELETE error:', error);
+      next(error);
+    }
+  }
+
+  async approve(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { remarks } = req.body || {};
+      const result = await sqprService.approveRecord(id, userId, remarks);
+      res.json(result);
+    } catch (error) {
+      console.error('[SQPR] APPROVE error:', error);
+      next(error);
+    }
+  }
+
+  async check(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { remarks } = req.body || {};
+      const result = await sqprService.checkRecord(id, userId, remarks);
+      res.json(result);
+    } catch (error) {
+      console.error('[SQPR] CHECK error:', error);
+      next(error);
+    }
+  }
+
+  async batchDelete(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) {
+        res.status(400).json({ error: 'ids must be an array' });
+        return;
+      }
+      const result = await sqprService.batchDelete(ids, userId);
+      res.json(result);
+    } catch (error) {
+      console.error('[SQPR] BATCH DELETE error:', error);
+      next(error);
+    }
+  }
+
+  async downloadAttachment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { attachmentId } = SqprAttachmentParamSchema.parse({ params: req.params }).params;
+      if (!attachmentId) throw new Error('Attachment ID is required');
+
+      const attachment = await sqprService.getAttachment(attachmentId);
+      
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join(process.cwd(), 'uploads/sqpr', attachment.file_name);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found on disk' });
+      }
+
+      return res.download(filePath);
+    } catch (error) {
+      console.error('[SQPR] DOWNLOAD error:', error);
       next(error);
     }
   }

@@ -164,6 +164,17 @@ export class NpiController {
     }
   }
 
+  async delete(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
+      const result = await npiService.deleteRecord(id);
+      res.json(result);
+    } catch (error) {
+      console.error('[NPI] DELETE error:', error);
+      next(error);
+    }
+  }
+
 }
 
 export const npiController = new NpiController();

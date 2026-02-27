@@ -1,8 +1,9 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { userService } from './user.service.js';
 import { CreateUserSchema, UpdateUserSchema, ChangePasswordSchema } from './user.schema.js';
 
 // Internal mapper matching original output shape exactly
+// Note: DB column is `last_pasword_change` (legacy typo in DB — single 's')
 const mapUserToDto = (user: any) => ({
   user_id: user.user_id,
   full_name: user.full_name,
@@ -19,36 +20,60 @@ const mapUserToDto = (user: any) => ({
 });
 
 export const userController = {
-  getAllUsers: async (_req: Request, res: Response) => {
-    const users = await userService.getAllUsers();
-    res.json(users.map(mapUserToDto));
+  getAllUsers: async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const users = await userService.getAllUsers();
+      res.json(users.map(mapUserToDto));
+    } catch (error) {
+      next(error);
+    }
   },
 
-  getUserById: async (req: Request, res: Response) => {
-    const user = await userService.getUserById(req.params.id as string);
-    res.json(mapUserToDto(user));
+  getUserById: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = await userService.getUserById(req.params.id as string);
+      res.json(mapUserToDto(user));
+    } catch (error) {
+      next(error);
+    }
   },
 
-  createUser: async (req: Request, res: Response) => {
-    const payload = CreateUserSchema.parse(req.body);
-    const user = await userService.createUser(payload);
-    res.status(201).json(mapUserToDto(user));
+  createUser: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = CreateUserSchema.parse(req.body);
+      const user = await userService.createUser(payload);
+      res.status(201).json(mapUserToDto(user));
+    } catch (error) {
+      next(error);
+    }
   },
 
-  updateUser: async (req: Request, res: Response) => {
-    const payload = UpdateUserSchema.parse(req.body);
-    const user = await userService.updateUser(req.params.id as string, payload);
-    res.json(mapUserToDto(user));
+  updateUser: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = UpdateUserSchema.parse(req.body);
+      const user = await userService.updateUser(req.params.id as string, payload);
+      res.json(mapUserToDto(user));
+    } catch (error) {
+      next(error);
+    }
   },
 
-  changePassword: async (req: Request, res: Response) => {
-    const payload = ChangePasswordSchema.parse(req.body);
-    await userService.changePassword(req.params.id as string, payload);
-    res.json({ message: 'Password changed successfully' });
+  changePassword: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = ChangePasswordSchema.parse(req.body);
+      await userService.changePassword(req.params.id as string, payload);
+      res.json({ message: 'Password changed successfully' });
+    } catch (error) {
+      next(error);
+    }
   },
 
-  deleteUser: async (req: Request, res: Response) => {
-    await userService.deleteUser(req.params.id as string);
-    res.json({ message: 'User deleted successfully' });
+  deleteUser: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await userService.deleteUser(req.params.id as string);
+      res.json({ message: 'User deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
   }
 };

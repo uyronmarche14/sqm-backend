@@ -153,7 +153,7 @@ type RepoOperationOptions = {
   repo: any;
   mapper: (row: any) => any;
   idCol: string; 
-  toDB: (id: string, payload: any) => any;
+  toDB: (id: string, payload: any, userId: string) => any;
 };
 
 /**
@@ -175,12 +175,12 @@ export class MasterDataService {
     return mapper(row);
   }
 
-  async create({ repo, mapper, toDB }: RepoOperationOptions, payload: any) {
+  async create({ repo, mapper, toDB }: RepoOperationOptions, payload: any, userId: string = 'SYSTEM') {
     const id = uuidv4();
-    const dbPayload = toDB(id, payload);
+    const dbPayload = toDB(id, payload, userId);
     // All master data tables have last_update (NOT NULL) and updateby (NOT NULL)
     dbPayload.last_update = new Date();
-    if (!dbPayload.updateby) dbPayload.updateby = 'SYSTEM';
+    if (!dbPayload.updateby) dbPayload.updateby = userId;
     
     const created = await repo.create(dbPayload);
     // If it's a join table, we must fetch Detailed after insert to get the joined data names
@@ -191,14 +191,15 @@ export class MasterDataService {
     return mapper(created);
   }
 
-  async update({ repo, mapper, idCol, toDB }: RepoOperationOptions, id: string, payload: any) {
+  async update({ repo, mapper, idCol, toDB }: RepoOperationOptions, id: string, payload: any, userId: string = 'SYSTEM') {
     const exists = await repo.findById(id);
     if (!exists) throw new NotFoundError('Record not found');
 
-    const dbPayload = toDB(id, payload);
+    const dbPayload = toDB(id, payload, userId);
     // Remove id from DB payload if present for updates, so we don't accidentally update the PK
     delete dbPayload[idCol];
     dbPayload.last_update = new Date();
+    dbPayload.updateby = userId;
 
     const updated = await repo.update(id, dbPayload);
     

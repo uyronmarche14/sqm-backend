@@ -147,6 +147,43 @@ export class SqmpController {
       next(error);
     }
   }
+
+  // Additional Workflow Actions
+  async issue(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await sqmpService.issueRecord(id, userId, req.body?.remarks);
+      res.json(result);
+    } catch (error) {
+      console.error('[SQMP] ISSUE error:', error);
+      next(error);
+    }
+  }
+
+  async cancel(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await sqmpService.cancelRecord(id, userId, req.body?.remarks);
+      res.json(result);
+    } catch (error) {
+      console.error('[SQMP] CANCEL error:', error);
+      next(error);
+    }
+  }
+
+  async close(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await sqmpService.closeRecord(id, userId, req.body?.remarks);
+      res.json(result);
+    } catch (error) {
+      console.error('[SQMP] CLOSE error:', error);
+      next(error);
+    }
+  }
 }
 
 export const sqmpController = new SqmpController();

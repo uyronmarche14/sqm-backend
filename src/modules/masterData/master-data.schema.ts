@@ -118,8 +118,8 @@ export const InspectionCategorySchema = z.object({
 export const InspectionMethodSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  defaultTemp: z.number().optional().nullable(),
-  defaultHum: z.number().optional().nullable(),
+  defaultTemp: z.coerce.number().optional().nullable(),
+  defaultHum: z.coerce.number().optional().nullable(),
   defaultValue: z.union([z.boolean(), z.number()]).optional().transform(v => (v === true || v === 1 ? 1 : 0)),
   isActive: activeFlagSchema
 });
@@ -152,8 +152,8 @@ export const PartTypeSchema = z.object({
 export const PartCategoryParamSchema = z.object({
   name: z.string().min(1),
   parentId: z.string().optional().nullable(),
-  min: z.number().optional().nullable(),
-  max: z.number().optional().nullable(),
+  min: z.coerce.number().optional().nullable(),
+  max: z.coerce.number().optional().nullable(),
   description: z.string().optional(),
   isActive: activeFlagSchema
 });
@@ -251,7 +251,7 @@ export const FiveM1ECategorySchema = z.object({
 export const RegistrationSchema = z.object({
   confirmationCode: z.string().min(1),
   userId: z.string().min(1),
-  registrationType: z.number().optional().nullable(),
+  registrationType: z.coerce.number().optional().nullable(),
   isActive: activeFlagSchema
 });
 
@@ -262,8 +262,8 @@ export const RegistrationSchema = z.object({
 export const FAQItemSchema = z.object({
   question: z.string().min(1),
   answer: z.string().min(1),
-  faq_category: z.number().optional().default(0),
-  sequence: z.number().optional().default(0),
+  faq_category: z.coerce.number().optional().default(0),
+  sequence: z.coerce.number().optional().default(0),
   faq_item_desc: z.string().optional(),
   active_flag: activeFlagSchema
 });

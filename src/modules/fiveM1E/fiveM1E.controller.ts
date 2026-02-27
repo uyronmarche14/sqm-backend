@@ -68,6 +68,75 @@ export class FiveM1EController {
       next(error);
     }
   }
+
+  /**
+   * Delete an Application and all child data
+   */
+  async deleteApplication(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const result = await fiveM1EService.deleteApplication(id);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Workflow: Submit
+   */
+  async submitApplication(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = req.user!.userId;
+      const result = await fiveM1EService.submitApplication(id, userId);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Workflow: Approve
+   */
+  async approveApplication(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = req.user!.userId;
+      const result = await fiveM1EService.approveApplication(id, userId, req.body?.remarks);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Workflow: Reject
+   */
+  async rejectApplication(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = req.user!.userId;
+      const result = await fiveM1EService.rejectApplication(id, userId, req.body?.remarks);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Workflow: Release
+   */
+  async releaseApplication(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = req.user!.userId;
+      const result = await fiveM1EService.releaseApplication(id, userId);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const fiveM1EController = new FiveM1EController();

@@ -28,9 +28,9 @@ const SqprCcUserSchema = z.object({
 export const SqprCreateSchema = z.object({
   body: z.object({
     site_id: z.string().uuid('Valid Site ID is required'),
-    fiscal_year: z.number().int().min(2000).max(2100),
-    report_type: z.number().int().min(1).max(2), // 1=Month, 2=Quarter
-    month: z.number().int().min(1).max(12).optional(),
+    fiscal_year: z.coerce.number().int().min(2000).max(2100),
+    report_type: z.coerce.number().int().min(1).max(2), // 1=Month, 2=Quarter
+    month: z.coerce.number().int().min(1).max(12).optional(),
     supplier_id: z.string().uuid().or(z.string().length(0)).optional(), 
     supplierId: z.string().uuid().optional(), // Frontend alias
     attention_id: z.string().uuid().or(z.string().length(0)).optional(),
@@ -53,9 +53,9 @@ export const SqprUpdateSchema = z.object({
   }),
   body: z.object({
     site_id: z.string().uuid().optional(),
-    fiscal_year: z.number().int().optional(),
-    report_type: z.number().int().optional(),
-    month: z.number().int().optional(),
+    fiscal_year: z.coerce.number().int().optional(),
+    report_type: z.coerce.number().int().optional(),
+    month: z.coerce.number().int().optional(),
     supplier_id: z.string().uuid().or(z.string().length(0)).optional(),
     attention_id: z.string().uuid().or(z.string().length(0)).optional(),
     attention: z.string().optional(),
@@ -100,6 +100,15 @@ export const SqprActionSchema = z.object({
 export const SqprIdParamSchema = z.object({
   params: z.object({
     id: z.string().uuid('Invalid SQPR ID format')
+  })
+});
+
+/**
+ * Attachment Param Schema
+ */
+export const SqprAttachmentParamSchema = z.object({
+  params: z.object({
+    attachmentId: z.string().uuid('Invalid Attachment ID format')
   })
 });
 

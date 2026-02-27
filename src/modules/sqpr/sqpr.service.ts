@@ -220,6 +220,88 @@ export class SqprService {
           return { success: true, message: 'Record deleted successfully' };
       });
   }
+
+  /**
+   * Workflow: Check record (DRAFT → CHECKED)
+   */
+  async checkRecord(id: string, userId: string, remarks?: string) {
+    const existing = await sqprRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    const now = new Date();
+    return await sqprRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQPR')
+        .set({
+          request_status: mapStatusToDB('CHECKED'),
+          checker_id: userId,
+          checker_remarks: remarks || null,
+          checker_date: now,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqpr_id', '=', existing.record.sqpr_id)
+        .execute();
+      return { success: true, message: 'Record checked successfully' };
+    });
+  }
+
+  /**
+   * Workflow: Approve record (CHECKED → APPROVED)
+   */
+  async approveRecord(id: string, userId: string, remarks?: string) {
+    const existing = await sqprRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    const now = new Date();
+    return await sqprRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQPR')
+        .set({
+          request_status: mapStatusToDB('APPROVED'),
+          approver_id: userId,
+          approver_remarks: remarks || null,
+          approver_date: now,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqpr_id', '=', existing.record.sqpr_id)
+        .execute();
+      return { success: true, message: 'Record approved successfully' };
+    });
+  }
+
+  /**
+   * Batch delete multiple SQPR records
+   */
+  async batchDelete(ids: string[], userId: string) {
+    return await sqprRepository.executeTransaction(async (trx) => {
+      let deletedCount = 0;
+      for (const id of ids) {
+        const existing = await sqprRepository.findByIdDetailed(id);
+        if (existing) {
+          await trx.deleteFrom('SQPR_ATTACHMENT').where('sqpr_id', '=', existing.record.sqpr_id).execute();
+          await trx.deleteFrom('SQPR_CC').where('sqpr_id', '=', existing.record.sqpr_id).execute();
+          await trx.deleteFrom('SQPR').where('sqpr_id', '=', existing.record.sqpr_id).execute();
+          deletedCount++;
+        }
+      }
+      return { success: true, message: `${deletedCount} records deleted successfully` };
+    });
+  }
+
+  /**
+   * Get attachment file info for download
+   */
+  async getAttachment(attachmentId: string) {
+    // @ts-ignore
+    const { db } = await import('../../shared/infrastructure/db.js');
+    const attachment = await db.selectFrom('SQPR_ATTACHMENT')
+      .select(['sqpr_attachment_id', 'sqpr_id', 'file_name', 'file_extension', 'remarks'])
+      .where('sqpr_attachment_id', '=', attachmentId)
+      .executeTakeFirst();
+    
+    if (!attachment) throw new NotFoundError('Attachment not found');
+    return attachment;
+  }
 }
 
 export const sqprService = new SqprService();

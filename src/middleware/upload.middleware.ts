@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Universal File Upload Middleware Factory
  * =========================================

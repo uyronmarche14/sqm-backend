@@ -22,6 +22,7 @@ router.get('/attachments/:attachmentId', ogiController.downloadAttachment);
 // Create / Update with Multer File handling
 router.post('/', upload.any(), logUploads, handleUploadError, ogiController.create);
 router.put('/:id', upload.any(), logUploads, handleUploadError, ogiController.update);
+router.delete('/:id', ogiController.delete);
 
 // Workflow Action Subroutes
 router.post('/:id/submit', ogiController.submit);

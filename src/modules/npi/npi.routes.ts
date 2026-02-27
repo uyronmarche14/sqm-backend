@@ -22,6 +22,7 @@ router.get('/download/:attachmentId', npiController.downloadAttachment);
 // Create / Update with Multer File handling
 router.post('/', upload.any(), logUploads, handleUploadError, npiController.create);
 router.put('/:id', upload.any(), logUploads, handleUploadError, npiController.update);
+router.delete('/:id', npiController.delete);
 
 // Workflow Action Subroutes
 router.post('/:id/submit', npiController.submit);

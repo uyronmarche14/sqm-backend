@@ -17,6 +17,7 @@ router.get('/schedules', qmqaController.getAllSchedules);
 router.post('/schedules', qmqaController.createSchedule);
 router.get('/schedules/:id', qmqaController.getScheduleById);
 router.put('/schedules/:id', qmqaController.updateSchedule);
+router.delete('/schedules/:id', qmqaController.deleteSchedule);
 
 // ==========================================
 // RECORDS (Execution)
@@ -25,6 +26,7 @@ router.get('/records', qmqaController.getAllRecords);
 router.post('/records', upload.any(), logUploads, handleUploadError, qmqaController.createRecord);
 router.get('/records/:id', qmqaController.getRecordById);
 router.put('/records/:id', upload.any(), logUploads, handleUploadError, qmqaController.updateRecord);
+router.delete('/records/:id', qmqaController.deleteRecord);
 
 // ==========================================
 // WORKFLOW ACTIONS
@@ -34,5 +36,6 @@ router.post('/records/:id/approve', qmqaController.approve);
 router.post('/records/:id/reject', qmqaController.reject);
 router.post('/records/:id/issue', qmqaController.issue);
 router.post('/records/:id/cancel', qmqaController.cancel);
+router.post('/records/:id/verify', qmqaController.verify);
 
 export default router;
