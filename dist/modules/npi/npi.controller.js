@@ -5,7 +5,7 @@ export class NpiController {
     async getAll(_req, res, next) {
         try {
             const records = await npiService.getAllRecords();
-            res.json({ data: records });
+            res.json(records);
         }
         catch (error) {
             console.error('[NPI] GET ALL error:', error);
@@ -16,7 +16,7 @@ export class NpiController {
         try {
             const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
             const record = await npiService.getRecordById(id);
-            res.json({ data: record });
+            res.json(record);
         }
         catch (error) {
             console.error('[NPI] GET BY ID error:', error);

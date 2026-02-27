@@ -21,4 +21,12 @@ router.get('/records', qmqaController.getAllRecords);
 router.post('/records', upload.any(), logUploads, handleUploadError, qmqaController.createRecord);
 router.get('/records/:id', qmqaController.getRecordById);
 router.put('/records/:id', upload.any(), logUploads, handleUploadError, qmqaController.updateRecord);
+// ==========================================
+// WORKFLOW ACTIONS
+// ==========================================
+router.post('/records/:id/submit', qmqaController.submit);
+router.post('/records/:id/approve', qmqaController.approve);
+router.post('/records/:id/reject', qmqaController.reject);
+router.post('/records/:id/issue', qmqaController.issue);
+router.post('/records/:id/cancel', qmqaController.cancel);
 export default router;

@@ -1,11 +1,10 @@
 import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 export class OgiController {
     async getAll(_req, res, next) {
         try {
             const records = await ogiService.getAllRecords();
-            return res.json({ data: records });
+            return res.json(records);
         }
         catch (error) {
             console.error('[OGI] GET ALL error:', error);
@@ -16,7 +15,7 @@ export class OgiController {
         try {
             const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
             const record = await ogiService.getRecordById(id);
-            return res.json({ data: record });
+            return res.json(record);
         }
         catch (error) {
             console.error('[OGI] GET BY ID error:', error);
@@ -89,10 +88,8 @@ export class OgiController {
         try {
             const { id } = OgiActionSchema.parse({ params: req.params, body: req.body }).params;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await ogiService.updateRecord(id, {
-                request_status: 'SUBMITTED',
-                status: WorkflowStatusEnum.SUBMITTED
-            }, userId, []);
+            console.log(`[OGI] SUBMIT called for id=${id}, userId=${userId}`);
+            const result = await ogiService.submitRecord(id, userId);
             return res.json(result);
         }
         catch (error) {

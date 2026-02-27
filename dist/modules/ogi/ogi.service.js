@@ -116,7 +116,7 @@ export class OgiService {
                         continue;
                     const uploadedFile = files.find(f => f.originalname === originalName);
                     const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    const finalRemarks = (att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`).slice(0, 200);
                     await trx.insertInto('OGI_ATTACHMENT').values({
                         ogi_attachment_id: att.id || att.ogi_attachment_id || uuidv4(),
                         ogi_id: recordId,
@@ -188,7 +188,7 @@ export class OgiService {
                         continue;
                     const uploadedFile = files.find(f => f.originalname === originalName);
                     const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    const finalRemarks = (att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`).slice(0, 200);
                     await trx.insertInto('OGI_ATTACHMENT').values({
                         ogi_attachment_id: att.id || att.ogi_attachment_id || uuidv4(),
                         ogi_id: existing.record.ogi_id,
@@ -201,6 +201,34 @@ export class OgiService {
                 }
             }
             return { success: true, message: 'OGI Record updated successfully' };
+        });
+    }
+    /**
+     * Dedicated submit: DRAFT → SUBMITTED
+     * Directly updates request_status without going through generic updateRecord
+     */
+    async submitRecord(idOrControlNo, userId) {
+        const existing = await ogiRepository.findByIdDetailed(idOrControlNo);
+        if (!existing)
+            throw new NotFoundError('OGI Record not found');
+        const currentStatus = mapStatusFromDB(existing.record.request_status);
+        console.log(`[OGI] submitRecord: id=${idOrControlNo}, ogi_id=${existing.record.ogi_id}, currentStatus=${currentStatus}, dbStatus=${existing.record.request_status}`);
+        if (currentStatus !== 'DRAFT') {
+            throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
+        }
+        const now = new Date();
+        return await ogiRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('OGI')
+                .set({
+                request_status: mapStatusToDB('SUBMITTED'),
+                submit_date: now,
+                last_update: now,
+                updateby: userId
+            })
+                .where('ogi_id', '=', existing.record.ogi_id)
+                .execute();
+            console.log(`[OGI] submitRecord: SUCCESS — status changed to SU for ogi_id=${existing.record.ogi_id}`);
+            return { success: true, message: 'OGI Record submitted successfully' };
         });
     }
 }

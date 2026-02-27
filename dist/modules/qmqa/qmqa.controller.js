@@ -100,5 +100,70 @@ export class QmqaController {
             return next(error);
         }
     }
+    // ==========================================
+    // WORKFLOW ACTIONS
+    // ==========================================
+    async submit(req, res, next) {
+        try {
+            const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await qmqaService.submit(id, userId);
+            return res.json(result);
+        }
+        catch (error) {
+            console.error('[QMQA] SUBMIT error:', error);
+            return next(error);
+        }
+    }
+    async approve(req, res, next) {
+        try {
+            const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const { remarks } = req.body;
+            const result = await qmqaService.approve(id, userId, remarks);
+            return res.json(result);
+        }
+        catch (error) {
+            console.error('[QMQA] APPROVE error:', error);
+            return next(error);
+        }
+    }
+    async reject(req, res, next) {
+        try {
+            const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const { remarks } = req.body;
+            const result = await qmqaService.reject(id, userId, remarks);
+            return res.json(result);
+        }
+        catch (error) {
+            console.error('[QMQA] REJECT error:', error);
+            return next(error);
+        }
+    }
+    async issue(req, res, next) {
+        try {
+            const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await qmqaService.issue(id, userId);
+            return res.json(result);
+        }
+        catch (error) {
+            console.error('[QMQA] ISSUE error:', error);
+            return next(error);
+        }
+    }
+    async cancel(req, res, next) {
+        try {
+            const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await qmqaService.cancel(id, userId);
+            return res.json(result);
+        }
+        catch (error) {
+            console.error('[QMQA] CANCEL error:', error);
+            return next(error);
+        }
+    }
 }
 export const qmqaController = new QmqaController();

@@ -1,5 +1,7 @@
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 import { db } from '../../shared/infrastructure/db.js';
+/** Check if value is a pure numeric string (matches int ID column) */
+const isNumeric = (val) => /^\d+$/.test(val);
 export class FiveM1ERepository extends BaseRepository {
     constructor() {
         super('TBL_5M1E_Application');
@@ -7,8 +9,8 @@ export class FiveM1ERepository extends BaseRepository {
     /**
      * Complex find joining the Approval table
      */
-    async findWithApproval(controlNo) {
-        return await db
+    async findWithApproval(idOrControlNo) {
+        let query = db
             .selectFrom('TBL_5M1E_Application as app')
             .leftJoin('TBL_5M1E_Approval as approval', 'app.ControlNo', 'approval.ControlNo')
             .selectAll('app')
@@ -16,9 +18,17 @@ export class FiveM1ERepository extends BaseRepository {
             'approval.Status as approval_status',
             'approval.MPDPIC as mpd_pic',
             'approval.MPDApprover as mpd_approver',
-        ])
-            .where('app.ControlNo', '=', controlNo)
-            .executeTakeFirst();
+        ]);
+        if (isNumeric(idOrControlNo)) {
+            query = query.where((eb) => eb.or([
+                eb('app.ControlNo', '=', idOrControlNo),
+                eb('app.ID', '=', parseInt(idOrControlNo, 10)),
+            ]));
+        }
+        else {
+            query = query.where('app.ControlNo', '=', idOrControlNo);
+        }
+        return await query.executeTakeFirst();
     }
     /**
      * Fetch all applications with their approval status
@@ -65,16 +75,38 @@ export class FiveM1ERepository extends BaseRepository {
     /**
      * Updates application by ControlNo instead of ID
      */
-    async updateByControlNo(controlNo, updateData) {
-        return await db
+    async updateByControlNo(idOrControlNo, updateData) {
+        let query = db
             .updateTable('TBL_5M1E_Application')
             .set({
             ...updateData,
             ModifiedDate: new Date(),
-        })
+        });
+        if (isNumeric(idOrControlNo)) {
+            query = query.where((eb) => eb.or([
+                eb('ControlNo', '=', idOrControlNo),
+                eb('ID', '=', parseInt(idOrControlNo, 10)),
+            ]));
+        }
+        else {
+            query = query.where('ControlNo', '=', idOrControlNo);
+        }
+        return await query.returningAll().executeTakeFirst();
+    }
+    /**
+     * Updates approval status in TBL_5M1E_Approval
+     */
+    async updateApprovalStatus(controlNo, status, extraFields) {
+        const updateData = {
+            Status: status,
+            ModifiedDate: new Date(),
+            ...extraFields,
+        };
+        return await db
+            .updateTable('TBL_5M1E_Approval')
+            .set(updateData)
             .where('ControlNo', '=', controlNo)
-            .returningAll()
-            .executeTakeFirst();
+            .execute();
     }
 }
 export const fiveM1ERepository = new FiveM1ERepository();

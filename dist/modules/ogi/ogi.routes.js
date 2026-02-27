@@ -10,8 +10,9 @@ router.use(requireAuth);
 router.get('/sequence', ogiController.generateSequence);
 router.get('/', ogiController.getAll);
 router.get('/:id', ogiController.getById);
-// Document Downloader
+// Document Downloader (both paths supported for frontend compatibility)
 router.get('/download/:attachmentId', ogiController.downloadAttachment);
+router.get('/attachments/:attachmentId', ogiController.downloadAttachment);
 // Create / Update with Multer File handling
 router.post('/', upload.any(), logUploads, handleUploadError, ogiController.create);
 router.put('/:id', upload.any(), logUploads, handleUploadError, ogiController.update);

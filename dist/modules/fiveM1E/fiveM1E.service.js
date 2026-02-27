@@ -95,10 +95,15 @@ export class FiveM1EService {
         if (!existing) {
             throw new NotFoundError(`5M1E Application ${controlNo} not found`);
         }
+        // 1. Map and update Application table fields (if any)
         const updateDbData = SmartMapper.toDB(data, applicationSchema);
-        // Only execute update if there are fields to change
         if (Object.keys(updateDbData).length > 0) {
             await fiveM1ERepository.updateByControlNo(controlNo, updateDbData);
+        }
+        // 2. Update Approval table status (if status is provided)
+        if (data.status) {
+            console.log(`[5M1E] Updating approval status for ${existing.ControlNo}: ${data.status}`);
+            await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, data.status);
         }
         return {
             success: true,

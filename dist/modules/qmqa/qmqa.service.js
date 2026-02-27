@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { qmqaRepository } from './qmqa.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
-import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
+import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
 export class QmqaService {
     // ==========================================
     // SCHEDULES (Audit Plan)
@@ -237,6 +237,124 @@ export class QmqaService {
                     .execute();
             }
             return { success: true, message: 'QMQA Record updated successfully' };
+        });
+    }
+    // ==========================================
+    // WORKFLOW ACTIONS
+    // ==========================================
+    /** DRAFT → AWAITING_APPROVAL (AA) */
+    async submit(id, userId) {
+        const record = await qmqaRepository.findRecordByIdDetailed(id);
+        if (!record)
+            throw new NotFoundError('QMQA Record not found');
+        const currentStatus = mapStatusFromDB(record.request_status);
+        if (currentStatus !== 'DRAFT') {
+            throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
+        }
+        return await qmqaRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('QMQA')
+                .set({
+                request_status: mapStatusToDB('AAPPROVAL'),
+                last_update: new Date(),
+                updateby: userId
+            })
+                .where('qmqa_id', '=', id)
+                .execute();
+            return { success: true, message: 'Record submitted for approval' };
+        });
+    }
+    /** AWAITING_APPROVAL → APPROVED (AP) */
+    async approve(id, userId, remarks) {
+        const record = await qmqaRepository.findRecordByIdDetailed(id);
+        if (!record)
+            throw new NotFoundError('QMQA Record not found');
+        const currentStatus = mapStatusFromDB(record.request_status);
+        if (currentStatus !== 'AAPPROVAL') {
+            throw new Error(`Cannot approve: record is in ${currentStatus}, expected AAPPROVAL`);
+        }
+        const now = new Date();
+        return await qmqaRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('QMQA')
+                .set({
+                request_status: mapStatusToDB('APPROVED'),
+                approver_id: userId,
+                approver_remarks: remarks || null,
+                approver_date: now,
+                last_update: now,
+                updateby: userId
+            })
+                .where('qmqa_id', '=', id)
+                .execute();
+            return { success: true, message: 'Record approved' };
+        });
+    }
+    /** AWAITING_APPROVAL → REJECTED (RE) → returns to DRAFT */
+    async reject(id, userId, remarks) {
+        const record = await qmqaRepository.findRecordByIdDetailed(id);
+        if (!record)
+            throw new NotFoundError('QMQA Record not found');
+        const currentStatus = mapStatusFromDB(record.request_status);
+        if (currentStatus !== 'AAPPROVAL') {
+            throw new Error(`Cannot reject: record is in ${currentStatus}, expected AAPPROVAL`);
+        }
+        const now = new Date();
+        return await qmqaRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('QMQA')
+                .set({
+                request_status: mapStatusToDB('DRAFT'),
+                checker_remarks: remarks || null,
+                last_update: now,
+                updateby: userId
+            })
+                .where('qmqa_id', '=', id)
+                .execute();
+            return { success: true, message: 'Record rejected and returned to draft' };
+        });
+    }
+    /** APPROVED → ISSUED (IS) */
+    async issue(id, userId) {
+        const record = await qmqaRepository.findRecordByIdDetailed(id);
+        if (!record)
+            throw new NotFoundError('QMQA Record not found');
+        const currentStatus = mapStatusFromDB(record.request_status);
+        if (currentStatus !== 'APPROVED') {
+            throw new Error(`Cannot issue: record is in ${currentStatus}, expected APPROVED`);
+        }
+        const now = new Date();
+        return await qmqaRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('QMQA')
+                .set({
+                request_status: mapStatusToDB('ISSUED'),
+                issuer_id: userId,
+                issuer_date: now,
+                issued_date: now,
+                last_update: now,
+                updateby: userId
+            })
+                .where('qmqa_id', '=', id)
+                .execute();
+            return { success: true, message: 'Record issued successfully' };
+        });
+    }
+    /** ISSUED → CANCELLED (CA) */
+    async cancel(id, userId) {
+        const record = await qmqaRepository.findRecordByIdDetailed(id);
+        if (!record)
+            throw new NotFoundError('QMQA Record not found');
+        const currentStatus = mapStatusFromDB(record.request_status);
+        if (currentStatus !== 'ISSUED') {
+            throw new Error(`Cannot cancel: record is in ${currentStatus}, expected ISSUED`);
+        }
+        return await qmqaRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('QMQA')
+                .set({
+                request_status: mapStatusToDB('CANCEL'),
+                last_update: new Date(),
+                updateby: userId
+            })
+                .where('qmqa_id', '=', id)
+                .execute();
+            return { success: true, message: 'Record cancelled' };
         });
     }
 }

@@ -42,7 +42,7 @@ export const OgiCreateSchema = z.object({
 });
 export const OgiUpdateSchema = z.object({
     params: z.object({
-        id: z.string().uuid('Invalid OGI ID format')
+        id: z.string().min(1, 'OGI ID is required')
     }),
     body: z.object({
         status: z.nativeEnum(WorkflowStatusEnum).optional(),
@@ -58,7 +58,7 @@ export const OgiUpdateSchema = z.object({
 });
 export const OgiActionSchema = z.object({
     params: z.object({
-        id: z.string().uuid('Invalid OGI ID format')
+        id: z.string().min(1, 'OGI ID is required')
     }),
     body: z.object({
         remarks: z.string().optional()
@@ -66,7 +66,7 @@ export const OgiActionSchema = z.object({
 });
 export const OgiIdParamSchema = z.object({
     params: z.object({
-        id: z.string().uuid('Invalid OGI ID format')
+        id: z.string().min(1, 'OGI ID is required')
     })
 });
 export const OgiAttachmentParamSchema = z.object({
