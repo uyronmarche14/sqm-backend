@@ -231,6 +231,23 @@ export class MnrService {
     };
 
     return await mnrRepository.executeTransaction(async (trx) => {
+      // Defensive: Validate attention_id exists in USERS before inserting
+      // The Attention dropdown may source values from a non-USERS table,
+      // but MNR_LOTS has FK_MNR_LOTS_USERS1 referencing USERS.user_id
+      if (dbLotsPayload.attention_id) {
+        const attentionExists = await trx.selectFrom('USERS')
+          .select('user_id')
+          .where('user_id', '=', dbLotsPayload.attention_id)
+          .executeTakeFirst();
+        if (!attentionExists) {
+          console.warn(`[MNR] attention_id "${dbLotsPayload.attention_id}" not found in USERS — falling back to creator userId`);
+          dbLotsPayload.attention_id = userId;
+        }
+      } else {
+        // attention_id cannot be null in DB
+        dbLotsPayload.attention_id = userId;
+      }
+
       // 1. Insert Main Record
       await trx.insertInto('MNR_LOTS').values(dbLotsPayload).execute();
 
@@ -304,11 +321,16 @@ export class MnrService {
       // 5. Attachments
       if (payload.attachments && Array.isArray(payload.attachments)) {
         for (const att of payload.attachments) {
+            const fName = (att as any).file_name || att.name;
+            if (!fName) {
+              console.warn('[MNR] Skipping attachment missing file_name:', att);
+              continue;
+            }
             await trx.insertInto('MNR_ATTACHMENT').values({
                 mnr_attachment_id: uuidv4(),
                 mnr_id: mnrId,
-                file_name: att.name,
-                file_extension: att.extension || 'bin',
+                file_name: fName,
+                file_extension: att.extension || (att as any).file_extension || 'bin',
                 remarks: att.remarks || null,
                 last_update: now,
                 updateby: userId

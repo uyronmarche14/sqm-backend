@@ -193,7 +193,7 @@ export const CreateFiveM1ESchema = z.object({
     attachments: z.array(AttachmentSchema).optional(),
     action_items: z.array(ActionItemSchema).optional(),
     check_items: z.array(CheckItemSchema).optional(),
-  }).passthrough(), // Allow extra fields from frontend without stripping
+  }),
 });
 
 // ============================================================================
