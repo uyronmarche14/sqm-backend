@@ -160,7 +160,7 @@ export const MnrCreateSchema = z.object({
 
 export const MnrUpdateSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid MNR ID')
+    id: z.string().min(1, 'MNR ID is required')
   }),
   body: z.object({
     updates: z.object({
@@ -209,7 +209,7 @@ export const MnrUpdateSchema = z.object({
 
 export const MnrIdParamSchema = z.object({
   params: z.object({
-    id: z.string().uuid('Invalid MNR ID')
+    id: z.string().min(1, 'MNR ID is required')
   })
 });
 

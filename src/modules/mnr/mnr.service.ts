@@ -60,6 +60,11 @@ export class MnrService {
       mnrtype_id: r.mnrtype_id,
       attention_id: r.attention_id,
       reference_no: r.reference_no,
+      report_issuance_8d: r.report_issuance_8d === 1 || r.report_issuance_8d === true,
+      recurrence_ref: r.recurrence_ref,
+      issued_date: r.issued_date,
+      initial_report_date: r.initial_report_date,
+      due_date: r.due_date,
       
       part_name: r.part_name,
       part_code: r.part_code,
@@ -144,25 +149,26 @@ export class MnrService {
     const controlNo = await this.generateControlNo();
     const now = new Date();
 
-    // Build mainDetails from nested object OR flat FormData fields
-    const main = payload.mainDetails || {
-      mfgSites: payload.site_id,
-      supplier: payload.supplier_id,
-      product: payload.product_id || payload.productId || payload.product,
-      model: payload.model_id || payload.model,
-      mfgAreas: payload.mfg_area_id,
-      category: payload.defectcategory_id,
-      mnrType: payload.mnrType,
-      attention: payload.attention_id,
-      reference: payload.reference,
-      remarks: payload.remarks,
-      reportIssuance8D: payload.reportIssuance8D,
-      recurrenceReference: payload.recurrenceRef,
-      issueDate: payload.issueDate,
-      initialReport: payload.initialReport,
-      dueDate: payload.dueDate,
-      actualInitialReport: payload.actualInitialReport,
-      actualFinalReport: payload.actualFinalReport,
+    // Build mainDetails from nested object OR flat FormData fields (resilient merge)
+    const mainDetails = payload.mainDetails || {};
+    const main = {
+      mfgSites: mainDetails.mfgSites || payload.site_id || '',
+      supplier: mainDetails.supplier || payload.supplier_id || '',
+      product: mainDetails.product || payload.product_id || payload.productId || payload.product || '',
+      model: mainDetails.model || payload.model_id || payload.model || '',
+      mfgAreas: mainDetails.mfgAreas || payload.mfg_area_id || '',
+      category: mainDetails.category || payload.defectcategory_id || '',
+      mnrType: mainDetails.mnrType || payload.mnrType || '',
+      attention: mainDetails.attention || payload.attention_id || '',
+      reference: mainDetails.reference || payload.reference || '',
+      remarks: mainDetails.remarks || payload.remarks || '',
+      reportIssuance8D: mainDetails.reportIssuance8D ?? payload.reportIssuance8D,
+      recurrenceReference: mainDetails.recurrenceRef || payload.recurrenceRef || '',
+      issueDate: mainDetails.issueDate || payload.issueDate || '',
+      initialReport: mainDetails.initialReport || payload.initialReport || '',
+      dueDate: mainDetails.dueDate || payload.dueDate || '',
+      actualInitialReport: mainDetails.actualInitialReport || payload.actualInitialReport || '',
+      actualFinalReport: mainDetails.actualFinalReport || payload.actualFinalReport || '',
     };
     // Accept both 'disposition' and 'disposition_data' (frontend sends 'disposition_data')
     const disp = payload.disposition || (payload as any).disposition_data || {};
@@ -217,7 +223,7 @@ export class MnrService {
       
       encoder_id: userId,
       encoder_date: now,
-      issuer_id: '',
+      issuer_id: userId,
       
       remarks: main.remarks || null,
       last_update: now,
@@ -327,26 +333,28 @@ export class MnrService {
 
          if (updates.status) dbUpdates.request_status = mapStatusToDB(updates.status);
 
-         const main: any = updates.mainDetails || updates;
-         if (main.mfgSites) dbUpdates.site_id = main.mfgSites;
-         if (main.supplier || main.supplierId) dbUpdates.supplier_id = main.supplier || main.supplierId;
-         if (main.model) dbUpdates.model_id = main.model;
-         if (main.mfgAreas) dbUpdates.mfg_area_id = main.mfgAreas;
-         if (main.category) dbUpdates.defectcategory_id = main.category;
-         if (main.mnrType) dbUpdates.mnrtype_id = main.mnrType;
-         if (main.attention) dbUpdates.attention_id = main.attention;
-         if (main.reference !== undefined) dbUpdates.reference_no = main.reference;
-         if (main.reportIssuance8D !== undefined) dbUpdates.report_issuance_8d = main.reportIssuance8D ? 1 : 0;
+         const incomingMain: any = updates.mainDetails || updates;
+         if (incomingMain.mfgSites || (updates as any).site_id) dbUpdates.site_id = incomingMain.mfgSites || (updates as any).site_id;
+         if (incomingMain.supplier || incomingMain.supplierId) dbUpdates.supplier_id = incomingMain.supplier || incomingMain.supplierId;
+         if (incomingMain.model || (updates as any).model_id) dbUpdates.model_id = incomingMain.model || (updates as any).model_id;
+         if (incomingMain.mfgAreas || (updates as any).mfg_area_id) dbUpdates.mfg_area_id = incomingMain.mfgAreas || (updates as any).mfg_area_id;
+         if (incomingMain.category || (updates as any).defectcategory_id) dbUpdates.defectcategory_id = incomingMain.category || (updates as any).defectcategory_id;
+         if (incomingMain.mnrType || (updates as any).mnrType) dbUpdates.mnrtype_id = incomingMain.mnrType || (updates as any).mnrType;
+         if (incomingMain.attention || (updates as any).attention_id) dbUpdates.attention_id = incomingMain.attention || (updates as any).attention_id;
+         if (incomingMain.reference !== undefined) dbUpdates.reference_no = incomingMain.reference;
+         if (incomingMain.reportIssuance8D !== undefined) dbUpdates.report_issuance_8d = incomingMain.reportIssuance8D ? 1 : 0;
          
          const nc: any = updates.nonConformity || {};
-         if (nc.recurrenceRef !== undefined) dbUpdates.recurrence_ref = nc.recurrenceRef;
+         if (nc.recurrenceRef !== undefined || (updates as any).recurrenceRef !== undefined) {
+             dbUpdates.recurrence_ref = nc.recurrenceRef || (updates as any).recurrenceRef;
+         }
 
-         if (main.issueDate) dbUpdates.issued_date = this.formatDate(main.issueDate);
-         if (main.initialReport) dbUpdates.initial_report_date = this.formatDate(main.initialReport);
-         if (main.dueDate) dbUpdates.due_date = this.formatDate(main.dueDate);
-         if (main.actualInitialReport) dbUpdates.actual_initial_report_date = this.formatDate(main.actualInitialReport);
-         if (main.actualFinalReport) dbUpdates.actual_final_report_date = this.formatDate(main.actualFinalReport);
-         if (main.remarks !== undefined) dbUpdates.remarks = main.remarks;
+         if (incomingMain.issueDate) dbUpdates.issued_date = this.formatDate(incomingMain.issueDate);
+         if (incomingMain.initialReport) dbUpdates.initial_report_date = this.formatDate(incomingMain.initialReport);
+         if (incomingMain.dueDate) dbUpdates.due_date = this.formatDate(incomingMain.dueDate);
+         if (incomingMain.actualInitialReport) dbUpdates.actual_initial_report_date = this.formatDate(incomingMain.actualInitialReport);
+         if (incomingMain.actualFinalReport) dbUpdates.actual_final_report_date = this.formatDate(incomingMain.actualFinalReport);
+         if (incomingMain.remarks !== undefined) dbUpdates.remarks = incomingMain.remarks;
 
          // Disposition (accept both 'disposition' and 'disposition_data')
          const disp: any = updates.disposition || (updates as any).disposition_data || {};
@@ -406,7 +414,10 @@ export class MnrService {
          if (Object.keys(dbUpdates).length > 2) {
              await trx.updateTable('MNR_LOTS')
                  .set(dbUpdates)
-                 .where('mnr_id', '=', id)
+                 .where((eb) => eb.or([
+                     eb('mnr_id', '=', id),
+                     eb('control_no', '=', id)
+                 ]))
                  .execute();
          }
 
@@ -419,17 +430,29 @@ export class MnrService {
 
   async deleteRecord(id: string) {
      return await mnrRepository.executeTransaction(async (trx) => {
-         await trx.deleteFrom('MNR_CC').where('mnr_id', '=', id).execute();
-         await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', id).execute();
-         await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', id).execute();
-         const responses = await trx.selectFrom('MNR_RESPONSE').select('mnr_response_id').where('mnr_id', '=', id).execute();
+         // Resolve real mnr_id if control_no was passed
+         const record = await trx.selectFrom('MNR_LOTS')
+             .select('mnr_id')
+             .where((eb) => eb.or([
+                 eb('mnr_id', '=', id),
+                 eb('control_no', '=', id)
+             ]))
+             .executeTakeFirst();
+
+         if (!record) return { success: false, message: 'Record not found' };
+         const realId = record.mnr_id;
+
+         await trx.deleteFrom('MNR_CC').where('mnr_id', '=', realId).execute();
+         await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', realId).execute();
+         await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', realId).execute();
+         const responses = await trx.selectFrom('MNR_RESPONSE').select('mnr_response_id').where('mnr_id', '=', realId).execute();
          for (const res of responses) {
              await trx.deleteFrom('MNR_RESPONSE_ATTACHMENT').where('mnr_response_id', '=', res.mnr_response_id).execute();
          }
-         await trx.deleteFrom('MNR_RESPONSE').where('mnr_id', '=', id).execute();
-         await trx.deleteFrom('MNR_DETAILS').where('mnr_id', '=', id).execute();
+         await trx.deleteFrom('MNR_RESPONSE').where('mnr_id', '=', realId).execute();
+         await trx.deleteFrom('MNR_DETAILS').where('mnr_id', '=', realId).execute();
          // Delete Header last
-         await trx.deleteFrom('MNR_LOTS').where('mnr_id', '=', id).execute();
+         await trx.deleteFrom('MNR_LOTS').where('mnr_id', '=', realId).execute();
          return { success: true, message: 'Record and all associated data deleted successfully' };
      });
   }

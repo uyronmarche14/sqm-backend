@@ -62,6 +62,71 @@ export class MnrController {
       next(error);
     }
   }
+
+  // Workflow Action Handlers
+  async submit(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await mnrService.updateRecord(id, { status: 'SUBMITTED' }, userId);
+      res.json(result);
+    } catch (error) {
+      console.error('[MNR] SUBMIT error:', error);
+      next(error);
+    }
+  }
+
+  async approve(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+      const { remarks } = req.body;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await mnrService.updateRecord(id, { status: 'APPROVED', remarks }, userId);
+      res.json(result);
+    } catch (error) {
+      console.error('[MNR] APPROVE error:', error);
+      next(error);
+    }
+  }
+
+  async reject(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+      const { remarks } = req.body;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await mnrService.updateRecord(id, { status: 'REJECTED', remarks }, userId);
+      res.json(result);
+    } catch (error) {
+      console.error('[MNR] REJECT error:', error);
+      next(error);
+    }
+  }
+
+  async issue(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+      const { remarks } = req.body;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await mnrService.updateRecord(id, { status: 'ISSUED', remarks }, userId);
+      res.json(result);
+    } catch (error) {
+      console.error('[MNR] ISSUE error:', error);
+      next(error);
+    }
+  }
+
+  async close(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+      const { remarks } = req.body;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const result = await mnrService.updateRecord(id, { status: 'CLOSED', remarks }, userId);
+      res.json(result);
+    } catch (error) {
+      console.error('[MNR] CLOSE error:', error);
+      next(error);
+    }
+  }
 }
 
 export const mnrController = new MnrController();

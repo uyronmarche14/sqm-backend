@@ -17,4 +17,11 @@ router.get('/:id', mnrController.getById);
 router.put('/:id', upload.any(), logUploads, handleUploadError, mnrController.update);
 router.delete('/:id', mnrController.delete);
 
+// Workflow Action Subroutes
+router.post('/:id/submit', mnrController.submit);
+router.post('/:id/approve', mnrController.approve);
+router.post('/:id/reject', mnrController.reject);
+router.post('/:id/issue', mnrController.issue);
+router.post('/:id/close', mnrController.close);
+
 export default router;
