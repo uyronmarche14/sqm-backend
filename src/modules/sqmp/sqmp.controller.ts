@@ -38,7 +38,7 @@ export class SqmpController {
       const files = (req as any).files || [];
       
       const result = await sqmpService.createRecord(payload, userId, files);
-      return res.status(201).json(createResponse(result.data || { sqmp_id: result.sqmp_id }, result.message));
+      return res.status(201).json(createResponse({ id: (result as any).sqmp_id || "new" }, result.message));
     } catch (error) {
       console.error('[SQMP] CREATE error:', error);
       return next(error);
