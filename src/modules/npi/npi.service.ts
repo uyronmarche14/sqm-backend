@@ -74,28 +74,36 @@ export class NpiService {
     
     const dbStatus = mapStatusToDB(payload.status || 'DRAFT');
     const defaultInspector = await npiRepository.findDefaultInspector();
+    
+    // Generate control number if not provided
+    let controlNo = payload.controlNo;
+    if (!controlNo && payload.siteId) {
+        controlNo = await this.generateSequence(payload.siteId);
+    } else if (!controlNo) {
+        controlNo = `NPI-DRAFT-${Date.now()}`;
+    }
 
     const dbPayload = {
         npi_lot_id: npiId,
-        control_no: payload.controlNo,
+        control_no: controlNo as string,
         datecreated: now,
-        site_id: payload.siteId,
-        supplier_id: payload.supplierId,
-        part_id: payload.partId,
-        model_id: payload.model,
+        site_id: (payload.siteId || '') as string,
+        supplier_id: (payload.supplierId || '') as string,
+        part_id: (payload.partId || '') as string,
+        model_id: (payload.model || '') as string,
         lot_no: payload.lotNo || '',
         lot_size: payload.lotSize || 0,
         invoice_no: payload.invoiceNo || '',
         po_no: payload.poNo || '',
-        inspectionmethod_id: payload.inspectionMethod,
+        inspectionmethod_id: payload.inspectionMethod || '',
         inspection_temp: payload.inspectionTemp || 0,
         inspection_hum: payload.inspectionHum || 0,
         starttime: payload.startTime || 0,
         endtime: payload.endTime || 0,
-        severity_id: payload.severity,
+        severity_id: payload.severity || '',
         severity_seq: payload.severity_seq || null,
         sample_size: payload.sampleSize || 0,
-        disposition_id: payload.disposition,
+        disposition_id: payload.disposition || '',
         inspection_date: this.parseDate(payload.inspectionDate) || now,
         delivery_date: this.parseDate(payload.deliveryDate) || now,
         inspected_by_id: defaultInspector || effectiveUserId,
@@ -249,7 +257,7 @@ export class NpiService {
     
     if (payload.severity) dbUpdates.severity_id = payload.severity;
     if (payload.severity_seq !== undefined) dbUpdates.severity_seq = payload.severity_seq;
-    if (payload.sample_size !== undefined) dbUpdates.sample_size = payload.sample_size;
+    if (payload.sampleSize !== undefined) dbUpdates.sample_size = payload.sampleSize;
     
     if (payload.disposition) dbUpdates.disposition_id = payload.disposition;
     if (payload.inspectionDate) dbUpdates.inspection_date = this.parseDate(payload.inspectionDate);

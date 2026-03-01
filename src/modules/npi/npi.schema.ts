@@ -38,6 +38,8 @@ const NpiDimensionCategorySchema = z.object({
 const NpiCcListSchema = z.object({
   user_id: z.string().uuid().optional(),
   email: z.string().email().optional()
+}).refine((data) => data.user_id || data.email, {
+  message: "Either user_id or email must be provided"
 }).transform((data) => ({
   // Return whichever is provided - service layer will resolve email to user_id
   user_id: data.user_id,
@@ -60,17 +62,17 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
 
 export const NpiCreateSchema = z.object({
   body: z.object({
-    controlNo: z.string(),
-    siteId: z.string().uuid('Valid Site ID is required'),
-    supplierId: z.string().uuid(),
-    partId: z.string().uuid(),
-    model: z.string().uuid(),
+    controlNo: z.string().optional(),
+    siteId: z.string().uuid('Valid Site ID is required').optional(),
+    supplierId: z.string().uuid().optional(),
+    partId: z.string().uuid().optional(),
+    model: z.string().uuid().optional(),
     lotNo: z.string().optional(),
     lotSize: z.preprocess((v) => Number(v) || 0, z.number().int()),
     invoiceNo: z.string().optional(),
     poNo: z.string().optional(),
     
-    inspectionMethod: z.string().uuid(),
+    inspectionMethod: z.string().uuid().optional(),
     inspectionTemp: z.preprocess((v) => Number(v) || 0, z.number()),
     inspectionHum: z.preprocess((v) => Number(v) || 0, z.number()),
     
@@ -79,14 +81,15 @@ export const NpiCreateSchema = z.object({
     receivedTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
     endorseTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
     
-    severity: z.string().uuid(),
+    severity: z.string().uuid().optional(),
     severity_seq: z.string().optional(),
     sampleSize: z.preprocess((v) => Number(v) || 0, z.number().int()),
-    disposition: z.string().uuid(),
+    disposition: z.string().uuid().optional(),
     
     inspectionDate: z.string().datetime().or(z.date()).optional(),
     deliveryDate: z.string().datetime().or(z.date()).optional(),
     
+    inspectedBy: z.string().uuid().optional(),
     inspectionCategory: z.string().uuid().optional(),
     dataVerifiedBy: z.string().uuid().optional(),
     
@@ -138,7 +141,7 @@ export const NpiUpdateSchema = z.object({
     
     severity: z.string().uuid().optional(),
     severity_seq: z.string().optional(),
-    sample_size: z.preprocess((v) => Number(v), z.number().int().optional()),
+    sampleSize: z.preprocess((v) => Number(v), z.number().int().optional()),
     disposition: z.string().uuid().optional(),
     
     inspectionDate: z.string().datetime().or(z.date()).optional(),

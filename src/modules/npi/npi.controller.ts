@@ -49,8 +49,9 @@ export class NpiController {
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = NpiUpdateSchema.parse({ params: req.params, body: req.body }).params;
-      const payload = NpiUpdateSchema.parse({ params: req.params, body: req.body }).body;
+      const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
+      const { id } = parsed.params;
+      const payload = parsed.body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
 
