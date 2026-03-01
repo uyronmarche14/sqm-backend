@@ -213,5 +213,11 @@ export const MnrIdParamSchema = z.object({
   })
 });
 
+export const MnrAttachmentParamSchema = z.object({
+  params: z.object({
+    attachmentId: z.string().min(1, 'Attachment ID is required')
+  })
+});
+
 export type MNRCreationInput = z.infer<typeof MnrCreateSchema>['body'];
 export type MNRUpdateInput = z.infer<typeof MnrUpdateSchema>['body'];

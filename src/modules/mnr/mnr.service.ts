@@ -170,7 +170,7 @@ export class MnrService {
     };
   }
 
-  async createRecord(payload: MNRCreationInput, userId: string) {
+  async createRecord(payload: MNRCreationInput, userId: string, files: any[] = []) {
     const mnrId = uuidv4();
     const controlNo = await this.generateControlNo();
     const now = new Date();
@@ -374,16 +374,21 @@ export class MnrService {
       // 5. Attachments
       if (payload.attachments && Array.isArray(payload.attachments)) {
         for (const att of payload.attachments) {
-            const fName = (att as any).file_name || att.name;
-            if (!fName) {
+            const originalName = att.file_name || att.name;
+            if (!originalName) {
               console.warn('[MNR] Skipping attachment missing file_name:', att);
               continue;
             }
+
+            // Match with Multer files if it's a new upload
+            const uploadedFile = files.find(f => f.originalname === originalName);
+            const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
+
             await trx.insertInto('MNR_ATTACHMENT').values({
-                mnr_attachment_id: uuidv4(),
+                mnr_attachment_id: att.id || uuidv4(),
                 mnr_id: mnrId,
-                file_name: fName,
-                file_extension: att.extension || (att as any).file_extension || 'bin',
+                file_name: diskFileName,
+                file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
                 remarks: att.remarks || null,
                 last_update: now,
                 updateby: userId
@@ -396,17 +401,82 @@ export class MnrService {
   }
 
   // Update and delete omitted for brevity, will be similar to execution loop
-  async updateRecord(id: string, payload: MNRUpdateInput, userId: string) {
+  async updateRecord(id: string, payload: MNRUpdateInput, userId: string, files: any[] = []) {
      const updates = payload.updates || payload;
      const now = new Date();
      
      return await mnrRepository.executeTransaction(async (trx) => {
+         // First, get the current record status to determine workflow transitions
+         const currentRecord = await trx.selectFrom('MNR_LOTS')
+             .select(['mnr_id', 'request_status', 'report_issuance_8d'])
+             .where((eb) => eb.or([
+                 eb('mnr_id', '=', id),
+                 eb('control_no', '=', id)
+             ]))
+             .executeTakeFirst();
+         
+         if (!currentRecord) throw new NotFoundError('MNR Record not found');
+         
+         const currentStatus = mapStatusFromDB(currentRecord.request_status);
+         console.log(`[MNR Workflow] Current status: ${currentStatus}, Requested status: ${updates.status}`);
+         
          const dbUpdates: any = {
              last_update: now,
              updateby: userId
          };
 
-         if (updates.status) dbUpdates.request_status = mapStatusToDB(updates.status);
+         let targetStatus = updates.status;
+
+         // ============================================================================
+         // WORKFLOW STATE TRANSITION LOGIC
+         // ============================================================================
+         
+         // If status is being updated, apply context-aware workflow transitions
+         if (targetStatus) {
+             const upperTarget = targetStatus.toUpperCase();
+             
+             // Handle SUBMIT action based on current context
+             if (upperTarget === 'SUBMITTED' || upperTarget === 'SUBMIT') {
+                 // Context-aware transitions:
+                 // - DRAFT → SUBMITTED (initial submission)
+                 // - IR → FR (submitting Initial Report response)
+                 // - FR → RESPONSE_AWAIT_APPROVAL (submitting Final Report response)
+                 if (currentStatus === 'IR') {
+                     targetStatus = 'FR';
+                     console.log(`[MNR Workflow] Transition: IR → FR (Initial Report submitted)`);
+                 } else if (currentStatus === 'FR') {
+                     targetStatus = 'RESPONSE_AWAIT_APPROVAL';
+                     console.log(`[MNR Workflow] Transition: FR → RESPONSE_AWAIT_APPROVAL (Final Report submitted, awaiting approval)`);
+                 } else if (currentStatus === 'DRAFT') {
+                     targetStatus = 'SUBMITTED';
+                     console.log(`[MNR Workflow] Transition: DRAFT → SUBMITTED (Initial submission)`);
+                 }
+             }
+             
+             // Handle ISSUED status - check if 8D is required to bypass to IR
+             if (upperTarget === 'ISSUED') {
+                let is8DRequired = false;
+                if (updates.reportIssuance8D !== undefined) {
+                   is8DRequired = !!updates.reportIssuance8D;
+                } else {
+                   is8DRequired = currentRecord?.report_issuance_8d === 1 || currentRecord?.report_issuance_8d === true;
+                }
+
+                if (is8DRequired) {
+                   targetStatus = 'IR';
+                   console.log(`[MNR Workflow] Record ${id} requires 8D, bypassing ISSUED directly to IR`);
+                }
+             }
+             
+             // Handle RESPONSE_RECEIVED → automatically move to RESPONSE_AWAIT_APPROVAL
+             if (upperTarget === 'RESPONSE_RECEIVED') {
+                 targetStatus = 'RESPONSE_AWAIT_APPROVAL';
+                 console.log(`[MNR Workflow] Response received, moving to RESPONSE_AWAIT_APPROVAL`);
+             }
+         }
+
+         if (targetStatus) dbUpdates.request_status = mapStatusToDB(targetStatus);
+
 
          // Main details — frontend sends standardized snake_case _id keys
          if (updates.site_id) dbUpdates.site_id = updates.site_id;
@@ -481,6 +551,29 @@ export class MnrService {
               else if (u.otherAffectedDoc !== undefined) dbUpdates.other_affected_doc = u.otherAffectedDoc;
               if (disp.otherRemarks !== undefined) dbUpdates.other_remarks = disp.otherRemarks;
               else if (u.otherRemarks !== undefined) dbUpdates.other_remarks = u.otherRemarks;
+            }
+         }
+
+         // 4. Attachments (Update)
+         const updateAtts = (updates as any).attachments; if (updateAtts !== undefined && Array.isArray(updateAtts)) {
+            console.log(`[MNR Update] Syncing ${updateAtts.length} attachments for record ${id}`);
+            await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', id).execute();
+            for (const att of updateAtts) {
+              const originalName = att.file_name || att.name;
+              if (!originalName) continue;
+
+              const uploadedFile = files.find(f => f.originalname === originalName);
+              const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
+
+              await trx.insertInto('MNR_ATTACHMENT').values({
+                mnr_attachment_id: att.id || uuidv4(),
+                mnr_id: id,
+                file_name: diskFileName,
+                file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
+                remarks: att.remarks || null,
+                last_update: now,
+                updateby: userId
+              }).execute();
             }
          }
 
