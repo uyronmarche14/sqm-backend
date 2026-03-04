@@ -26,11 +26,58 @@ export class SqprController {
 
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const payload = SqprCreateSchema.parse({ body: req.body }).body;
+      // Parse JSON strings from FormData if present
+      const body = { ...req.body };
+      if (typeof body.attachments === 'string') {
+        body.attachments = JSON.parse(body.attachments);
+      }
+      if (typeof body.cc_list === 'string') {
+        body.cc_list = JSON.parse(body.cc_list);
+      }
+      if (typeof body.approval === 'string') {
+        body.approval = JSON.parse(body.approval);
+      }
+      
+      // Log received data (BEFORE flattening)
+      console.log('[SQPR Controller] CREATE received (RAW):', {
+        sqprId: body.sqpr_id,
+        controlNo: body.control_no,
+        approvalRaw: body.approval,
+        approvalType: typeof body.approval
+      });
+      
+      // Flatten approval nested object to top-level fields for schema validation
+      if (body.approval && typeof body.approval === 'object') {
+        const approval = body.approval;
+        console.log('[SQPR Controller] Flattening approval:', approval);
+        if (approval.incharge_id !== undefined && approval.incharge_id !== null) body.incharge_id = approval.incharge_id;
+        if (approval.incharge_remarks !== undefined && approval.incharge_remarks !== null) body.incharge_remarks = approval.incharge_remarks;
+        if (approval.checker_id !== undefined && approval.checker_id !== null) body.checker_id = approval.checker_id;
+        if (approval.checker_remarks !== undefined && approval.checker_remarks !== null) body.checker_remarks = approval.checker_remarks;
+        if (approval.approver_id !== undefined && approval.approver_id !== null) body.approver_id = approval.approver_id;
+        if (approval.approver_remarks !== undefined && approval.approver_remarks !== null) body.approver_remarks = approval.approver_remarks;
+      }
+      
+      // Log received data (AFTER flattening)
+      console.log('[SQPR Controller] CREATE received (AFTER FLATTEN):', {
+        inchargeRemarks: body.incharge_remarks,
+        checkerRemarks: body.checker_remarks,
+        approverRemarks: body.approver_remarks
+      });
+      
+      const payload = SqprCreateSchema.parse({ body }).body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
       
       const result = await sqprService.createRecord(payload, userId, files);
+      
+      // Log response
+      console.log('[SQPR Controller] CREATE response:', {
+        success: result.success,
+        sqprId: result.data?.sqpr_id,
+        attachments: result.data?.attachments?.length
+      });
+      
       res.status(201).json(result);
     } catch (error) {
       console.error('[SQPR] CREATE error:', error);
@@ -40,12 +87,46 @@ export class SqprController {
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqprUpdateSchema.parse({ params: req.params, body: req.body }).params;
-      const payload = SqprUpdateSchema.parse({ params: req.params, body: req.body }).body;
+      // Parse JSON strings from FormData if present
+      const body = { ...req.body };
+      if (typeof body.attachments === 'string') {
+        body.attachments = JSON.parse(body.attachments);
+      }
+      if (typeof body.cc_list === 'string') {
+        body.cc_list = JSON.parse(body.cc_list);
+      }
+      if (typeof body.approval === 'string') {
+        body.approval = JSON.parse(body.approval);
+      }
+      
+      // Flatten approval nested object to top-level fields for schema validation
+      if (body.approval && typeof body.approval === 'object') {
+        const approval = body.approval;
+        if (approval.incharge_id) body.incharge_id = approval.incharge_id;
+        if (approval.incharge_remarks) body.incharge_remarks = approval.incharge_remarks;
+        if (approval.checker_id) body.checker_id = approval.checker_id;
+        if (approval.checker_remarks) body.checker_remarks = approval.checker_remarks;
+        if (approval.approver_id) body.approver_id = approval.approver_id;
+        if (approval.approver_remarks) body.approver_remarks = approval.approver_remarks;
+      }
+      
+      const { id } = SqprUpdateSchema.parse({ params: req.params, body }).params;
+      const payload = SqprUpdateSchema.parse({ params: req.params, body }).body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
 
       const result = await sqprService.updateRecord(id, payload, userId, files);
+      
+      // Log response
+      console.log('[SQPR Controller] UPDATE response:', {
+        success: result.success,
+        sqprId: result.data?.sqpr_id,
+        status: result.data?.request_status,
+        inchargeRemarks: result.data?.incharge_remarks,
+        checkerRemarks: result.data?.checker_remarks,
+        approverRemarks: result.data?.approver_remarks
+      });
+      
       res.json(result);
     } catch (error) {
       console.error('[SQPR] UPDATE error:', error);

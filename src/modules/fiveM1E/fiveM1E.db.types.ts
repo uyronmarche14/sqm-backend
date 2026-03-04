@@ -41,6 +41,13 @@ export interface FiveM1EApplicationTable {
   CreatedBy: string | null;
   CreateDate: Date | string | null;
   ModifiedDate: Date | string | null;
+
+  // Dedicated Evaluation Columns (replacing generic Attribute05-10)
+  RankID: string | null;                        // 5M1E Rank/Category from maintenance table
+  ChangeQCProcess: boolean | number | null;     // Change of QC Process Chart
+  ChangeSupplierSpec: boolean | number | null;  // Change of Supplier Specification
+  ProcessAuditResult: string | null;            // ACCEPTED / ACCEPTED_WITH_CONDITIONS / NOT_ACCEPTED
+  // NOTE: EnvironmentalApproval lives in TBL_5M1E_Approval (EnviCheckerNecessary/EnviAppproverNecessary)
 }
 
 // ---------------------------------------------------------------------------

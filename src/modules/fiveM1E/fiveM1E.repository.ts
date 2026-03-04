@@ -27,15 +27,66 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   // =========================================================================
 
   async findWithApproval(idOrControlNo: string) {
-    let query = db
+    // Use any cast to bypass Kysely's strict type checking for complex multi-table joins
+    const dbAny = db as any;
+    
+    let query = dbAny
       .selectFrom('TBL_5M1E_Application as app')
       .leftJoin('TBL_5M1E_Approval as approval', 'app.ControlNo', 'approval.ControlNo')
+      .leftJoin('SUPPLIERS as sup', 'app.SupplierID', 'sup.supplier_id')
+      .leftJoin('MFG_SITES as site', 'app.SiteID', 'site.site_id')
+      .leftJoin('MODELS as mdl', 'app.ModelID', 'mdl.model_id')
+      .leftJoin('PARTTYPES as pt', 'app.CommodityID', 'pt.parttype_id')
+      // JOIN USERS to resolve UUIDs → human-readable names
+      .leftJoin('USERS as reviewerUser', 'approval.Reviewer', 'reviewerUser.user_id')
+      .leftJoin('USERS as checkerUser', 'approval.Checker', 'checkerUser.user_id')
+      .leftJoin('USERS as approverUser', 'approval.Approver', 'approverUser.user_id')
+      .leftJoin('USERS as creatorUser', 'app.CreatedBy', 'creatorUser.user_id')
+      .leftJoin('USERS as mpdApproverUser', 'approval.MPDApprover', 'mpdApproverUser.user_id')
+      .leftJoin('USERS as evalPicUser', 'approval.MPDPIC', 'evalPicUser.user_id')
+      .leftJoin('USERS as enviApproverUser', 'approval.EnviApproverID', 'enviApproverUser.user_id')
+      .leftJoin('USERS as enviCheckerUser', 'approval.EnviCheckerID', 'enviCheckerUser.user_id')
+      .leftJoin('PRODUCTS as prod', 'app.Attribute03', 'prod.product_id')
       .selectAll('app')
-      .selectAll('approval')
       .select([
         'approval.Status as approval_status',
         'approval.MPDPIC as mpd_pic',
         'approval.MPDApprover as mpd_approver',
+        // Approval section fields
+        'approval.Reviewer as reviewer',
+        'approval.Checker as checker',
+        'approval.Approver as approver',
+        'approval.IssueDate as issue_date',
+        'approval.ChkrDtAprd as chkr_dt_aprd',
+        'approval.ApproverDtAprd as approver_dt_aprd',
+        'approval.FinalApprover as final_approver',
+        'approval.FAName as fa_name',
+        // Environment Approval fields
+        'approval.EnviCheckerNecessary as envi_checker_necessary',
+        'approval.EnviCheckerID as envi_checker_id',
+        'approval.EnviCheckerName as envi_checker_name',
+        'approval.EnviCheckerStatus as envi_checker_status',
+        'approval.EnviCheckerDtAprd as envi_checker_dt_aprd',
+        'approval.EnviAppproverNecessary as envi_approver_necessary',
+        'approval.EnviApproverID as envi_approver_id',
+        'approval.EnviApproveName as envi_approve_name',
+        'approval.EnviApproveStatus as envi_approve_status',
+        'approval.EnviApproveDtAprd as envi_approve_dt_aprd',
+        // Human-readable names from USERS joins
+        'reviewerUser.full_name as reviewer_full_name',
+        'checkerUser.full_name as checker_full_name',
+        'approverUser.full_name as approver_full_name',
+        'creatorUser.full_name as created_by_name',
+        'mpdApproverUser.full_name as mpd_approver_name',
+        'enviApproverUser.full_name as envi_approver_full_name',
+        'enviCheckerUser.full_name as envi_checker_full_name',
+        // Human-readable names from master data joins
+        'sup.supplier_name as supplier_name',
+        'site.site_name as site_name',
+        'mdl.model_name as model_name',
+        'pt.parttype_name as part_type_name',
+        'prod.product_name as attribute_03_name',
+        'evalPicUser.full_name as mpd_pic_name',
       ]);
 
     if (isNumeric(idOrControlNo)) {
@@ -51,14 +102,46 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   }
 
   async findAllWithApproval(statusFilter?: string) {
-    let query = db
+    const dbAny = db as any;
+    
+    let query = dbAny
       .selectFrom('TBL_5M1E_Application as app')
       .leftJoin('TBL_5M1E_Approval as approval', 'app.ControlNo', 'approval.ControlNo')
+      .leftJoin('SUPPLIERS as sup', 'app.SupplierID', 'sup.supplier_id')
+      .leftJoin('MFG_SITES as site', 'app.SiteID', 'site.site_id')
+      .leftJoin('USERS as reviewerUser', 'approval.Reviewer', 'reviewerUser.user_id')
+      .leftJoin('USERS as checkerUser', 'approval.Checker', 'checkerUser.user_id')
+      .leftJoin('USERS as approverUser', 'approval.Approver', 'approverUser.user_id')
+      .leftJoin('USERS as evalPicUser', 'approval.MPDPIC', 'evalPicUser.user_id')
+      .leftJoin('USERS as enviApproverUser', 'approval.EnviApproverID', 'enviApproverUser.user_id')
+      .leftJoin('USERS as enviCheckerUser', 'approval.EnviCheckerID', 'enviCheckerUser.user_id')
+      .leftJoin('PRODUCTS as prod', 'app.Attribute03', 'prod.product_id')
       .selectAll('app')
       .select([
         'approval.Status as approval_status',
         'approval.MPDPIC as mpd_pic',
         'approval.MPDApprover as mpd_approver',
+        // Approval section fields
+        'approval.Reviewer as reviewer',
+        'approval.ReviewerName as reviewer_name',
+        'approval.Checker as checker',
+        'approval.CheckerName as checker_name',
+        'approval.Approver as approver',
+        'approval.ApproverName as approver_name',
+        // Environment Approval fields
+        'approval.EnviAppproverNecessary as envi_approver_necessary',
+        'approval.EnviApproverID as envi_approver_id',
+        'approval.EnviCheckerNecessary as envi_checker_necessary',
+        // Human-readable names from joined tables
+        'sup.supplier_name as supplier_name',
+        'site.site_name as site_name',
+        'reviewerUser.full_name as reviewer_full_name',
+        'checkerUser.full_name as checker_full_name',
+        'approverUser.full_name as approver_full_name',
+        'enviApproverUser.full_name as envi_approver_full_name',
+        'enviCheckerUser.full_name as envi_checker_full_name',
+        'prod.product_name as attribute_03_name',
+        'evalPicUser.full_name as mpd_pic_name',
       ]);
       
     if (statusFilter && statusFilter !== 'all') {
@@ -106,6 +189,12 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         Attribute08: appData.Attribute08,
         Attribute09: appData.Attribute09,
         Attribute10: appData.Attribute10,
+        // Dedicated Evaluation Columns
+        RankID: appData.RankID,
+        ChangeQCProcess: appData.ChangeQCProcess,
+        ChangeSupplierSpec: appData.ChangeSupplierSpec,
+        ProcessAuditResult: appData.ProcessAuditResult,
+        // EnvironmentalApproval lives in TBL_5M1E_Approval, not here
         CreatedBy: appData.CreatedBy,
         CreateDate: appData.CreateDate,
         ModifiedDate: appData.ModifiedDate,

@@ -76,8 +76,12 @@ export class SqprService {
       file_extension: 'pdf',
       remarks: payload.remarks || null,
       date_created: now,
-      incharge_id: userId,
+      incharge_id: payload.incharge_id || userId,
       incharge_remarks: payload.incharge_remarks || null,
+      checker_id: payload.checker_id || null,
+      checker_remarks: payload.checker_remarks || null,
+      approver_id: payload.approver_id || null,
+      approver_remarks: payload.approver_remarks || null,
       request_status: mapStatusToDB('DRAFT'),
       last_update: now,
       updateby: userId
@@ -88,15 +92,17 @@ export class SqprService {
       await trx.insertInto('SQPR').values(dbPayload).execute();
 
       // 2. Insert Attachments
+      const savedAttachments: any[] = [];
       if (payload.attachments && payload.attachments.length > 0) {
         for (const att of payload.attachments) {
           const uploadedFile = files.find(f => f.originalname === att.file_name);
           const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
           const originalName = att.file_name;
           const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const attachmentId = uuidv4();
 
           await trx.insertInto('SQPR_ATTACHMENT').values({
-            sqpr_attachment_id: uuidv4(),
+            sqpr_attachment_id: attachmentId,
             sqpr_id: sqprId,
             file_name: diskFileName || 'Unknown',
             file_extension: diskFileName ? diskFileName.split('.').pop()! : (att.file_extension || 'dat'),
@@ -105,23 +111,77 @@ export class SqprService {
             last_update: now,
             updateby: userId
           }).execute();
+
+          savedAttachments.push({
+            sqpr_attachment_id: attachmentId,
+            sqpr_id: sqprId,
+            file_name: diskFileName || originalName,
+            file_extension: diskFileName ? diskFileName.split('.').pop()! : (att.file_extension || 'dat'),
+            attachment_type: att.attachment_type || 'COVER',
+            remarks: finalRemarks,
+            updateby: userId,
+            last_update: now
+          });
         }
       }
 
       // 3. Insert CC List
+      const savedCcList: any[] = [];
       if (payload.cc_list && payload.cc_list.length > 0) {
         for (const cc of payload.cc_list) {
+          const ccId = uuidv4();
           await trx.insertInto('SQPR_CC').values({
-            sqpr_cc_id: uuidv4(),
+            sqpr_cc_id: ccId,
             sqpr_id: sqprId,
             user_id: cc.user_id,
             last_update: now,
             updateby: userId
           }).execute();
+          savedCcList.push({ sqpr_cc_id: ccId, sqpr_id: sqprId, user_id: cc.user_id, updateby: userId, last_update: now });
         }
       }
 
-      return { success: true, sqpr_id: sqprId, message: 'Record created successfully' };
+      // 4. Return record data directly (don't fetch from DB inside transaction)
+      const recordData = {
+        sqpr_id: sqprId,
+        control_no: controlNo,
+        site_id: dbPayload.site_id,
+        fiscal_year: dbPayload.fiscal_year,
+        report_type: dbPayload.report_type,
+        month: dbPayload.month,
+        supplier_id: dbPayload.supplier_id,
+        attention_id: dbPayload.attention_id,
+        attention: dbPayload.attention,
+        remarks: dbPayload.remarks,
+        date_created: now,
+        request_status: 'DRFT',
+        last_update: now,
+        updateby: userId,
+        incharge_id: dbPayload.incharge_id,
+        incharge_remarks: dbPayload.incharge_remarks,
+        checker_id: dbPayload.checker_id,
+        checker_remarks: dbPayload.checker_remarks,
+        approver_id: dbPayload.approver_id,
+        approver_remarks: dbPayload.approver_remarks,
+        submit_date: null,
+        checker_date: null,
+        approver_date: null,
+        file_id: dbPayload.file_id,
+        file_name: dbPayload.file_name,
+        file_extension: dbPayload.file_extension
+      };
+
+      return {
+        success: true,
+        data: {
+          ...recordData,
+          status: 'DRAFT',
+          created_at: now,
+          attachments: savedAttachments,
+          cc_list: savedCcList
+        },
+        message: 'Record created successfully'
+      };
     });
   }
 
@@ -169,6 +229,7 @@ export class SqprService {
       }
 
       // 2. Refresh Attachments (Delete & Re-insert)
+      const savedAttachments: any[] = [];
       if (payload.attachments !== undefined) {
         await trx.deleteFrom('SQPR_ATTACHMENT').where('sqpr_id', '=', existing.record.sqpr_id).execute();
         
@@ -177,9 +238,10 @@ export class SqprService {
           const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
           const originalName = att.file_name;
           const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const attachmentId = att.sqpr_attachment_id || uuidv4();
 
           await trx.insertInto('SQPR_ATTACHMENT').values({
-            sqpr_attachment_id: att.sqpr_attachment_id || uuidv4(),
+            sqpr_attachment_id: attachmentId,
             sqpr_id: existing.record.sqpr_id,
             file_name: diskFileName || 'Unknown',
             file_extension: diskFileName ? diskFileName.split('.').pop()! : (att.file_extension || 'dat'),
@@ -188,24 +250,58 @@ export class SqprService {
             last_update: now,
             updateby: userId
           }).execute();
+
+          savedAttachments.push({
+            sqpr_attachment_id: attachmentId,
+            sqpr_id: existing.record.sqpr_id,
+            file_name: diskFileName || originalName,
+            file_extension: diskFileName ? diskFileName.split('.').pop()! : (att.file_extension || 'dat'),
+            attachment_type: att.attachment_type || 'COVER',
+            remarks: finalRemarks,
+            updateby: userId,
+            last_update: now
+          });
         }
       }
 
       // 3. Refresh CC (Delete & Re-insert)
+      const savedCcList: any[] = [];
       if (payload.cc_list !== undefined) {
           await trx.deleteFrom('SQPR_CC').where('sqpr_id', '=', existing.record.sqpr_id).execute();
           for (const cc of payload.cc_list) {
+            const ccId = cc.sqpr_cc_id || uuidv4();
             await trx.insertInto('SQPR_CC').values({
-              sqpr_cc_id: cc.sqpr_cc_id || uuidv4(),
+              sqpr_cc_id: ccId,
               sqpr_id: existing.record.sqpr_id,
               user_id: cc.user_id,
               last_update: now,
               updateby: userId
             }).execute();
+            savedCcList.push({ sqpr_cc_id: ccId, sqpr_id: existing.record.sqpr_id, user_id: cc.user_id, updateby: userId, last_update: now });
           }
       }
 
-      return { success: true, message: 'Record updated successfully' };
+      // 4. Return record data directly (don't fetch from DB inside transaction)
+      const recordData = {
+        ...existing.record,
+        ...dbUpdates,
+        sqpr_id: existing.record.sqpr_id,
+        control_no: existing.record.control_no,
+        incharge_remarks: dbUpdates.incharge_remarks || existing.record.incharge_remarks,
+        checker_remarks: dbUpdates.checker_remarks || existing.record.checker_remarks,
+        approver_remarks: dbUpdates.approver_remarks || existing.record.approver_remarks
+      };
+
+      return {
+        success: true,
+        data: {
+          ...recordData,
+          status: mapStatusFromDB(dbUpdates.request_status || existing.record.request_status),
+          attachments: savedAttachments.length > 0 ? savedAttachments : (existing.attachments || []),
+          cc_list: savedCcList.length > 0 ? savedCcList : (existing.ccList || [])
+        },
+        message: 'Record updated successfully'
+      };
     });
   }
 

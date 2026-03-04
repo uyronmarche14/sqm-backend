@@ -3,9 +3,10 @@ export enum WorkflowStatusEnum {
   NEW = 'NEW',
   PENDING = 'PENDING',
   SUBMITTED = 'SUBMITTED',
-  AAPPROVAL = 'AAPPROVAL',
+  // Evaluation / Technical Phases
   FAPPROVED = 'FAPPROVED',
   EVALUATION = 'EVALUATION',
+  CHECKED = 'CHECKED', // Two-stage approval: Checker reviewed, awaiting Approver
   APPROVED = 'APPROVED',
   APPROVED_WC = 'APPROVED_WC',
   APPROVEDWC = 'APPROVEDWC',

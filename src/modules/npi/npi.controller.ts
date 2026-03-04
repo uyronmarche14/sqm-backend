@@ -135,6 +135,24 @@ export class NpiController {
     }
   }
 
+  async check(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      
+      const result = await npiService.updateRecord(id, { 
+        request_status: 'CHECKED',
+        status: WorkflowStatusEnum.CHECKED,
+        checkerRemarks: req.body?.remarks || undefined
+      }, userId, []);
+      
+      res.json(successResponse(result.data || result, result.message));
+    } catch (error) {
+      console.error('[NPI] CHECK error:', error);
+      next(error);
+    }
+  }
+
   async approve(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;

@@ -3,8 +3,31 @@ import { fiveM1EController } from './fiveM1E.controller.js';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { validate } from '../../shared/middleware/validate.js';
 import { CreateFiveM1ESchema, UpdateFiveM1ESchema } from './fiveM1E.schema.js';
+// @ts-ignore
+import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 
 const router = express.Router();
+const upload = createModuleUpload('5m1e');
+
+/**
+ * Middleware to parse JSON stringified arrays sent via FormData.
+ * Multer parses text fields as strings, but our Zod schema (and DB) expects arrays.
+ */
+const parseFormDataArrays = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  if (req.body) {
+    const arrayFields = ['parts', 'attachments', 'action_items', 'check_items', 'status_remarks'];
+    arrayFields.forEach(field => {
+      if (typeof req.body[field] === 'string') {
+        try {
+          req.body[field] = JSON.parse(req.body[field]);
+        } catch (e) {
+          console.warn(`[5M1E Routes] Failed to parse ${field} as JSON JSON Array`);
+        }
+      }
+    });
+  }
+  next();
+};
 
 /**
  * All 5M1E routes require authentication.
@@ -26,6 +49,10 @@ router.get(
  */
 router.post(
   '/', 
+  upload.any(),
+  logUploads,
+  handleUploadError,
+  parseFormDataArrays,
   validate(CreateFiveM1ESchema), 
   fiveM1EController.createApplication
 );
@@ -45,6 +72,10 @@ router.get(
  */
 router.put(
   '/:id', 
+  upload.any(),
+  logUploads,
+  handleUploadError,
+  parseFormDataArrays,
   validate(UpdateFiveM1ESchema), 
   fiveM1EController.updateApplication
 );

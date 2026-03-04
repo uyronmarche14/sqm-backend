@@ -279,7 +279,7 @@ export class SqmpService {
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: 'ISS',
+          request_status: mapStatusToDB('ISSUED'),
           issuer_id: userId,
           issuer_remarks: remarks || null,
           last_update: now,

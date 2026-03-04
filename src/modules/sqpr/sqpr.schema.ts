@@ -37,7 +37,14 @@ export const SqprCreateSchema = z.object({
     attentionId: z.string().uuid().optional(), // Frontend alias
     attention: z.string().optional(),
     remarks: z.string().optional(),
+    
+    // Workflow fields
+    incharge_id: z.string().uuid().optional(),
     incharge_remarks: z.string().optional(),
+    checker_id: z.string().uuid().optional(),
+    checker_remarks: z.string().optional(),
+    approver_id: z.string().uuid().optional(),
+    approver_remarks: z.string().optional(),
     
     attachments: z.array(SqprAttachmentSchema).optional(),
     cc_list: z.array(SqprCcUserSchema).optional()

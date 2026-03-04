@@ -1,5 +1,21 @@
 import { z } from 'zod';
 
+// Helper: Parse JSON string arrays from FormData (same as other modules)
+const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((val) => {
+    if (typeof val === 'string') {
+      try { return JSON.parse(val); } catch { return []; }
+    }
+    return Array.isArray(val) ? val : [];
+  }, z.array(schema).optional().default([]));
+
+// CC Notification schema (matches TBL_5M1E_CC)
+const FiveM1ECcSchema = z.object({
+  user_id: z.string(),
+  full_name: z.string().optional(),
+  email: z.string().optional(),
+});
+
 // ============================================================================
 // Shared sub-schemas for child tables
 // ============================================================================
@@ -104,6 +120,16 @@ export const CreateFiveM1ESchema = z.object({
     attribute_09: z.string().optional(),
     attribute_10: z.string().optional(),
 
+    // Dedicated Evaluation Columns (new)
+    rank_id: z.string().optional(),
+    change_qc_process: z.union([z.string(), z.boolean(), z.number()]).optional(),
+    change_supplier_spec: z.union([z.string(), z.boolean(), z.number()]).optional(),
+    process_audit_result: z.string().optional(),
+    environmental_approval: z.union([z.string(), z.boolean(), z.number()]).optional(),
+
+    // CC Notification List
+    cc_list: JsonParsedArray(FiveM1ECcSchema),
+
     // --- Workflow / Status ---
     status: z.string().default('DRAFT'),
     created_by: z.string().optional(),
@@ -124,11 +150,17 @@ export const CreateFiveM1ESchema = z.object({
     hde_pic: z.string().optional(),
 
     // Reviewer
+    reviewer: z.string().optional(),
     reviewer_name: z.string().optional(),
+    issue_date: z.string().optional(),
 
     // Checker / Approver (General)
+    checker: z.string().optional(),
     checker_name: z.string().optional(),
+    chkr_dt_aprd: z.string().optional(),
+    approver: z.string().optional(),
     approver_name: z.string().optional(),
+    approver_dt_aprd: z.string().optional(),
 
     // Final Approver
     final_approver: z.string().optional(),
@@ -159,7 +191,9 @@ export const CreateFiveM1ESchema = z.object({
     envi_approve_name: z.string().optional(),
     envi_approve_dt_aprd: z.string().optional(),
     envi_checker_necessary: z.string().optional(),
+    envi_checker_id: z.string().optional(),
     envi_checker_name: z.string().optional(),
+    envi_checker_dt_aprd: z.string().optional(),
 
     // QA Section
     qa_checker_id: z.string().optional(),

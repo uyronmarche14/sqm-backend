@@ -26,6 +26,7 @@ router.delete('/:id', npiController.delete);
 
 // Workflow Action Subroutes
 router.post('/:id/submit', npiController.submit);
+router.post('/:id/check', npiController.check);
 router.post('/:id/approve', npiController.approve);
 router.post('/:id/reject', npiController.reject);
 

@@ -11,8 +11,15 @@ export class FiveM1EController {
     try {
       // req.user is guaranteed by requireAuth middleware
       const userId = req.user!.userId; 
+      const files = (req as any).files || [];
       
-      const result = await fiveM1EService.createApplication(req.body, userId);
+      console.log(`[5M1E Controller] Create - ${files.length} file(s) received`);
+      
+      // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
+      console.log("🚀 [BACKEND E2E VERIFICATION] Received Create Payload:");
+      console.log(JSON.stringify(req.body, null, 2));
+
+      const result = await fiveM1EService.createApplication(req.body, userId, files);
       
       res.status(201).json(successResponse(result.data, result.message));
     } catch (error) {
@@ -55,8 +62,16 @@ export class FiveM1EController {
   async updateApplication(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
+      const files = (req as any).files || [];
+      const userId = req.user!.userId;
       
-      const result = await fiveM1EService.updateApplication(id, req.body);
+      console.log(`[5M1E Controller] Update [${id}] - ${files.length} file(s) received for user ${userId}`);
+      
+      // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
+      console.log(`🚀 [BACKEND E2E VERIFICATION] Received Update Payload for ${id}:`);
+      console.log(JSON.stringify(req.body, null, 2));
+
+      const result = await fiveM1EService.updateApplication(id, req.body, files, userId);
       
       res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
@@ -98,7 +113,7 @@ export class FiveM1EController {
     try {
       const id = req.params.id as string;
       const userId = req.user!.userId;
-      const result = await fiveM1EService.approveApplication(id, userId, req.body?.remarks);
+      const result = await fiveM1EService.approveApplication(id, userId, req.body?.remarks, req.body?.status);
       res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
       next(error);
