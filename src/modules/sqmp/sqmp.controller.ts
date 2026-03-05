@@ -77,6 +77,24 @@ export class SqmpController {
     }
   }
 
+  async check(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      
+      const result = await sqmpService.updateRecord(id, { 
+        request_status: 'CHECKED',
+        checker_id: userId,
+        checker_date: new Date()
+      }, userId, []);
+      
+      res.json(result);
+    } catch (error) {
+      console.error('[SQMP] CHECK error:', error);
+      next(error);
+    }
+  }
+
   async approve(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;

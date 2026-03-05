@@ -37,7 +37,7 @@ export class QmqaController {
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       
       const result = await qmqaService.createSchedule(payload, userId);
-      res.status(201).json(createResponse(result.data || result, result.message));
+      res.status(201).json(createResponse(result, 'Schedule created'));
     } catch (error) {
       next(error);
     }
@@ -50,7 +50,7 @@ export class QmqaController {
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
 
       const result = await qmqaService.updateSchedule(id, payload, userId);
-      res.json(successResponse(result.data || result, result.message));
+      res.json(successResponse(result));
     } catch (error) {
       next(error);
     }
@@ -60,18 +60,18 @@ export class QmqaController {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
       const result = await qmqaService.deleteSchedule(id);
-      res.json(successResponse(result.data || result, result.message));
+      res.json(successResponse(result));
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
   // RECORDS (Execution)
   // ==========================================
-  async getAllRecords(_req: Request, res: Response, next: NextFunction) {
+  async getAllRecords(req: Request, res: Response, next: NextFunction) {
     try {
-      const records = await qmqaService.getAllRecords();
+      const status = req.query.status as string | undefined;
+      const records = await qmqaService.getAllRecords({ status });
       return res.json({ data: records });
     } catch (error) {
       console.error('[QMQA] GET ALL RECORDS error:', error);
@@ -95,6 +95,7 @@ export class QmqaController {
       const payload = QmqaRecordCreateSchema.parse({ body: req.body }).body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
+
       
       const result = await qmqaService.createRecord(payload, userId, files);
       return res.status(201).json(result);
@@ -153,6 +154,19 @@ export class QmqaController {
       return res.json(result);
     } catch (error) {
       console.error('[QMQA] APPROVE error:', error);
+      return next(error);
+    }
+  }
+
+  async check(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { remarks } = req.body;
+      const result = await qmqaService.check(id, userId, remarks);
+      return res.json(result);
+    } catch (error) {
+      console.error('[QMQA] CHECK error:', error);
       return next(error);
     }
   }
@@ -217,6 +231,117 @@ export class QmqaController {
       return res.json(result);
     } catch (error) {
       console.error('[QMQA] VERIFY error:', error);
+      return next(error);
+    }
+  }
+
+  // ==========================================
+  // SUPPLIER RESPONSE
+  // ==========================================
+  async saveInitialReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const files = (req as any).files || [];
+      const { skip_initial, initial_remarks, skipInitial, initialReport } = req.body;
+
+      const result = await qmqaService.saveInitialReport(id, userId, {
+        skip_initial: skip_initial === 'true' || skip_initial === true || skipInitial === 'true' || skipInitial === true,
+        initial_remarks: initial_remarks || initialReport || null,
+      }, files);
+      return res.json(result);
+    } catch (error) {
+      console.error('[QMQA] SAVE INITIAL REPORT error:', error);
+      return next(error);
+    }
+  }
+
+  async submitFinalReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const files = (req as any).files || [];
+      const { final_remarks } = req.body;
+
+      const result = await qmqaService.submitFinalReport(id, userId, {
+        final_remarks: final_remarks || null,
+      }, files);
+      return res.json(result);
+    } catch (error) {
+      console.error('[QMQA] SUBMIT FINAL REPORT error:', error);
+      return next(error);
+    }
+  }
+
+  // ==========================================
+  // BATCH OPERATIONS
+  // ==========================================
+  async batchSubmit(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { ids } = req.body;
+      let count = 0;
+      for (const id of ids) {
+        try { await qmqaService.submit(id, userId); count++; } catch (e) { console.error(`Failed to submit ${id}:`, e); }
+      }
+      return res.json({ success: true, count });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async batchCheck(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { ids, remarks } = req.body;
+      let count = 0;
+      for (const id of ids) {
+        try { await qmqaService.check(id, userId, remarks); count++; } catch (e) { console.error(`Failed to check ${id}:`, e); }
+      }
+      return res.json({ success: true, count });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async batchApprove(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { ids, remarks } = req.body;
+      let count = 0;
+      for (const id of ids) {
+        try { await qmqaService.approve(id, userId, remarks); count++; } catch (e) { console.error(`Failed to approve ${id}:`, e); }
+      }
+      return res.json({ success: true, count });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async batchReject(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { ids, remarks } = req.body;
+      let count = 0;
+      for (const id of ids) {
+        try { await qmqaService.reject(id, userId, remarks); count++; } catch (e) { console.error(`Failed to reject ${id}:`, e); }
+      }
+      return res.json({ success: true, count });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async batchIssue(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const { ids } = req.body;
+      let count = 0;
+      for (const id of ids) {
+        try { await qmqaService.issue(id, userId); count++; } catch (e) { console.error(`Failed to issue ${id}:`, e); }
+      }
+      return res.json({ success: true, count });
+    } catch (error) {
       return next(error);
     }
   }

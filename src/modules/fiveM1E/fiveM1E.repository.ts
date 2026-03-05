@@ -46,6 +46,10 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
       .leftJoin('USERS as evalPicUser', 'approval.MPDPIC', 'evalPicUser.user_id')
       .leftJoin('USERS as enviApproverUser', 'approval.EnviApproverID', 'enviApproverUser.user_id')
       .leftJoin('USERS as enviCheckerUser', 'approval.EnviCheckerID', 'enviCheckerUser.user_id')
+      .leftJoin('USERS as sqeCheckerUser', 'approval.QACheckerID', 'sqeCheckerUser.user_id')
+      .leftJoin('USERS as sqeApproverUser', 'approval.FinalApprover', 'sqeApproverUser.user_id')
+      .leftJoin('USERS as designApproverUser', 'approval.DesignApproverID', 'designApproverUser.user_id')
+      .leftJoin('USERS as designCheckerUser', 'approval.DesignCheckerID', 'designCheckerUser.user_id')
       .leftJoin('PRODUCTS as prod', 'app.Attribute03', 'prod.product_id')
       .selectAll('app')
       .select([
@@ -59,8 +63,22 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         'approval.IssueDate as issue_date',
         'approval.ChkrDtAprd as chkr_dt_aprd',
         'approval.ApproverDtAprd as approver_dt_aprd',
+        
+        // SQE / QA Approval fields
+        'approval.QACheckerID as qa_checker_id',
+        'approval.QACheckerName as qa_checker_name',
+        'approval.QACheckerDtAprd as qa_checker_dt_aprd',
         'approval.FinalApprover as final_approver',
         'approval.FAName as fa_name',
+        'approval.FADtAprd as fa_dt_aprd',
+        
+        // Design Approval fields
+        'approval.DSAppproverNecessary as ds_approver_necessary',
+        'approval.DesignApproverID as design_approver_id',
+        'approval.DesignApproverDtAprd as design_approver_dt_aprd',
+        'approval.DSCheckerNecessary as ds_checker_necessary',
+        'approval.DesignCheckerID as design_checker_id',
+        'approval.DesignCheckerDtAprd as design_checker_dt_aprd',
         // Environment Approval fields
         'approval.EnviCheckerNecessary as envi_checker_necessary',
         'approval.EnviCheckerID as envi_checker_id',
@@ -80,6 +98,10 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         'mpdApproverUser.full_name as mpd_approver_name',
         'enviApproverUser.full_name as envi_approver_full_name',
         'enviCheckerUser.full_name as envi_checker_full_name',
+        'sqeCheckerUser.full_name as qa_checker_full_name',
+        'sqeApproverUser.full_name as fa_full_name',
+        'designApproverUser.full_name as design_approver_id_name',
+        'designCheckerUser.full_name as design_checker_id_name',
         // Human-readable names from master data joins
         'sup.supplier_name as supplier_name',
         'site.site_name as site_name',
@@ -115,6 +137,10 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
       .leftJoin('USERS as evalPicUser', 'approval.MPDPIC', 'evalPicUser.user_id')
       .leftJoin('USERS as enviApproverUser', 'approval.EnviApproverID', 'enviApproverUser.user_id')
       .leftJoin('USERS as enviCheckerUser', 'approval.EnviCheckerID', 'enviCheckerUser.user_id')
+      .leftJoin('USERS as sqeCheckerUser', 'approval.QACheckerID', 'sqeCheckerUser.user_id')
+      .leftJoin('USERS as sqeApproverUser', 'approval.FinalApprover', 'sqeApproverUser.user_id')
+      .leftJoin('USERS as designApproverUser', 'approval.DesignApproverID', 'designApproverUser.user_id')
+      .leftJoin('USERS as designCheckerUser', 'approval.DesignCheckerID', 'designCheckerUser.user_id')
       .leftJoin('PRODUCTS as prod', 'app.Attribute03', 'prod.product_id')
       .selectAll('app')
       .select([
@@ -128,6 +154,22 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         'approval.CheckerName as checker_name',
         'approval.Approver as approver',
         'approval.ApproverName as approver_name',
+        // SQE / QA Approval fields
+        'approval.QACheckerID as qa_checker_id',
+        'approval.QACheckerName as qa_checker_name',
+        'approval.QACheckerDtAprd as qa_checker_dt_aprd',
+        'approval.FinalApprover as final_approver',
+        'approval.FAName as fa_name',
+        'approval.FADtAprd as fa_dt_aprd',
+        
+        // Design Approval fields
+        'approval.DSAppproverNecessary as ds_approver_necessary',
+        'approval.DesignApproverID as design_approver_id',
+        'approval.DesignApproverDtAprd as design_approver_dt_aprd',
+        'approval.DSCheckerNecessary as ds_checker_necessary',
+        'approval.DesignCheckerID as design_checker_id',
+        'approval.DesignCheckerDtAprd as design_checker_dt_aprd',
+        
         // Environment Approval fields
         'approval.EnviAppproverNecessary as envi_approver_necessary',
         'approval.EnviApproverID as envi_approver_id',
@@ -140,12 +182,25 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         'approverUser.full_name as approver_full_name',
         'enviApproverUser.full_name as envi_approver_full_name',
         'enviCheckerUser.full_name as envi_checker_full_name',
+        'sqeCheckerUser.full_name as qa_checker_full_name',
+        'sqeApproverUser.full_name as fa_full_name',
+        'designApproverUser.full_name as design_approver_id_name',
+        'designCheckerUser.full_name as design_checker_id_name',
         'prod.product_name as attribute_03_name',
         'evalPicUser.full_name as mpd_pic_name',
       ]);
       
     if (statusFilter && statusFilter !== 'all') {
-      query = query.where('approval.Status', '=', statusFilter.toUpperCase());
+      const upper = statusFilter.toUpperCase();
+      // Include CHECKED records alongside SUBMITTED/FAPPROVED for Awaiting Approval pages
+      // so checked records remain visible until approved
+      if (upper === 'SUBMITTED') {
+        query = query.where('approval.Status', 'in', ['SUBMITTED', 'CHECKED']);
+      } else if (upper === 'FAPPROVED') {
+        query = query.where('approval.Status', 'in', ['FAPPROVED', 'CHECKED']);
+      } else {
+        query = query.where('approval.Status', '=', upper);
+      }
     }
       
     return await query.orderBy('app.CreateDate', 'desc').execute();
@@ -523,6 +578,27 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     await db.deleteFrom('TBL_5M1E_Status_Remarks').where('ControlNo', '=', controlNo).execute();
     for (const remark of remarks) {
       await this.insertStatusRemark(controlNo, remark);
+    }
+  }
+
+  // =========================================================================
+  // CC Notification
+  // =========================================================================
+  async replaceCCUsers(controlNo: string, ccList: any[], userId: string = 'SYSTEM') {
+    // 1. Delete existing
+    await db.deleteFrom('TBL_5M1E_CC' as any).where('ControlNo', '=', controlNo).execute();
+
+    // 2. Insert new list
+    if (ccList && ccList.length > 0) {
+      for (const cc of ccList) {
+        await db.insertInto('TBL_5M1E_CC' as any).values({
+          ID: require('uuid').v4(),
+          ControlNo: controlNo,
+          UserID: cc.user_id,
+          UpdateBy: userId,
+          LastUpdate: new Date(),
+        }).execute();
+      }
     }
   }
 }

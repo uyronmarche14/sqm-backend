@@ -44,7 +44,7 @@ const applicationSchema: MapperSchema<any, FiveM1EApplicationTable> = {
   change_qc_process: 'ChangeQCProcess',
   change_supplier_spec: 'ChangeSupplierSpec',
   process_audit_result: 'ProcessAuditResult',
-  // environmental_approval lives in TBL_5M1E_Approval (EnviCheckerNecessary/EnviAppproverNecessary)
+  // Note: environmental_approval is mapped manually to TBL_5M1E_Approval.EnviAppproverNecessary as YES/NO
 };
 
 /**
@@ -101,18 +101,27 @@ export class FiveM1EService {
     if (data.design_approver_id) approvalData.DesignApproverID = data.design_approver_id;
     if (data.design_approver_name) approvalData.DesignApproverName = data.design_approver_name;
     if (data.ds_checker_necessary) approvalData.DSCheckerNecessary = data.ds_checker_necessary;
-    if (data.envi_approver_necessary) approvalData.EnviAppproverNecessary = data.envi_approver_necessary;
+    
+    // Environmental Approval Logic: Either from Final stage radio ('YES'/'NO') or Evaluation checkbox ('1'/'0')
+    let enviNecessary = 'NO';
+    if (data.envi_approver_necessary === 'YES' || data.environmental_approval === '1' || data.environmental_approval === 1 || data.environmental_approval === true) {
+        enviNecessary = 'YES';
+    }
+    approvalData.EnviAppproverNecessary = enviNecessary;
+    approvalData.EnviCheckerNecessary = enviNecessary; // Legacy sync
+    
     if (data.envi_approver_id) approvalData.EnviApproverID = data.envi_approver_id;
     if (data.envi_approve_name) approvalData.EnviApproveName = data.envi_approve_name;
     if (data.envi_approve_dt_aprd) approvalData.EnviApproveDtAprd = data.envi_approve_dt_aprd;
-    if (data.envi_checker_necessary) approvalData.EnviCheckerNecessary = data.envi_checker_necessary;
-    if (data.envi_checker_id) approvalData.EnviCheckerID = data.envi_checker_id;
-    if (data.envi_checker_name) approvalData.EnviCheckerName = data.envi_checker_name;
-    if (data.envi_checker_dt_aprd) approvalData.EnviCheckerDtAprd = data.envi_checker_dt_aprd;
     if (data.qa_checker_id) approvalData.QACheckerID = data.qa_checker_id;
     if (data.qa_checker_name) approvalData.QACheckerName = data.qa_checker_name;
+    if (data.qa_checker_dt_aprd) approvalData.QACheckerDtAprd = data.qa_checker_dt_aprd;
     if (data.final_approver) approvalData.FinalApprover = data.final_approver;
     if (data.fa_name) approvalData.FAName = data.fa_name;
+    if (data.fa_dt_aprd) approvalData.FADtAprd = data.fa_dt_aprd;
+    
+    if (data.design_approver_dt_aprd) approvalData.DesignApproverDtAprd = data.design_approver_dt_aprd;
+    
     if (data.approval_seq !== undefined) approvalData.ApprovalSeq = data.approval_seq;
     
     // NEW: Add reviewer, checker, approver fields from approval section
@@ -357,19 +366,39 @@ export class FiveM1EService {
     if (data.mpd_checker_name) approvalUpdates.MPDCheckerName = data.mpd_checker_name;
     if (data.hde_pic) approvalUpdates.HDEPIC = data.hde_pic;
     if (data.evaluation_ic) approvalUpdates.EvaluationIC = data.evaluation_ic;
+    if (data.evaluation_ic_dt_aprd) approvalUpdates.EvaluationICDtAprd = data.evaluation_ic_dt_aprd;
+    
     if (data.final_approver) approvalUpdates.FinalApprover = data.final_approver;
     if (data.fa_name) approvalUpdates.FAName = data.fa_name;
+    if (data.fa_dt_aprd) approvalUpdates.FADtAprd = data.fa_dt_aprd;
+    
     if (data.qa_checker_id) approvalUpdates.QACheckerID = data.qa_checker_id;
     if (data.qa_checker_name) approvalUpdates.QACheckerName = data.qa_checker_name;
+    if (data.qa_checker_dt_aprd) approvalUpdates.QACheckerDtAprd = data.qa_checker_dt_aprd;
+    
+    if (data.ds_approver_necessary) approvalUpdates.DSAppproverNecessary = data.ds_approver_necessary;
     if (data.design_approver_id) approvalUpdates.DesignApproverID = data.design_approver_id;
+    if (data.design_approver_name) approvalUpdates.DesignApproverName = data.design_approver_name;
+    if (data.design_approver_dt_aprd) approvalUpdates.DesignApproverDtAprd = data.design_approver_dt_aprd;
+    if (data.ds_checker_necessary) approvalUpdates.DSCheckerNecessary = data.ds_checker_necessary;
+    
+    // Environmental Approval Logic: Either from Final stage radio ('YES'/'NO') or Evaluation checkbox ('1'/'0')
+    if (data.envi_approver_necessary !== undefined || data.environmental_approval !== undefined) {
+        let enviNecessary = existing.envi_approver_necessary || 'NO';
+        if (data.envi_approver_necessary === 'YES' || data.envi_approver_necessary === 'NO') {
+            enviNecessary = data.envi_approver_necessary;
+        } else if (data.environmental_approval === '1' || data.environmental_approval === 1 || data.environmental_approval === true) {
+            enviNecessary = 'YES';
+        } else if (data.environmental_approval === '0' || data.environmental_approval === 0 || data.environmental_approval === false) {
+            enviNecessary = 'NO';
+        }
+        approvalUpdates.EnviAppproverNecessary = enviNecessary;
+        approvalUpdates.EnviCheckerNecessary = enviNecessary; // Legacy sync
+    }
+    
     if (data.envi_approver_id) approvalUpdates.EnviApproverID = data.envi_approver_id;
-    if (data.envi_approver_necessary) approvalUpdates.EnviAppproverNecessary = data.envi_approver_necessary;
     if (data.envi_approve_name) approvalUpdates.EnviApproveName = data.envi_approve_name;
     if (data.envi_approve_dt_aprd) approvalUpdates.EnviApproveDtAprd = data.envi_approve_dt_aprd;
-    if (data.envi_checker_necessary) approvalUpdates.EnviCheckerNecessary = data.envi_checker_necessary;
-    if (data.envi_checker_id) approvalUpdates.EnviCheckerID = data.envi_checker_id;
-    if (data.envi_checker_name) approvalUpdates.EnviCheckerName = data.envi_checker_name;
-    if (data.envi_checker_dt_aprd) approvalUpdates.EnviCheckerDtAprd = data.envi_checker_dt_aprd;
     
     // NEW: Add reviewer, checker, approver updates
     if (data.reviewer) approvalUpdates.Reviewer = data.reviewer;
@@ -514,6 +543,27 @@ export class FiveM1EService {
       ModifiedDate: new Date(),
     });
     return { success: true, message: 'Application submitted successfully', data: { controlNo: existing.ControlNo } };
+  }
+
+  /**
+   * Workflow: Check application (SUBMITTED → CHECKED)
+   * Two-stage approval: Checker marks as reviewed, record stays on Awaiting Approval page
+   */
+  async checkApplication(controlNo: string, userId: string, remarks?: string) {
+    const existing = await fiveM1ERepository.findWithApproval(controlNo);
+    if (!existing) throw new NotFoundError(`5M1E Application ${controlNo} not found`);
+
+    await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, 'CHECKED', {
+      ModifiedDate: new Date(),
+    });
+    if (remarks) {
+      await fiveM1ERepository.insertStatusRemark(existing.ControlNo, {
+        remarks,
+        remark_by: userId,
+        status: 'CHECKED'
+      });
+    }
+    return { success: true, message: 'Application checked successfully', data: { controlNo: existing.ControlNo } };
   }
 
   /**

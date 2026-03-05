@@ -3,10 +3,13 @@ export const mapStatusToDB = (status: string): string => {
       // Pre-Submission
       'DRAFT': 'DR',
       'NEW': 'NW',
+      'PLANNED': 'PL',
       // Active Flow
       'PENDING': 'PN',
       'SUBMITTED': 'SU',
       'AAPPROVAL': 'AA',
+      'AWAITING_APPROVAL': 'AA',
+      'CHECKED': 'CK',
       // Evaluation
       'FAPPROVED': 'FA',
       'EVALUATION': 'EV',
@@ -23,12 +26,18 @@ export const mapStatusToDB = (status: string): string => {
       'REPORT': 'RP',
       'RESPONSE_AWAITING': 'RW',
       'RESPONSE_AWAIT_APPROVAL': 'RA',
-      'RESPONSE_RECEIVED': 'RC',
+      'RESPONSE_AWAITING_APPROVAL': 'RA',
+      'RESPONSE_CHECKED': 'RC',
       'RREJECTED': 'RJ',
+      // QMQA Response Statuses
+      'WITH_INITIAL_REPORT': 'WI',
+      'WITH_FINAL_REPORT': 'WF',
+      'RESPONSE_REJECTED': 'RJ',
       // Post-Process
       'RELEASE': 'RL',
       'HOLD': 'HO',
       'CANCEL': 'CA',
+      'CANCELLED': 'CA',
       'CLOSED': 'CL'
   };
   const upperStatus = (status || '').toUpperCase();
@@ -41,10 +50,12 @@ export const mapStatusFromDB = (code: string): string => {
   const map: Record<string, string> = {
       'DR': 'DRAFT',
       'NW': 'NEW',
+      'PL': 'PLANNED',
       'PD': 'PENDING',
       'PN': 'PENDING',
       'SU': 'SUBMITTED',
       'AA': 'AAPPROVAL',
+      'CK': 'CHECKED',
       'FA': 'FAPPROVED',
       'EV': 'EVALUATION',
       'AP': 'APPROVED',
@@ -57,8 +68,11 @@ export const mapStatusFromDB = (code: string): string => {
       'RP': 'REPORT',
       'RW': 'RESPONSE_AWAITING',
       'RA': 'RESPONSE_AWAIT_APPROVAL',
-      'RC': 'RESPONSE_RECEIVED',
+      'RC': 'RESPONSE_CHECKED',
       'RJ': 'RREJECTED',
+      // QMQA Response Statuses
+      'WI': 'WITH_INITIAL_REPORT',
+      'WF': 'WITH_FINAL_REPORT',
       'RL': 'RELEASE',
       'HO': 'HOLD',
       'CA': 'CANCEL',

@@ -107,6 +107,20 @@ export class FiveM1EController {
   }
 
   /**
+   * Workflow: Check (two-stage approval — checker marks as reviewed)
+   */
+  async checkApplication(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const userId = req.user!.userId;
+      const result = await fiveM1EService.checkApplication(id, userId, req.body?.remarks);
+      res.status(200).json(successResponse(result.data, result.message));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Workflow: Approve
    */
   async approveApplication(req: Request, res: Response, next: NextFunction) {

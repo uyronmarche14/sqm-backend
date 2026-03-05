@@ -32,7 +32,7 @@ export const QmqaScheduleCreateSchema = z.object({
     site_id: z.string().uuid(),
     supplier_id: z.string().uuid(),
     audit_category_id: z.string().uuid(),
-    audit_plan_date: z.string().datetime().or(z.date()),
+    audit_plan_date: z.string().min(1, 'Audit plan date is required'),
     sqe_pic_id: z.string().uuid(),
     remarks: z.string().optional()
   })
@@ -46,7 +46,7 @@ export const QmqaScheduleUpdateSchema = z.object({
     site_id: z.string().uuid().optional(),
     supplier_id: z.string().uuid().optional(),
     audit_category_id: z.string().uuid().optional(),
-    audit_plan_date: z.string().datetime().or(z.date()).optional(),
+    audit_plan_date: z.string().optional(),
     sqe_pic_id: z.string().uuid().optional(),
     remarks: z.string().optional()
   })
@@ -69,15 +69,15 @@ export const QmqaRecordCreateSchema = z.object({
     site_id: z.string().uuid().optional(),
     supplier_id: z.string().uuid().optional(),
     audit_category_id: z.string().uuid().optional(),
-    audit_plan_date: z.string().datetime().or(z.date()).optional(),
+    audit_plan_date: z.string().optional(),
     sqe_pic_id: z.string().uuid().optional(),
 
     audit_type_id: z.string().uuid(),
     attention_id: z.string().uuid().optional().or(z.literal('')),
     pic_auditor_id: z.string().uuid().optional().or(z.literal('')),
     
-    due_date: z.string().datetime().or(z.date()).optional().or(z.literal('')),
-    audit_date: z.string().datetime().or(z.date()),
+    due_date: z.string().optional().or(z.literal('')),
+    audit_date: z.string().min(1, 'Audit date is required'),
     audit_rating: z.preprocess((v) => Number(v), z.number().min(0).max(100).optional()),
     
     auditees: z.string().optional(),
@@ -99,12 +99,20 @@ export const QmqaRecordUpdateSchema = z.object({
     id: z.string().uuid('Invalid Record ID format')
   }),
   body: z.object({
+    // Audit Plan details
+    site_id: z.string().uuid().optional(),
+    supplier_id: z.string().uuid().optional(),
+    audit_category_id: z.string().uuid().optional(),
+    audit_plan_date: z.string().optional(),
+    sqe_pic_id: z.string().uuid().optional(),
+
+    // Record details
     audit_type_id: z.string().uuid().optional(),
     attention_id: z.string().uuid().optional().or(z.literal('')),
     pic_auditor_id: z.string().uuid().optional().or(z.literal('')),
     
-    due_date: z.string().datetime().or(z.date()).optional().or(z.literal('')),
-    audit_date: z.string().datetime().or(z.date()).optional(),
+    due_date: z.string().optional().or(z.literal('')),
+    audit_date: z.string().optional(),
     audit_rating: z.preprocess((v) => Number(v), z.number().min(0).max(100).optional()),
     
     auditees: z.string().optional(),
@@ -112,12 +120,13 @@ export const QmqaRecordUpdateSchema = z.object({
     attendees: z.string().optional(),
     remarks: z.string().optional(),
     
+    // Approval info
     checker_id: z.string().uuid().optional().or(z.literal('')),
     approver_id: z.string().uuid().optional().or(z.literal('')),
 
     // Arrays
-    cc_list: JsonParsedArray(QmqaCcListSchema),
-    attachments: JsonParsedArray(QmqaAttachmentSchema)
+    cc_list: JsonParsedArray(QmqaCcListSchema).optional(),
+    attachments: JsonParsedArray(QmqaAttachmentSchema).optional()
   })
 });
 
@@ -131,7 +140,7 @@ export const QmqaVerificationSchema = z.object({
   body: z.object({
     verified_by: z.string().uuid(),
     verification_remarks: z.string().optional(),
-    verification_date: z.string().datetime().or(z.date()).optional(),
+    verification_date: z.string().optional(),
     // Cycle 2 approval fields
     cycle2_checker_id: z.string().uuid().optional(),
     cycle2_checker_remarks: z.string().optional(),

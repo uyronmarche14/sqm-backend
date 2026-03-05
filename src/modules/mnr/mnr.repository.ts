@@ -55,7 +55,17 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
       ]);
 
     if (statusFilter) {
-      query = query.where('l.request_status', '=', statusFilter);
+      // Include CHECKED (CK) records alongside SUBMITTED (SU) for Awaiting Approval
+      // so checked records remain visible on the page until approved
+      if (statusFilter === 'SU') {
+        query = query.where('l.request_status', 'in', ['SU', 'CK']);
+      } else if (statusFilter === 'RA') {
+        query = query.where('l.request_status', 'in', ['RA', 'RC']);
+      } else if (statusFilter === 'RP') {
+        query = query.where('l.request_status', 'in', ['IS', 'CL']);
+      } else {
+        query = query.where('l.request_status', '=', statusFilter);
+      }
     }
 
     return await query.orderBy('l.date_created', 'desc').execute();

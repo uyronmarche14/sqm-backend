@@ -23,6 +23,7 @@ router.get('/attachments/:attachmentId', mnrController.downloadAttachment);
 
 // Workflow Action Subroutes
 router.post('/:id/submit', mnrController.submit);
+router.post('/:id/check', mnrController.check);
 router.post('/:id/approve', mnrController.approve);
 router.post('/:id/reject', mnrController.reject);
 router.post('/:id/issue', mnrController.issue);

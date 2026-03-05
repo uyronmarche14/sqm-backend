@@ -473,6 +473,24 @@ export class MnrService {
                  targetStatus = 'RESPONSE_AWAIT_APPROVAL';
                  console.log(`[MNR Workflow] Response received, moving to RESPONSE_AWAIT_APPROVAL`);
              }
+
+             // Handle CHECKED context-awareness
+             if (upperTarget === 'CHECKED' || upperTarget === 'CHECK') {
+                 if (currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+                     targetStatus = 'RESPONSE_CHECKED';
+                     console.log(`[MNR Workflow] Transition: RESPONSE_AWAIT_APPROVAL → RESPONSE_CHECKED (Cycle 2 Check)`);
+                 } else {
+                     targetStatus = 'CHECKED';
+                 }
+             }
+
+             // Handle APPROVED response context-awareness
+             if (upperTarget === 'CLOSED') {
+                 if (currentStatus === 'RESPONSE_CHECKED' || currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+                     targetStatus = 'CLOSED';
+                     console.log(`[MNR Workflow] Transition: RESPONSE_CHECKED → CLOSED (Cycle 2 Approve)`);
+                 }
+             }
          }
 
          if (targetStatus) dbUpdates.request_status = mapStatusToDB(targetStatus);

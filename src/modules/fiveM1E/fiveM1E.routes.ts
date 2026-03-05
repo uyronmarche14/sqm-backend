@@ -93,6 +93,7 @@ router.delete(
  * Workflow Action Subroutes
  */
 router.post('/:id/submit', fiveM1EController.submitApplication);
+router.post('/:id/check', fiveM1EController.checkApplication);
 router.post('/:id/approve', fiveM1EController.approveApplication);
 router.post('/:id/reject', fiveM1EController.rejectApplication);
 router.post('/:id/release', fiveM1EController.releaseApplication);
