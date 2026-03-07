@@ -11,7 +11,7 @@ export class SqmpService {
         return `SQMP-${fy}-${sem}-C${random}`;
     }
     parseDate(d) {
-        if (!d)
+        if (!d || d === '')
             return null;
         const parsed = new Date(d);
         return isNaN(parsed.getTime()) ? null : parsed;
@@ -26,8 +26,13 @@ export class SqmpService {
     fromDBSemester(sem) {
         return sem === 2 ? '2ND' : '1ST';
     }
-    async getAllRecords() {
-        const records = await sqmpRepository.findAllDetailed();
+    sanitizeUuid(val) {
+        if (!val || val.trim() === '')
+            return null;
+        return val;
+    }
+    async getAllRecords(status) {
+        const records = await sqmpRepository.findAllDetailed(status);
         return records.map((r) => ({
             ...r,
             status: mapStatusFromDB(r.request_status),
@@ -128,7 +133,7 @@ export class SqmpService {
                     }).execute();
                 }
             }
-            return { success: true, sqmp_id: sqmpId, message: 'Record created successfully' };
+            return { success: true, data: { sqmp_id: sqmpId }, message: 'Record created successfully' };
         });
     }
     async updateRecord(id, payload, userId, files = []) {
@@ -145,9 +150,9 @@ export class SqmpService {
         if (payload.site_id)
             dbUpdates.site_id = payload.site_id;
         if (payload.supplier_id !== undefined)
-            dbUpdates.supplier_id = payload.supplier_id;
+            dbUpdates.supplier_id = this.sanitizeUuid(payload.supplier_id);
         if (payload.attention_id !== undefined)
-            dbUpdates.attention_id = payload.attention_id;
+            dbUpdates.attention_id = this.sanitizeUuid(payload.attention_id);
         if (payload.fiscal_year)
             dbUpdates.fiscal_year = payload.fiscal_year;
         if (payload.semester)
@@ -157,7 +162,7 @@ export class SqmpService {
         if (payload.due_date)
             dbUpdates.due_date = this.parseDate(payload.due_date);
         if (payload.model_id !== undefined)
-            dbUpdates.model_id = payload.model_id;
+            dbUpdates.model_id = this.sanitizeUuid(payload.model_id);
         if (payload.revision !== undefined)
             dbUpdates.revision = payload.revision;
         if (payload.remarks !== undefined)
@@ -169,23 +174,23 @@ export class SqmpService {
         const statusVal = payload.status || payload.request_status;
         if (statusVal)
             dbUpdates.request_status = mapStatusToDB(statusVal);
-        if (payload.issuer_id)
-            dbUpdates.issuer_id = payload.issuer_id;
+        if (payload.issuer_id !== undefined)
+            dbUpdates.issuer_id = this.sanitizeUuid(payload.issuer_id);
         if (payload.issuer_remarks !== undefined)
             dbUpdates.issuer_remarks = payload.issuer_remarks;
         if (payload.issuer_date !== undefined)
             dbUpdates.issuer_date = this.parseDate(payload.issuer_date);
-        if (payload.checker_id)
-            dbUpdates.checker_id = payload.checker_id;
+        if (payload.checker_id !== undefined)
+            dbUpdates.checker_id = this.sanitizeUuid(payload.checker_id);
         if (payload.checker_remarks !== undefined)
             dbUpdates.checker_remarks = payload.checker_remarks;
-        if (payload.checker_date)
+        if (payload.checker_date !== undefined)
             dbUpdates.checker_date = this.parseDate(payload.checker_date);
-        if (payload.approver_id)
-            dbUpdates.approver_id = payload.approver_id;
+        if (payload.approver_id !== undefined)
+            dbUpdates.approver_id = this.sanitizeUuid(payload.approver_id);
         if (payload.approver_remarks !== undefined)
             dbUpdates.approver_remarks = payload.approver_remarks;
-        if (payload.approver_date)
+        if (payload.approver_date !== undefined)
             dbUpdates.approver_date = this.parseDate(payload.approver_date);
         return await sqmpRepository.executeTransaction(async (trx) => {
             // 1. Update Header
@@ -246,7 +251,86 @@ export class SqmpService {
                     }).execute();
                 }
             }
-            return { success: true, message: 'Record updated successfully' };
+            // 5. Update Responses (Complex nested update)
+            if (payload.responses !== undefined) {
+                // Simple strategy: Clear and re-insert or granular update?
+                // Let's go with clear/re-insert for nested simplified logic since it's a small set
+                // But we need to handle response IDs if they exist.
+                for (const resp of payload.responses) {
+                    const responseId = resp.sqmp_response_id || uuidv4();
+                    // Upsert response record
+                    const existingResp = await trx.selectFrom('SQMP_RESPONSE')
+                        .where('sqmp_response_id', '=', responseId)
+                        .executeTakeFirst();
+                    const respData = {
+                        sqmp_id: existing.record.sqmp_id,
+                        response_date: this.parseDate(resp.response_date) || now,
+                        main_document_remarks: resp.main_document_remarks,
+                        appendix_sheet_remarks: resp.appendix_sheet_remarks,
+                        closure_remarks: resp.closure_remarks,
+                        last_update: now,
+                        updateby: userId
+                    };
+                    if (existingResp) {
+                        await trx.updateTable('SQMP_RESPONSE').set(respData).where('sqmp_response_id', '=', responseId).execute();
+                    }
+                    else {
+                        await trx.insertInto('SQMP_RESPONSE').values({
+                            sqmp_response_id: responseId,
+                            ...respData
+                        }).execute();
+                    }
+                    // Handle Documents inside Response
+                    if (resp.documents !== undefined) {
+                        await trx.deleteFrom('SQMP_RESPONSE_DOCUMENT').where('sqmp_response_id', '=', responseId).execute();
+                        for (const doc of resp.documents) {
+                            const uploadedFile = files.find(f => f.originalname === doc.file_name);
+                            await trx.insertInto('SQMP_RESPONSE_DOCUMENT').values({
+                                sqmp_response_document_id: doc.sqmp_attachment_id || uuidv4(),
+                                sqmp_response_id: responseId,
+                                file_name: uploadedFile ? uploadedFile.filename : doc.file_name,
+                                file_extension: uploadedFile ? uploadedFile.filename.split('.').pop() : (doc.file_extension || 'dat'),
+                                remarks: doc.remarks,
+                                last_update: now,
+                                updateby: userId
+                            }).execute();
+                        }
+                    }
+                    // Handle Appendixes inside Response
+                    if (resp.appendixes !== undefined) {
+                        await trx.deleteFrom('SQMP_RESPONSE_APPENDIX').where('sqmp_response_id', '=', responseId).execute();
+                        for (const app of resp.appendixes) {
+                            const uploadedFile = files.find(f => f.originalname === app.file_name);
+                            await trx.insertInto('SQMP_RESPONSE_APPENDIX').values({
+                                sqmp_response_appendix_id: app.sqmp_attachment_id || uuidv4(),
+                                sqmp_response_id: responseId,
+                                file_name: uploadedFile ? uploadedFile.filename : app.file_name,
+                                file_extension: uploadedFile ? uploadedFile.filename.split('.').pop() : (app.file_extension || 'dat'),
+                                remarks: app.remarks,
+                                last_update: now,
+                                updateby: userId
+                            }).execute();
+                        }
+                    }
+                    // Handle Closures inside Response
+                    if (resp.closures !== undefined) {
+                        await trx.deleteFrom('SQMP_RESPONSE_CLOSURE').where('sqmp_response_id', '=', responseId).execute();
+                        for (const cls of resp.closures) {
+                            const uploadedFile = files.find(f => f.originalname === cls.file_name);
+                            await trx.insertInto('SQMP_RESPONSE_CLOSURE').values({
+                                sqmp_response_closure_id: cls.sqmp_attachment_id || uuidv4(),
+                                sqmp_response_id: responseId,
+                                file_name: uploadedFile ? uploadedFile.filename : cls.file_name,
+                                file_extension: uploadedFile ? uploadedFile.filename.split('.').pop() : (cls.file_extension || 'dat'),
+                                remarks: cls.remarks,
+                                last_update: now,
+                                updateby: userId
+                            }).execute();
+                        }
+                    }
+                }
+            }
+            return { success: true, data: { id }, message: 'Record updated successfully' };
         });
     }
     async deleteRecord(id) {
@@ -258,7 +342,74 @@ export class SqmpService {
             await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
             await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
             await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-            return { success: true, message: 'Record deleted successfully' };
+            return { success: true, data: { id }, message: 'Record deleted successfully' };
+        });
+    }
+    /**
+     * Workflow: Issue the plan (APPROVED → ISSUED)
+     */
+    async issueRecord(id, userId, remarks) {
+        const existing = await sqmpRepository.findByIdDetailed(id);
+        if (!existing)
+            throw new NotFoundError('Record not found');
+        const now = new Date();
+        return await sqmpRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('SQMP')
+                .set({
+                request_status: mapStatusToDB('ISSUED'),
+                issuer_id: userId,
+                issuer_remarks: remarks || null,
+                last_update: now,
+                updateby: userId
+            })
+                .where('sqmp_id', '=', existing.record.sqmp_id)
+                .execute();
+            return { success: true, data: { id }, message: 'SQM Plan issued successfully' };
+        });
+    }
+    /**
+     * Workflow: Request Response from Supplier (ISSUED → RESPONSE_AWAITING)
+     */
+    async requestResponse(id, userId, remarks) {
+        const existing = await sqmpRepository.findByIdDetailed(id);
+        if (!existing)
+            throw new NotFoundError('Record not found');
+        const now = new Date();
+        return await sqmpRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('SQMP')
+                .set({
+                request_status: mapStatusToDB('RESPONSE_AWAITING'),
+                issuer_remarks: remarks || existing.record.issuer_remarks,
+                last_update: now,
+                updateby: userId
+            })
+                .where('sqmp_id', '=', existing.record.sqmp_id)
+                .execute();
+            return { success: true, data: { id }, message: 'Response requested from supplier' };
+        });
+    }
+    /**
+     * Workflow: Cancel the plan
+     */
+    /**
+     * Workflow: Close the plan
+     */
+    async closeRecord(id, userId, remarks) {
+        const existing = await sqmpRepository.findByIdDetailed(id);
+        if (!existing)
+            throw new NotFoundError('Record not found');
+        const now = new Date();
+        return await sqmpRepository.executeTransaction(async (trx) => {
+            await trx.updateTable('SQMP')
+                .set({
+                request_status: 'CL',
+                issuer_remarks: remarks || existing.record.issuer_remarks,
+                last_update: now,
+                updateby: userId
+            })
+                .where('sqmp_id', '=', existing.record.sqmp_id)
+                .execute();
+            return { success: true, data: { id }, message: 'SQM Plan closed successfully' };
         });
     }
 }

@@ -1,33 +1,19 @@
 import { Router } from 'express';
-import { sqmpController } from './sqmp.controller.js';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
-// @ts-ignore
-import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
+import mainRoutes from './main/main.routes.js';
+import responseRoutes from './response/response.routes.js';
+import { mainSqmpController } from './main/main.controller.js';
 
 const router = Router();
-const upload = createModuleUpload('sqmp');
 
 // Protect all routes
 router.use(requireAuth);
 
-router.get('/', sqmpController.getAll);
-router.get('/:id', sqmpController.getById);
+// Document Downloader (Shared utility)
+router.get('/download/:attachmentId', mainSqmpController.downloadAttachment);
 
-// Document Downloader
-router.get('/download/:attachmentId', sqmpController.downloadAttachment);
-
-// Create / Update with Multer File handling
-router.post('/', upload.any(), logUploads, handleUploadError, sqmpController.create);
-router.put('/:id', upload.any(), logUploads, handleUploadError, sqmpController.update);
-router.delete('/:id', sqmpController.delete);
-
-// Workflow Action Subroutes
-router.post('/:id/submit', sqmpController.submit);
-router.post('/:id/check', sqmpController.check);
-router.post('/:id/approve', sqmpController.approve);
-router.post('/:id/reject', sqmpController.reject);
-router.post('/:id/issue', sqmpController.issue);
-router.post('/:id/cancel', sqmpController.cancel);
-router.post('/:id/close', sqmpController.close);
+// Sub-domain Routing
+router.use('/response', responseRoutes);
+router.use('/', mainRoutes);
 
 export default router;

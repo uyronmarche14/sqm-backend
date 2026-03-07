@@ -10,20 +10,36 @@ const NpiAttachmentSchema = z.object({
 const NpiVisualCategorySchema = z.object({
     defectclass_id: z.string().uuid(),
     defect_id: z.string().uuid(),
-    quantity: z.number().int().min(0)
+    quantity: z.coerce.number().int().min(0)
 });
 const NpiDataCategorySchema = z.object({
     partdatacategory_name: z.string(),
-    std_min: z.number(),
-    std_max: z.number(),
-    actual_min: z.number().nullable().optional(),
-    actual_max: z.number().nullable().optional(),
-    cpk: z.number().nullable().optional(),
+    std_min: z.coerce.number(),
+    std_max: z.coerce.number(),
+    actual_min: z.coerce.number().nullable().optional(),
+    actual_max: z.coerce.number().nullable().optional(),
+    cpk: z.coerce.number().nullable().optional(),
+    remarks: z.string().optional()
+});
+const NpiDimensionCategorySchema = z.object({
+    partdimensioncategory_name: z.string(),
+    std_min: z.coerce.number(),
+    std_max: z.coerce.number(),
+    actual_min: z.coerce.number().nullable().optional(),
+    actual_max: z.coerce.number().nullable().optional(),
+    cpk: z.coerce.number().nullable().optional(),
     remarks: z.string().optional()
 });
 const NpiCcListSchema = z.object({
-    user_id: z.string().uuid()
-});
+    user_id: z.string().uuid().optional(),
+    email: z.string().email().optional()
+}).refine((data) => data.user_id || data.email, {
+    message: "Either user_id or email must be provided"
+}).transform((data) => ({
+    // Return whichever is provided - service layer will resolve email to user_id
+    user_id: data.user_id,
+    email: data.email
+}));
 // A helper for handling JSON strings from FormData or actual arrays
 const JsonParsedArray = (schema) => z.preprocess((val) => {
     if (typeof val === 'string') {
@@ -38,28 +54,29 @@ const JsonParsedArray = (schema) => z.preprocess((val) => {
 }, z.array(schema).optional());
 export const NpiCreateSchema = z.object({
     body: z.object({
-        controlNo: z.string(),
-        siteId: z.string().uuid('Valid Site ID is required'),
-        supplierId: z.string().uuid(),
-        partId: z.string().uuid(),
-        model: z.string().uuid(),
+        controlNo: z.string().optional(),
+        siteId: z.string().uuid('Valid Site ID is required').optional(),
+        supplierId: z.string().uuid().optional(),
+        partId: z.string().uuid().optional(),
+        model: z.string().uuid().optional(),
         lotNo: z.string().optional(),
         lotSize: z.preprocess((v) => Number(v) || 0, z.number().int()),
         invoiceNo: z.string().optional(),
         poNo: z.string().optional(),
-        inspectionMethod: z.string().uuid(),
+        inspectionMethod: z.string().uuid().optional(),
         inspectionTemp: z.preprocess((v) => Number(v) || 0, z.number()),
         inspectionHum: z.preprocess((v) => Number(v) || 0, z.number()),
         startTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
         endTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
         receivedTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
         endorseTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
-        severity: z.string().uuid(),
+        severity: z.string().uuid().optional(),
         severity_seq: z.string().optional(),
         sampleSize: z.preprocess((v) => Number(v) || 0, z.number().int()),
-        disposition: z.string().uuid(),
+        disposition: z.string().uuid().optional(),
         inspectionDate: z.string().datetime().or(z.date()).optional(),
         deliveryDate: z.string().datetime().or(z.date()).optional(),
+        inspectedBy: z.string().uuid().optional(),
         inspectionCategory: z.string().uuid().optional(),
         dataVerifiedBy: z.string().uuid().optional(),
         total_minor: z.preprocess((v) => Number(v) || 0, z.number().int()),
@@ -74,6 +91,7 @@ export const NpiCreateSchema = z.object({
         attachments: JsonParsedArray(NpiAttachmentSchema),
         visual_categories: JsonParsedArray(NpiVisualCategorySchema),
         data_categories: JsonParsedArray(NpiDataCategorySchema),
+        dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
         cc_list: JsonParsedArray(NpiCcListSchema),
     })
 });
@@ -101,7 +119,7 @@ export const NpiUpdateSchema = z.object({
         endorseTime: z.preprocess((v) => Number(v), z.number().int().optional()),
         severity: z.string().uuid().optional(),
         severity_seq: z.string().optional(),
-        sample_size: z.preprocess((v) => Number(v), z.number().int().optional()),
+        sampleSize: z.preprocess((v) => Number(v), z.number().int().optional()),
         disposition: z.string().uuid().optional(),
         inspectionDate: z.string().datetime().or(z.date()).optional(),
         deliveryDate: z.string().datetime().or(z.date()).optional(),
@@ -120,6 +138,7 @@ export const NpiUpdateSchema = z.object({
         attachments: JsonParsedArray(NpiAttachmentSchema),
         visual_categories: JsonParsedArray(NpiVisualCategorySchema),
         data_categories: JsonParsedArray(NpiDataCategorySchema),
+        dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
         cc_list: JsonParsedArray(NpiCcListSchema),
     })
 });

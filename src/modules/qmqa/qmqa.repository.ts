@@ -16,12 +16,15 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
       .leftJoin('SUPPLIERS as supp', 'ap.supplier_id', 'supp.supplier_id')
       .leftJoin('AUDITCATEGORY as cat', 'ap.audit_category_id', 'cat.audit_category_id')
       .leftJoin('USERS as sqe', 'ap.sqe_pic_id', 'sqe.user_id')
+      .leftJoin('QMQA as q', 'ap.qmqa_audit_plan_id', 'q.qmqa_audit_plan_id')
       .selectAll('ap')
       .select([
         'site.site_name',
         'supp.supplier_name',
         'cat.audit_category_name as category_name',
-        'sqe.full_name as sqe_pic_name'
+        'sqe.full_name as sqe_pic_name',
+        'q.qmqa_id as record_id',
+        'q.request_status as record_status'
       ])
       .orderBy('ap.audit_plan_date', 'desc')
       .orderBy('ap.created_date', 'desc')
@@ -34,12 +37,15 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
       .leftJoin('SUPPLIERS as supp', 'ap.supplier_id', 'supp.supplier_id')
       .leftJoin('AUDITCATEGORY as cat', 'ap.audit_category_id', 'cat.audit_category_id')
       .leftJoin('USERS as sqe', 'ap.sqe_pic_id', 'sqe.user_id')
+      .leftJoin('QMQA as q', 'ap.qmqa_audit_plan_id', 'q.qmqa_audit_plan_id')
       .selectAll('ap')
       .select([
         'site.site_name',
         'supp.supplier_name',
         'cat.audit_category_name as category_name',
-        'sqe.full_name as sqe_pic_name'
+        'sqe.full_name as sqe_pic_name',
+        'q.qmqa_id as record_id',
+        'q.request_status as record_status'
       ])
       .where('ap.qmqa_audit_plan_id', '=', id)
       .executeTakeFirst();

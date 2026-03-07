@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { sqmpRepository } from './sqmp.repository.js';
-import { SQMPCreationInput, SQMPUpdateInput } from './sqmp.schema.js';
-import { NotFoundError } from '../../shared/errors/AppError.js';
-import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
+import { sqmpRepository } from '../sqmp.repository.js';
+import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
+import { NotFoundError } from '../../../shared/errors/AppError.js';
+import { mapStatusFromDB, mapStatusToDB } from '../../../shared/utils/status-mapper.js';
 
-export class SqmpService {
+export class MainSqmpService {
   private async generateControlNo(fiscalYear?: number, semester?: string | number): Promise<string> {
     const fy = fiscalYear || new Date().getFullYear();
     const sem = semester?.toString().toUpperCase() || '1ST';
@@ -14,7 +14,7 @@ export class SqmpService {
   }
 
   private parseDate(d?: Date | string | null): Date | null {
-      if (!d) return null;
+      if (!d || d === '') return null;
       const parsed = new Date(d);
       return isNaN(parsed.getTime()) ? null : parsed;
   }
@@ -29,8 +29,13 @@ export class SqmpService {
       return sem === 2 ? '2ND' : '1ST';
   }
 
-  async getAllRecords() {
-    const records = await sqmpRepository.findAllDetailed();
+  private sanitizeUuid(val?: string | null): string | null {
+      if (!val || val.trim() === '') return null;
+      return val;
+  }
+
+  async getAllRecords(status?: string) {
+    const records = await sqmpRepository.findAllDetailed(status);
     return records.map((r: any) => ({
       ...r,
       status: mapStatusFromDB(r.request_status),
@@ -43,7 +48,7 @@ export class SqmpService {
     const data = await sqmpRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('SQMP Record not found');
 
-    const { record, mainDocuments, appendixDocuments, ccList } = data;
+    const { record, mainDocuments, appendixDocuments, ccList, responses, statusRemarks } = data;
 
     return {
       ...record,
@@ -51,7 +56,9 @@ export class SqmpService {
       semester: this.fromDBSemester(record.semester),
       main_documents: mainDocuments || [],
       appendix_documents: appendixDocuments || [],
-      cc_list: ccList || []
+      cc_list: ccList || [],
+      responses: responses || [],
+      status_remarks: statusRemarks || []
     };
   }
 
@@ -92,10 +99,19 @@ export class SqmpService {
       // 2. Insert Main Documents
       if (payload.main_documents?.length) {
         for (const doc of payload.main_documents) {
-          const uploadedFile = files.find(f => f.originalname === doc.file_name);
+          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
-          const originalName = doc.file_name;
-          const finalRemarks = doc.remarks ? `${doc.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const originalName = uploadedFile ? uploadedFile.originalname : doc.file_name;
+          let finalRemarks = doc.remarks || '';
+          if (uploadedFile) {
+            const originalNameTrimmed = originalName.trim();
+            const originalLower = originalNameTrimmed.toLowerCase();
+            const remarksLower = (finalRemarks || '').toLowerCase();
+            
+            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
+               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
+            }
+          }
 
           await trx.insertInto('SQMP_DOCUMENT').values({
             sqmp_document_id: doc.sqmp_attachment_id || uuidv4(),
@@ -112,10 +128,20 @@ export class SqmpService {
       // 3. Insert Appendix Documents
       if (payload.appendix_documents?.length) {
         for (const app of payload.appendix_documents) {
-          const uploadedFile = files.find(f => f.originalname === app.file_name);
+          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
-          const originalName = app.file_name;
-          const finalRemarks = app.remarks ? `${app.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const originalName = uploadedFile ? uploadedFile.originalname : app.file_name;
+          let finalRemarks = app.remarks || '';
+          
+          if (uploadedFile) {
+            const originalNameTrimmed = originalName.trim();
+            const originalLower = originalNameTrimmed.toLowerCase();
+            const remarksLower = (finalRemarks || '').toLowerCase();
+            
+            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
+               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
+            }
+          }
 
           await trx.insertInto('SQMP_APPENDIX').values({
             sqmp_appendix_id: app.sqmp_attachment_id || uuidv4(),
@@ -158,13 +184,13 @@ export class SqmpService {
 
     if (payload.registration_date) dbUpdates.registration_date = this.parseDate(payload.registration_date);
     if (payload.site_id) dbUpdates.site_id = payload.site_id;
-    if (payload.supplier_id !== undefined) dbUpdates.supplier_id = payload.supplier_id;
-    if (payload.attention_id !== undefined) dbUpdates.attention_id = payload.attention_id;
+    if (payload.supplier_id !== undefined) dbUpdates.supplier_id = this.sanitizeUuid(payload.supplier_id);
+    if (payload.attention_id !== undefined) dbUpdates.attention_id = this.sanitizeUuid(payload.attention_id);
     if (payload.fiscal_year) dbUpdates.fiscal_year = payload.fiscal_year;
     if (payload.semester) dbUpdates.semester = this.toDBSemester(payload.semester);
     if (payload.issued_date !== undefined) dbUpdates.issued_date = this.parseDate(payload.issued_date);
     if (payload.due_date) dbUpdates.due_date = this.parseDate(payload.due_date);
-    if (payload.model_id !== undefined) dbUpdates.model_id = payload.model_id;
+    if (payload.model_id !== undefined) dbUpdates.model_id = this.sanitizeUuid(payload.model_id);
     if (payload.revision !== undefined) dbUpdates.revision = payload.revision;
     
     if (payload.remarks !== undefined) dbUpdates.remarks = payload.remarks;
@@ -174,39 +200,49 @@ export class SqmpService {
     const statusVal = payload.status || payload.request_status;
     if (statusVal) dbUpdates.request_status = mapStatusToDB(statusVal);
 
-    if (payload.issuer_id) dbUpdates.issuer_id = payload.issuer_id;
+    if (payload.issuer_id !== undefined) dbUpdates.issuer_id = this.sanitizeUuid(payload.issuer_id);
     if (payload.issuer_remarks !== undefined) dbUpdates.issuer_remarks = payload.issuer_remarks;
     if (payload.issuer_date !== undefined) dbUpdates.issuer_date = this.parseDate(payload.issuer_date);
     
-    if (payload.checker_id) dbUpdates.checker_id = payload.checker_id;
+    if (payload.checker_id !== undefined) dbUpdates.checker_id = this.sanitizeUuid(payload.checker_id);
     if (payload.checker_remarks !== undefined) dbUpdates.checker_remarks = payload.checker_remarks;
-    if (payload.checker_date) dbUpdates.checker_date = this.parseDate(payload.checker_date);
+    if (payload.checker_date !== undefined) dbUpdates.checker_date = this.parseDate(payload.checker_date);
     
-    if (payload.approver_id) dbUpdates.approver_id = payload.approver_id;
+    if (payload.approver_id !== undefined) dbUpdates.approver_id = this.sanitizeUuid(payload.approver_id);
     if (payload.approver_remarks !== undefined) dbUpdates.approver_remarks = payload.approver_remarks;
-    if (payload.approver_date) dbUpdates.approver_date = this.parseDate(payload.approver_date);
+    if (payload.approver_date !== undefined) dbUpdates.approver_date = this.parseDate(payload.approver_date);
 
     return await sqmpRepository.executeTransaction(async (trx) => {
+      const recordId = existing.record.sqmp_id || (existing.record as any).SQMP_ID || existing.record.id;
       // 1. Update Header
       if (Object.keys(dbUpdates).length > 2) {
         await trx.updateTable('SQMP')
           .set(dbUpdates)
-          .where('sqmp_id', '=', existing.record.sqmp_id)
+          .where('sqmp_id', '=', recordId)
           .execute();
       }
 
       // 2. Update Main Documents
       if (payload.main_documents !== undefined) {
-        await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+        await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', recordId).execute();
         for (const doc of payload.main_documents) {
-          const uploadedFile = files.find(f => f.originalname === doc.file_name);
+          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
-          const originalName = doc.file_name;
-          const finalRemarks = doc.remarks ? `${doc.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const originalName = uploadedFile ? uploadedFile.originalname : doc.file_name;
+          let finalRemarks = doc.remarks || '';
+          if (uploadedFile) {
+            const originalNameTrimmed = originalName.trim();
+            const originalLower = originalNameTrimmed.toLowerCase();
+            const remarksLower = (finalRemarks || '').toLowerCase();
+            
+            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
+               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
+            }
+          }
 
           await trx.insertInto('SQMP_DOCUMENT').values({
             sqmp_document_id: doc.sqmp_attachment_id || uuidv4(),
-            sqmp_id: existing.record.sqmp_id,
+            sqmp_id: recordId,
             file_name: diskFileName || 'Unknown',
             file_extension: diskFileName ? diskFileName.split('.').pop()! : (doc.file_extension || 'dat'),
             remarks: finalRemarks,
@@ -218,16 +254,25 @@ export class SqmpService {
 
       // 3. Update Appendix Documents
       if (payload.appendix_documents !== undefined) {
-        await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+        await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', recordId).execute();
         for (const app of payload.appendix_documents) {
-          const uploadedFile = files.find(f => f.originalname === app.file_name);
+          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
-          const originalName = app.file_name;
-          const finalRemarks = app.remarks ? `${app.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const originalName = uploadedFile ? uploadedFile.originalname : app.file_name;
+          let finalRemarks = app.remarks || '';
+          if (uploadedFile) {
+            const originalNameTrimmed = originalName.trim();
+            const originalLower = originalNameTrimmed.toLowerCase();
+            const remarksLower = (finalRemarks || '').toLowerCase();
+            
+            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
+               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
+            }
+          }
 
           await trx.insertInto('SQMP_APPENDIX').values({
             sqmp_appendix_id: app.sqmp_attachment_id || uuidv4(),
-            sqmp_id: existing.record.sqmp_id,
+            sqmp_id: recordId,
             file_name: diskFileName || 'Unknown',
             file_extension: diskFileName ? diskFileName.split('.').pop()! : (app.file_extension || 'dat'),
             remarks: finalRemarks,
@@ -236,14 +281,13 @@ export class SqmpService {
           }).execute();
         }
       }
-
       // 4. CC List
       if (payload.cc_list !== undefined) {
-          await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+          await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', recordId).execute();
           for (const cc of payload.cc_list) {
             await trx.insertInto('SQMP_CC').values({
               sqmp_cc_id: cc.sqmp_cc_id || uuidv4(),
-              sqmp_id: existing.record.sqmp_id,
+              sqmp_id: recordId,
               user_id: cc.user_id,
               last_update: now,
               updateby: userId
@@ -251,26 +295,67 @@ export class SqmpService {
           }
       }
 
+      // 5. Log Status Remarks (Moved from controller to service for consistency)
+      const remarkToLog = payload.checker_remarks || payload.approver_remarks || payload.issuer_remarks;
+      if (statusVal && remarkToLog) {
+         await trx.insertInto('SQMP_STATUS_REMARKS').values({
+            sqmp_status_remarks_id: uuidv4(),
+            sqmp_id: recordId,
+            remarks: remarkToLog,
+            request_status: mapStatusToDB(statusVal),
+            remarks_by_id: userId,
+            remarks_date: now
+         }).execute();
+      }
+
       return { success: true, data: { id }, message: 'Record updated successfully' };
     });
   }
 
-    async deleteRecord(id: string) {
-      const existing = await sqmpRepository.findByIdDetailed(id);
-      if (!existing) throw new NotFoundError('Record not found');
+  async cancelRecord(id: string, userId: string, remarks?: string) {
+    const existing = await sqmpRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
 
-      return await sqmpRepository.executeTransaction(async (trx) => {
-          await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-          await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-          await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-          await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-          return { success: true, data: { id }, message: 'Record deleted successfully' };
-      });
+    const now = new Date();
+    return await sqmpRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQMP')
+        .set({
+          request_status: mapStatusToDB('CANCELLED'),
+          issuer_remarks: remarks || existing.record.issuer_remarks,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqmp_id', '=', existing.record.sqmp_id)
+        .execute();
+
+      if (remarks) {
+        await trx.insertInto('SQMP_STATUS_REMARKS').values({
+          sqmp_status_remarks_id: uuidv4(),
+          sqmp_id: existing.record.sqmp_id,
+          remarks: remarks,
+          request_status: mapStatusToDB('CANCELLED'),
+          remarks_by_id: userId,
+          remarks_date: now
+        }).execute();
+      }
+
+      return { success: true, data: { id }, message: 'SQM Plan cancelled successfully' };
+    });
   }
 
-  /**
-   * Workflow: Issue the plan (APPROVED → ISSUED)
-   */
+  async deleteRecord(id: string) {
+    const existing = await sqmpRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    return await sqmpRepository.executeTransaction(async (trx) => {
+        await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+        await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+        await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+        await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
+        return { success: true, data: { id }, message: 'Record deleted successfully' };
+    });
+  }
+
   async issueRecord(id: string, userId: string, remarks?: string) {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
@@ -287,14 +372,23 @@ export class SqmpService {
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
+
+      if (remarks) {
+         await trx.insertInto('SQMP_STATUS_REMARKS').values({
+            sqmp_status_remarks_id: uuidv4(),
+            sqmp_id: existing.record.sqmp_id,
+            remarks: remarks,
+            request_status: mapStatusToDB('ISSUED'),
+            remarks_by_id: userId,
+            remarks_date: now
+         }).execute();
+      }
+
       return { success: true, data: { id }, message: 'SQM Plan issued successfully' };
     });
   }
 
-  /**
-   * Workflow: Cancel the plan
-   */
-  async cancelRecord(id: string, userId: string, remarks?: string) {
+  async requestResponse(id: string, userId: string, remarks?: string) {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
@@ -302,20 +396,29 @@ export class SqmpService {
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: 'CA',
+          request_status: mapStatusToDB('RESPONSE_AWAITING'),
           issuer_remarks: remarks || existing.record.issuer_remarks,
           last_update: now,
           updateby: userId
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
-      return { success: true, data: { id }, message: 'SQM Plan cancelled successfully' };
+
+      if (remarks) {
+         await trx.insertInto('SQMP_STATUS_REMARKS').values({
+            sqmp_status_remarks_id: uuidv4(),
+            sqmp_id: existing.record.sqmp_id,
+            remarks: remarks,
+            request_status: mapStatusToDB('RESPONSE_AWAITING'),
+            remarks_by_id: userId,
+            remarks_date: now
+         }).execute();
+      }
+
+      return { success: true, data: { id }, message: 'Response requested from supplier' };
     });
   }
 
-  /**
-   * Workflow: Close the plan
-   */
   async closeRecord(id: string, userId: string, remarks?: string) {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
@@ -331,9 +434,21 @@ export class SqmpService {
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
+        
+      if (remarks) {
+         await trx.insertInto('SQMP_STATUS_REMARKS').values({
+            sqmp_status_remarks_id: uuidv4(),
+            sqmp_id: existing.record.sqmp_id,
+            remarks: remarks,
+            request_status: 'CL',
+            remarks_by_id: userId,
+            remarks_date: now
+         }).execute();
+      }
+
       return { success: true, data: { id }, message: 'SQM Plan closed successfully' };
     });
   }
 }
 
-export const sqmpService = new SqmpService();
+export const mainSqmpService = new MainSqmpService();

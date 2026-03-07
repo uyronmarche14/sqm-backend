@@ -25,9 +25,10 @@ export class BadRequestError extends AppError {
     }
 }
 export class ValidationError extends AppError {
-    errors; // Store Zod format errors
+    errors;
     constructor(errors, message = 'Validation failed') {
         super(message, 400);
+        this.name = 'ValidationError';
         this.errors = errors;
     }
 }

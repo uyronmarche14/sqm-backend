@@ -1,10 +1,11 @@
 import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
+import { successResponse } from '../../shared/utils/api-response.js';
 export class OgiController {
     async getAll(_req, res, next) {
         try {
             const records = await ogiService.getAllRecords();
-            return res.json(records);
+            return res.json(successResponse(records));
         }
         catch (error) {
             console.error('[OGI] GET ALL error:', error);
@@ -15,7 +16,7 @@ export class OgiController {
         try {
             const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
             const record = await ogiService.getRecordById(id);
-            return res.json(record);
+            return res.json(successResponse(record));
         }
         catch (error) {
             console.error('[OGI] GET BY ID error:', error);
@@ -28,7 +29,7 @@ export class OgiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
             const result = await ogiService.createRecord(payload, userId, files);
-            return res.status(201).json(result);
+            return res.status(201).json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[OGI] CREATE error:', error);
@@ -42,7 +43,7 @@ export class OgiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
             const result = await ogiService.updateRecord(id, payload, userId, files);
-            return res.json(result);
+            return res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[OGI] UPDATE error:', error);
@@ -55,7 +56,7 @@ export class OgiController {
             if (!siteId)
                 return res.status(400).json({ message: 'Site Code required' });
             const sequence = await ogiService.generateSequence(siteId);
-            return res.json({ sequence });
+            return res.json(successResponse({ sequence }));
         }
         catch (error) {
             return next(error);
@@ -67,7 +68,7 @@ export class OgiController {
             if (!attachmentId)
                 throw new Error('Attachment ID is required');
             // @ts-ignore
-            const { db } = await import('../../config/db.js');
+            const { db } = await import('../../shared/infrastructure/db.js');
             const match = await db.selectFrom('OGI_ATTACHMENT').select('file_name').where('ogi_attachment_id', '=', attachmentId).executeTakeFirst();
             if (!match)
                 return res.status(404).json({ error: 'Attachment not found' });
@@ -90,10 +91,21 @@ export class OgiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             console.log(`[OGI] SUBMIT called for id=${id}, userId=${userId}`);
             const result = await ogiService.submitRecord(id, userId);
-            return res.json(result);
+            return res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[OGI] SUBMIT error:', error);
+            return next(error);
+        }
+    }
+    async delete(req, res, next) {
+        try {
+            const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
+            const result = await ogiService.deleteRecord(id);
+            return res.json(successResponse(result.data || result, result.message));
+        }
+        catch (error) {
+            console.error('[OGI] DELETE error:', error);
             return next(error);
         }
     }

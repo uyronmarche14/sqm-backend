@@ -128,7 +128,7 @@ export class OgiService {
                     }).execute();
                 }
             }
-            return { success: true, id: recordId, message: 'OGI Record created successfully' };
+            return { success: true, data: { id: recordId }, message: 'OGI Record created successfully' };
         });
     }
     async updateRecord(id, payload, userId, files = []) {
@@ -200,7 +200,7 @@ export class OgiService {
                     }).execute();
                 }
             }
-            return { success: true, message: 'OGI Record updated successfully' };
+            return { success: true, data: { id }, message: 'OGI Record updated successfully' };
         });
     }
     /**
@@ -228,7 +228,22 @@ export class OgiService {
                 .where('ogi_id', '=', existing.record.ogi_id)
                 .execute();
             console.log(`[OGI] submitRecord: SUCCESS — status changed to SU for ogi_id=${existing.record.ogi_id}`);
-            return { success: true, message: 'OGI Record submitted successfully' };
+            return { success: true, data: { id: existing.record.ogi_id }, message: 'OGI Record submitted successfully' };
+        });
+    }
+    /**
+     * Deletes an OGI record and all child tables
+     */
+    async deleteRecord(id) {
+        const existing = await ogiRepository.findByIdDetailed(id);
+        if (!existing)
+            throw new NotFoundError('OGI Record not found');
+        const ogiId = existing.record.ogi_id;
+        return await ogiRepository.executeTransaction(async (trx) => {
+            await trx.deleteFrom('OGI_LOTS').where('ogi_id', '=', ogiId).execute();
+            await trx.deleteFrom('OGI_ATTACHMENT').where('ogi_id', '=', ogiId).execute();
+            await trx.deleteFrom('OGI').where('ogi_id', '=', ogiId).execute();
+            return { success: true, data: { id }, message: 'OGI Record deleted successfully' };
         });
     }
 }

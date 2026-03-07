@@ -35,7 +35,7 @@ export class MnrRepository extends BaseRepository {
             'l.mfg_area_id', 'ma.mfg_area_name',
             'l.defectcategory_id', 'dc.defectcategory_name as category_name',
             'l.mnrtype_id', 'mt.mnrtype_name as mnr_type_name',
-            'l.attention_id',
+            'l.attention_id', 'attn.full_name as attention_name',
             'd.part_id', 'pc.part_name', 'pc.part_code',
             'l.reference_no',
             'l.report_issuance_8d',
@@ -52,7 +52,20 @@ export class MnrRepository extends BaseRepository {
             'app.full_name as approver_name'
         ]);
         if (statusFilter) {
-            query = query.where('l.request_status', '=', statusFilter);
+            // Include CHECKED (CK) records alongside SUBMITTED (SU) for Awaiting Approval
+            // so checked records remain visible on the page until approved
+            if (statusFilter === 'SU') {
+                query = query.where('l.request_status', 'in', ['SU', 'CK']);
+            }
+            else if (statusFilter === 'RA') {
+                query = query.where('l.request_status', 'in', ['RA', 'RC']);
+            }
+            else if (statusFilter === 'RP') {
+                query = query.where('l.request_status', 'in', ['IS', 'CL']);
+            }
+            else {
+                query = query.where('l.request_status', '=', statusFilter);
+            }
         }
         return await query.orderBy('l.date_created', 'desc').execute();
     }

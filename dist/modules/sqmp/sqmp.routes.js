@@ -17,6 +17,11 @@ router.put('/:id', upload.any(), logUploads, handleUploadError, sqmpController.u
 router.delete('/:id', sqmpController.delete);
 // Workflow Action Subroutes
 router.post('/:id/submit', sqmpController.submit);
+router.post('/:id/check', sqmpController.check);
 router.post('/:id/approve', sqmpController.approve);
 router.post('/:id/reject', sqmpController.reject);
+router.post('/:id/issue', sqmpController.issue);
+router.post('/:id/request-response', sqmpController.requestResponse);
+router.post('/:id/cancel', sqmpController.cancel);
+router.post('/:id/close', sqmpController.close);
 export default router;

@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
+import { WorkflowStatusEnum } from '../../../shared/types/workflow.js';
 
 // Helper: Auto-parse JSON string arrays from FormData
-
 const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((val) => {
     if (typeof val === 'string') {
@@ -14,7 +13,7 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
 /**
  * Common SQMP Attachment Shape
  */
-const SqmpAttachmentSchema = z.object({
+export const SqmpAttachmentSchema = z.object({
   sqmp_attachment_id: z.string().uuid().optional(),
   file_name: z.string(),
   file_extension: z.string().optional(),
@@ -24,7 +23,7 @@ const SqmpAttachmentSchema = z.object({
 /**
  * Common SQMP CC User Shape
  */
-const SqmpCcUserSchema = z.object({
+export const SqmpCcUserSchema = z.object({
   sqmp_cc_id: z.string().uuid().optional(),
   user_id: z.string().uuid(),
   user_name: z.string().optional(),
@@ -58,7 +57,7 @@ export const SqmpCreateSchema = z.object({
 });
 
 /**
- * Update SQMP Request Schema
+ * Update SQMP Request Schema (Primary Record Only)
  */
 export const SqmpUpdateSchema = z.object({
   params: z.object({
@@ -98,37 +97,20 @@ export const SqmpUpdateSchema = z.object({
     // Arrays for nested data (auto-parse JSON strings from FormData)
     main_documents: JsonParsedArray(SqmpAttachmentSchema),
     appendix_documents: JsonParsedArray(SqmpAttachmentSchema),
-    cc_list: JsonParsedArray(SqmpCcUserSchema),
-
-    // Support for supplier responses and closures
-    responses: JsonParsedArray(z.object({
-      sqmp_response_id: z.string().uuid().optional(),
-      response_date: z.string().or(z.date()).nullable().optional(),
-      main_document_remarks: z.string().optional(),
-      appendix_sheet_remarks: z.string().optional(),
-      closure_remarks: z.string().optional(),
-      
-      remarks: z.string().optional(),
-      
-      // Approval fields (Cycle 2)
-      checker_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
-      checker_remarks: z.string().optional(),
-      checker_date: z.string().or(z.date()).nullable().optional(),
-      approver_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
-      approver_remarks: z.string().optional(),
-      approver_date: z.string().or(z.date()).nullable().optional(),
-
-      // Nested attachments in responses (these are already parsed within the parent object)
-      documents: z.array(SqmpAttachmentSchema).optional(),
-      appendixes: z.array(SqmpAttachmentSchema).optional(),
-      closures: z.array(SqmpAttachmentSchema).optional()
-    }))
+    cc_list: JsonParsedArray(SqmpCcUserSchema)
   })
 });
-  
+
 /**
- * Workflow Action Output Options
+ * IDs Schema
  */
+export const SqmpIdParamSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'Invalid SQMP ID format'),
+    attachmentId: z.string().min(1, 'Invalid Attachment ID format').optional()
+  })
+});
+
 export const SqmpActionSchema = z.object({
   params: z.object({
     id: z.string().min(1, 'Invalid SQMP ID format')
@@ -138,23 +120,6 @@ export const SqmpActionSchema = z.object({
   }).optional()
 });
 
-/**
- * ID Param Schema
- */
-export const SqmpIdParamSchema = z.object({
-  params: z.object({
-    id: z.string().min(1, 'Invalid SQMP ID format'),
-    attachmentId: z.string().min(1, 'Invalid Attachment ID format').optional()
-  })
-});
-
-export const SqmpAttachmentParamSchema = z.object({
-  params: z.object({
-    attachmentId: z.string().min(1, 'Invalid Attachment ID format')
-  })
-});
-
-// TypeScript inference types
 export type SQMPCreationInput = z.infer<typeof SqmpCreateSchema>['body'];
 export type SQMPUpdateInput = z.infer<typeof SqmpUpdateSchema>['body'];
 export type SQMPActionInput = z.infer<typeof SqmpActionSchema>['body'];

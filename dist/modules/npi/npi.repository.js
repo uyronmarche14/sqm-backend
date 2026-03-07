@@ -99,6 +99,10 @@ export class NpiRepository extends BaseRepository {
             .selectAll()
             .where('npi_lot_id', '=', record.npi_lot_id)
             .execute();
+        const dimension_categories = await db.selectFrom('NPI_DIMENSIONCAT')
+            .selectAll()
+            .where('npi_lot_id', '=', record.npi_lot_id)
+            .execute();
         const cc_list = await db.selectFrom('NPI_CC as cc')
             .leftJoin('INSPECTORS as i', 'cc.user_id', 'i.inspector_id')
             .select([
@@ -111,7 +115,7 @@ export class NpiRepository extends BaseRepository {
         ])
             .where('cc.npi_lot_id', '=', record.npi_lot_id)
             .execute();
-        return { record, attachments, visual_categories, data_categories, cc_list };
+        return { record, attachments, visual_categories, data_categories, dimension_categories, cc_list };
     }
     async getNextSequence(prefix) {
         const result = await db.selectFrom('NPI_LOTS')

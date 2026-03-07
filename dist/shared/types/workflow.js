@@ -4,9 +4,10 @@ export var WorkflowStatusEnum;
     WorkflowStatusEnum["NEW"] = "NEW";
     WorkflowStatusEnum["PENDING"] = "PENDING";
     WorkflowStatusEnum["SUBMITTED"] = "SUBMITTED";
-    WorkflowStatusEnum["AAPPROVAL"] = "AAPPROVAL";
+    // Evaluation / Technical Phases
     WorkflowStatusEnum["FAPPROVED"] = "FAPPROVED";
     WorkflowStatusEnum["EVALUATION"] = "EVALUATION";
+    WorkflowStatusEnum["CHECKED"] = "CHECKED";
     WorkflowStatusEnum["APPROVED"] = "APPROVED";
     WorkflowStatusEnum["APPROVED_WC"] = "APPROVED_WC";
     WorkflowStatusEnum["APPROVEDWC"] = "APPROVEDWC";

@@ -14,12 +14,15 @@ export class QmqaRepository extends BaseRepository {
             .leftJoin('SUPPLIERS as supp', 'ap.supplier_id', 'supp.supplier_id')
             .leftJoin('AUDITCATEGORY as cat', 'ap.audit_category_id', 'cat.audit_category_id')
             .leftJoin('USERS as sqe', 'ap.sqe_pic_id', 'sqe.user_id')
+            .leftJoin('QMQA as q', 'ap.qmqa_audit_plan_id', 'q.qmqa_audit_plan_id')
             .selectAll('ap')
             .select([
             'site.site_name',
             'supp.supplier_name',
             'cat.audit_category_name as category_name',
-            'sqe.full_name as sqe_pic_name'
+            'sqe.full_name as sqe_pic_name',
+            'q.qmqa_id as record_id',
+            'q.request_status as record_status'
         ])
             .orderBy('ap.audit_plan_date', 'desc')
             .orderBy('ap.created_date', 'desc')
@@ -31,12 +34,15 @@ export class QmqaRepository extends BaseRepository {
             .leftJoin('SUPPLIERS as supp', 'ap.supplier_id', 'supp.supplier_id')
             .leftJoin('AUDITCATEGORY as cat', 'ap.audit_category_id', 'cat.audit_category_id')
             .leftJoin('USERS as sqe', 'ap.sqe_pic_id', 'sqe.user_id')
+            .leftJoin('QMQA as q', 'ap.qmqa_audit_plan_id', 'q.qmqa_audit_plan_id')
             .selectAll('ap')
             .select([
             'site.site_name',
             'supp.supplier_name',
             'cat.audit_category_name as category_name',
-            'sqe.full_name as sqe_pic_name'
+            'sqe.full_name as sqe_pic_name',
+            'q.qmqa_id as record_id',
+            'q.request_status as record_status'
         ])
             .where('ap.qmqa_audit_plan_id', '=', id)
             .executeTakeFirst();
@@ -44,8 +50,8 @@ export class QmqaRepository extends BaseRepository {
     // ==========================================
     // 2. RECORDS (Audit Execution)
     // ==========================================
-    async findAllRecordsDetailed() {
-        return await db.selectFrom('QMQA as q')
+    async findAllRecordsDetailed(filters) {
+        let query = db.selectFrom('QMQA as q')
             .innerJoin('QMQA_AUDIT_PLAN as ap', 'q.qmqa_audit_plan_id', 'ap.qmqa_audit_plan_id')
             .leftJoin('MFG_SITES as site', 'ap.site_id', 'site.site_id')
             .leftJoin('SUPPLIERS as supp', 'ap.supplier_id', 'supp.supplier_id')
@@ -86,7 +92,16 @@ export class QmqaRepository extends BaseRepository {
             'chk.full_name as checker_name',
             'q.approver_id',
             'app.full_name as approver_name'
-        ])
+        ]);
+        if (filters?.mappedStatus) {
+            if (Array.isArray(filters.mappedStatus)) {
+                query = query.where('q.request_status', 'in', filters.mappedStatus);
+            }
+            else {
+                query = query.where('q.request_status', '=', filters.mappedStatus);
+            }
+        }
+        return await query
             .orderBy('q.created_date', 'desc')
             .orderBy('ap.audit_plan_date', 'desc')
             .execute();
@@ -140,6 +155,58 @@ export class QmqaRepository extends BaseRepository {
             eb('ap.control_no', '=', idOrControlNo)
         ]))
             .executeTakeFirst();
+    }
+    // ==========================================
+    // 3. RESPONSE & CHILD ATTACHMENT DATA
+    // ==========================================
+    async findResponseByQmqaId(qmqaId) {
+        return await db.selectFrom('QMQA_RESPONSE')
+            .selectAll()
+            .where('qmqa_id', '=', qmqaId)
+            .executeTakeFirst();
+    }
+    async findResponseInitialAttachments(responseId) {
+        return await db.selectFrom('QMQA_RESPONSE_INITIAL')
+            .selectAll()
+            .where('qmqa_response_id', '=', responseId)
+            .execute();
+    }
+    async findResponseFinalAttachments(responseId) {
+        return await db.selectFrom('QMQA_RESPONSE_FINAL')
+            .selectAll()
+            .where('qmqa_response_id', '=', responseId)
+            .execute();
+    }
+    async findResponseVerificationAttachments(responseId) {
+        return await db.selectFrom('QMQA_RESPONSE_VERIFICATION')
+            .selectAll()
+            .where('qmqa_response_id', '=', responseId)
+            .execute();
+    }
+    async findPlanAttachments(qmqaId) {
+        return await db.selectFrom('QMQA_PLAN_ATTACHMENT')
+            .selectAll()
+            .where('qmqa_id', '=', qmqaId)
+            .execute();
+    }
+    async findAttachments(qmqaId) {
+        return await db.selectFrom('QMQA_ATTACHMENT')
+            .selectAll()
+            .where('qmqa_id', '=', qmqaId)
+            .execute();
+    }
+    async findCcList(qmqaId) {
+        return await db.selectFrom('QMQA_CC as cc')
+            .leftJoin('USERS as u', 'cc.user_id', 'u.user_id')
+            .select([
+            'cc.qmqa_cc_id',
+            'cc.qmqa_id',
+            'cc.user_id',
+            'u.full_name as user_name',
+            'u.email'
+        ])
+            .where('cc.qmqa_id', '=', qmqaId)
+            .execute();
     }
     // ==========================================
     // Utils

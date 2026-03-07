@@ -1,4 +1,5 @@
 import { fiveM1EService } from './fiveM1E.service.js';
+import { successResponse } from '../../shared/utils/api-response.js';
 export class FiveM1EController {
     /**
      * Submit a new 5M1E Application
@@ -7,8 +8,13 @@ export class FiveM1EController {
         try {
             // req.user is guaranteed by requireAuth middleware
             const userId = req.user.userId;
-            const result = await fiveM1EService.createApplication(req.body, userId);
-            res.status(201).json(result);
+            const files = req.files || [];
+            console.log(`[5M1E Controller] Create - ${files.length} file(s) received`);
+            // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
+            console.log("🚀 [BACKEND E2E VERIFICATION] Received Create Payload:");
+            console.log(JSON.stringify(req.body, null, 2));
+            const result = await fiveM1EService.createApplication(req.body, userId, files);
+            res.status(201).json(successResponse(result.data, result.message));
         }
         catch (error) {
             next(error);
@@ -21,10 +27,7 @@ export class FiveM1EController {
         try {
             const status = req.query.status;
             const records = await fiveM1EService.getAllApplications(status);
-            res.status(200).json({
-                success: true,
-                data: records
-            });
+            res.status(200).json(successResponse(records));
         }
         catch (error) {
             next(error);
@@ -37,10 +40,7 @@ export class FiveM1EController {
         try {
             const id = req.params.id; // ID acts as controlNo in our URL schema
             const record = await fiveM1EService.getApplication(id);
-            res.status(200).json({
-                success: true,
-                data: record
-            });
+            res.status(200).json(successResponse(record));
         }
         catch (error) {
             next(error);
@@ -52,8 +52,97 @@ export class FiveM1EController {
     async updateApplication(req, res, next) {
         try {
             const id = req.params.id;
-            const result = await fiveM1EService.updateApplication(id, req.body);
-            res.status(200).json(result);
+            const files = req.files || [];
+            const userId = req.user.userId;
+            console.log(`[5M1E Controller] Update [${id}] - ${files.length} file(s) received for user ${userId}`);
+            // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
+            console.log(`🚀 [BACKEND E2E VERIFICATION] Received Update Payload for ${id}:`);
+            console.log(JSON.stringify(req.body, null, 2));
+            const result = await fiveM1EService.updateApplication(id, req.body, files, userId);
+            res.status(200).json(successResponse(result.data, result.message));
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
+     * Delete an Application and all child data
+     */
+    async deleteApplication(req, res, next) {
+        try {
+            const id = req.params.id;
+            const result = await fiveM1EService.deleteApplication(id);
+            res.status(200).json(successResponse({ id }, result.message));
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
+     * Workflow: Submit
+     */
+    async submitApplication(req, res, next) {
+        try {
+            const id = req.params.id;
+            const userId = req.user.userId;
+            const result = await fiveM1EService.submitApplication(id, userId);
+            res.status(200).json(successResponse(result.data, result.message));
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
+     * Workflow: Check (two-stage approval — checker marks as reviewed)
+     */
+    async checkApplication(req, res, next) {
+        try {
+            const id = req.params.id;
+            const userId = req.user.userId;
+            const result = await fiveM1EService.checkApplication(id, userId, req.body?.remarks);
+            res.status(200).json(successResponse(result.data, result.message));
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
+     * Workflow: Approve
+     */
+    async approveApplication(req, res, next) {
+        try {
+            const id = req.params.id;
+            const userId = req.user.userId;
+            const result = await fiveM1EService.approveApplication(id, userId, req.body?.remarks, req.body?.status);
+            res.status(200).json(successResponse(result.data, result.message));
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
+     * Workflow: Reject
+     */
+    async rejectApplication(req, res, next) {
+        try {
+            const id = req.params.id;
+            const userId = req.user.userId;
+            const result = await fiveM1EService.rejectApplication(id, userId, req.body?.remarks);
+            res.status(200).json(successResponse(result.data, result.message));
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
+     * Workflow: Release
+     */
+    async releaseApplication(req, res, next) {
+        try {
+            const id = req.params.id;
+            const userId = req.user.userId;
+            const result = await fiveM1EService.releaseApplication(id, userId);
+            res.status(200).json(successResponse(result.data, result.message));
         }
         catch (error) {
             next(error);

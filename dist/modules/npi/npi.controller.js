@@ -1,11 +1,17 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { npiService } from './npi.service.js';
 import { NpiCreateSchema, NpiUpdateSchema, NpiIdParamSchema, NpiActionSchema } from './npi.schema.js';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
+import { successResponse, createResponse } from '../../shared/utils/api-response.js';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UPLOAD_DIR = path.join(__dirname, '../../../uploads/npi');
 export class NpiController {
     async getAll(_req, res, next) {
         try {
             const records = await npiService.getAllRecords();
-            res.json(records);
+            res.json(successResponse(records));
         }
         catch (error) {
             console.error('[NPI] GET ALL error:', error);
@@ -16,7 +22,7 @@ export class NpiController {
         try {
             const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
             const record = await npiService.getRecordById(id);
-            res.json(record);
+            res.json(successResponse(record));
         }
         catch (error) {
             console.error('[NPI] GET BY ID error:', error);
@@ -29,7 +35,7 @@ export class NpiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
             const result = await npiService.createRecord(payload, userId, files);
-            res.status(201).json(result);
+            res.status(201).json(createResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[NPI] CREATE error:', error);
@@ -38,12 +44,13 @@ export class NpiController {
     }
     async update(req, res, next) {
         try {
-            const { id } = NpiUpdateSchema.parse({ params: req.params, body: req.body }).params;
-            const payload = NpiUpdateSchema.parse({ params: req.params, body: req.body }).body;
+            const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
+            const { id } = parsed.params;
+            const payload = parsed.body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
             const result = await npiService.updateRecord(id, payload, userId, files);
-            res.json(result);
+            res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[NPI] UPDATE error:', error);
@@ -53,13 +60,13 @@ export class NpiController {
     async getStats(_req, res, next) {
         try {
             // @ts-ignore
-            const { db } = await import('../../config/db.js');
+            const { db } = await import('../../shared/infrastructure/db.js');
             // @ts-ignore
             const stats = await db.selectFrom('NPI_LOTS')
                 .select(['request_status as status', db.fn.count('npi_lot_id').as('count')])
                 .groupBy('request_status')
                 .execute();
-            res.json(stats);
+            res.json(successResponse(stats));
         }
         catch (error) {
             next(error);
@@ -71,7 +78,7 @@ export class NpiController {
             if (!siteId)
                 return res.status(400).json({ message: 'Site Code required' });
             const sequence = await npiService.generateSequence(siteId);
-            return res.json({ sequence });
+            return res.json(successResponse({ sequence }));
         }
         catch (error) {
             return next(error);
@@ -84,13 +91,12 @@ export class NpiController {
                 throw new Error('Attachment ID is required');
             // Attempt to look for it from db pool
             // @ts-ignore
-            const { db } = await import('../../config/db.js');
+            const { db } = await import('../../shared/infrastructure/db.js');
             const match = await db.selectFrom('NPI_ATTACHMENT').select('file_name').where('npi_attachment_id', '=', attachmentId).executeTakeFirst();
             if (!match)
                 return res.status(404).json({ error: 'Attachment not found' });
             const fs = await import('fs');
-            const path = await import('path');
-            const filePath = path.join(process.cwd(), 'uploads/npi', match.file_name);
+            const filePath = path.join(UPLOAD_DIR, match.file_name);
             if (!fs.existsSync(filePath)) {
                 return res.status(404).json({ error: 'File not found on disk' });
             }
@@ -110,10 +116,26 @@ export class NpiController {
                 request_status: 'SUBMITTED',
                 status: WorkflowStatusEnum.SUBMITTED
             }, userId, []);
-            res.json(result);
+            res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[NPI] SUBMIT error:', error);
+            next(error);
+        }
+    }
+    async check(req, res, next) {
+        try {
+            const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await npiService.updateRecord(id, {
+                request_status: 'CHECKED',
+                status: WorkflowStatusEnum.CHECKED,
+                checkerRemarks: req.body?.remarks || undefined
+            }, userId, []);
+            res.json(successResponse(result.data || result, result.message));
+        }
+        catch (error) {
+            console.error('[NPI] CHECK error:', error);
             next(error);
         }
     }
@@ -126,7 +148,7 @@ export class NpiController {
                 status: WorkflowStatusEnum.FAPPROVED,
                 approverRemarks: req.body?.remarks || undefined
             }, userId, []);
-            res.json(result);
+            res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[NPI] APPROVE error:', error);
@@ -142,10 +164,21 @@ export class NpiController {
                 status: WorkflowStatusEnum.RREJECTED,
                 approverRemarks: body?.remarks
             }, userId, []);
-            res.json(result);
+            res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
             console.error('[NPI] REJECT error:', error);
+            next(error);
+        }
+    }
+    async delete(req, res, next) {
+        try {
+            const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
+            const result = await npiService.deleteRecord(id);
+            res.json(successResponse(result.data || result, result.message));
+        }
+        catch (error) {
+            console.error('[NPI] DELETE error:', error);
             next(error);
         }
     }

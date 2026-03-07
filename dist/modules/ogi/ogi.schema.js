@@ -7,14 +7,29 @@ const OgiAttachmentSchema = z.object({
     file_name: z.string().optional(),
     file_extension: z.string().optional(),
     remarks: z.string().optional()
-});
+}).transform((data) => ({
+    id: data.id,
+    ogi_attachment_id: data.ogi_attachment_id,
+    fileName: data.fileName || data.file_name || '',
+    file_extension: data.file_extension,
+    remarks: data.remarks
+}));
 const OgiLotSchema = z.object({
     id: z.string().uuid().optional(),
     ogi_lot_id: z.string().uuid().optional(),
-    lotNo: z.string(),
-    invoiceNo: z.string(),
-    lotSize: z.preprocess((v) => Number(v) || 0, z.number().int())
-});
+    lotNo: z.string().optional(),
+    lot_no: z.string().optional(),
+    invoiceNo: z.string().optional(),
+    invoice_no: z.string().optional(),
+    lotSize: z.preprocess((v) => Number(v) || 0, z.number().int()).optional(),
+    lot_size: z.preprocess((v) => Number(v) || 0, z.number().int()).optional()
+}).transform((data) => ({
+    id: data.id,
+    ogi_lot_id: data.ogi_lot_id,
+    lotNo: data.lotNo || data.lot_no || '',
+    invoiceNo: data.invoiceNo || data.invoice_no || '',
+    lotSize: data.lotSize || data.lot_size || 0
+}));
 // A helper for handling JSON strings from FormData or actual arrays
 const JsonParsedArray = (schema) => z.preprocess((val) => {
     if (typeof val === 'string') {

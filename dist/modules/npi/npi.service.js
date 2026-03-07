@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { npiRepository } from './npi.repository.js';
+import { userRepository } from '../users/user.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
 export class NpiService {
@@ -19,6 +20,15 @@ export class NpiService {
         }
         return `${prefix}${nextNum.toString().padStart(4, '0')}`;
     }
+    async resolveCcUserId(cc) {
+        if (cc.user_id)
+            return cc.user_id;
+        if (cc.email) {
+            const user = await userRepository.findByEmail(cc.email);
+            return user?.user_id || null;
+        }
+        return null;
+    }
     parseDate(d) {
         if (!d)
             return null;
@@ -37,13 +47,14 @@ export class NpiService {
         const data = await npiRepository.findByIdDetailed(id);
         if (!data)
             throw new NotFoundError('NPI Record not found');
-        const { record, attachments, visual_categories, data_categories, cc_list } = data;
+        const { record, attachments, visual_categories, data_categories, dimension_categories, cc_list } = data;
         return {
             ...record,
             status: mapStatusFromDB(record.request_status),
             attachments: attachments || [],
             visual_categories: visual_categories || [],
             data_categories: data_categories || [],
+            dimension_categories: dimension_categories || [],
             cc_list: cc_list || []
         };
     }
@@ -54,27 +65,35 @@ export class NpiService {
         const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
         const dbStatus = mapStatusToDB(payload.status || 'DRAFT');
         const defaultInspector = await npiRepository.findDefaultInspector();
+        // Generate control number if not provided
+        let controlNo = payload.controlNo;
+        if (!controlNo && payload.siteId) {
+            controlNo = await this.generateSequence(payload.siteId);
+        }
+        else if (!controlNo) {
+            controlNo = `NPI-DRAFT-${Date.now()}`;
+        }
         const dbPayload = {
             npi_lot_id: npiId,
-            control_no: payload.controlNo,
+            control_no: controlNo,
             datecreated: now,
-            site_id: payload.siteId,
-            supplier_id: payload.supplierId,
-            part_id: payload.partId,
-            model_id: payload.model,
+            site_id: (payload.siteId || ''),
+            supplier_id: (payload.supplierId || ''),
+            part_id: (payload.partId || ''),
+            model_id: (payload.model || ''),
             lot_no: payload.lotNo || '',
             lot_size: payload.lotSize || 0,
             invoice_no: payload.invoiceNo || '',
             po_no: payload.poNo || '',
-            inspectionmethod_id: payload.inspectionMethod,
+            inspectionmethod_id: payload.inspectionMethod || '',
             inspection_temp: payload.inspectionTemp || 0,
             inspection_hum: payload.inspectionHum || 0,
             starttime: payload.startTime || 0,
             endtime: payload.endTime || 0,
-            severity_id: payload.severity,
+            severity_id: payload.severity || '',
             severity_seq: payload.severity_seq || null,
             sample_size: payload.sampleSize || 0,
-            disposition_id: payload.disposition,
+            disposition_id: payload.disposition || '',
             inspection_date: this.parseDate(payload.inspectionDate) || now,
             delivery_date: this.parseDate(payload.deliveryDate) || now,
             inspected_by_id: defaultInspector || effectiveUserId,
@@ -150,19 +169,40 @@ export class NpiService {
                     }).execute();
                 }
             }
-            // 5. CC List
-            if (payload.cc_list && payload.cc_list.length > 0) {
-                for (const cc of payload.cc_list) {
-                    await trx.insertInto('NPI_CC').values({
-                        npi_cc_id: uuidv4(),
+            // 5. Dimension Categories
+            if (payload.dimension_categories && payload.dimension_categories.length > 0) {
+                for (const dim of payload.dimension_categories) {
+                    await trx.insertInto('NPI_DIMENSIONCAT').values({
+                        npi_dimensioncat_id: uuidv4(),
                         npi_lot_id: npiId,
-                        user_id: cc.user_id,
+                        partdimensioncategory_name: dim.partdimensioncategory_name,
+                        std_min: dim.std_min,
+                        std_max: dim.std_max,
+                        actual_min: dim.actual_min ?? null,
+                        actual_max: dim.actual_max ?? null,
+                        cpk: dim.cpk ?? null,
+                        remarks: dim.remarks || null,
                         last_update: now,
                         updateby: effectiveUserId
                     }).execute();
                 }
             }
-            return { success: true, id: npiId, message: 'Record created successfully' };
+            // 6. CC List - resolve email to user_id if needed
+            if (payload.cc_list && payload.cc_list.length > 0) {
+                for (const cc of payload.cc_list) {
+                    const resolvedUserId = await this.resolveCcUserId(cc);
+                    if (!resolvedUserId)
+                        continue; // Skip if can't resolve
+                    await trx.insertInto('NPI_CC').values({
+                        npi_cc_id: uuidv4(),
+                        npi_lot_id: npiId,
+                        user_id: resolvedUserId,
+                        last_update: now,
+                        updateby: effectiveUserId
+                    }).execute();
+                }
+            }
+            return { success: true, data: { id: npiId }, message: 'Record created successfully' };
         });
     }
     async updateRecord(id, payload, userId, files = []) {
@@ -209,8 +249,8 @@ export class NpiService {
             dbUpdates.severity_id = payload.severity;
         if (payload.severity_seq !== undefined)
             dbUpdates.severity_seq = payload.severity_seq;
-        if (payload.sample_size !== undefined)
-            dbUpdates.sample_size = payload.sample_size;
+        if (payload.sampleSize !== undefined)
+            dbUpdates.sample_size = payload.sampleSize;
         if (payload.disposition)
             dbUpdates.disposition_id = payload.disposition;
         if (payload.inspectionDate)
@@ -307,20 +347,60 @@ export class NpiService {
                     }).execute();
                 }
             }
-            // 5. CC List
-            if (payload.cc_list !== undefined) {
-                await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', existing.record.npi_lot_id).execute();
-                for (const cc of payload.cc_list) {
-                    await trx.insertInto('NPI_CC').values({
-                        npi_cc_id: uuidv4(),
+            // 5. Dimension Categories
+            if (payload.dimension_categories !== undefined) {
+                await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', existing.record.npi_lot_id).execute();
+                for (const dim of payload.dimension_categories) {
+                    await trx.insertInto('NPI_DIMENSIONCAT').values({
+                        npi_dimensioncat_id: uuidv4(),
                         npi_lot_id: existing.record.npi_lot_id,
-                        user_id: cc.user_id,
+                        partdimensioncategory_name: dim.partdimensioncategory_name,
+                        std_min: dim.std_min,
+                        std_max: dim.std_max,
+                        actual_min: dim.actual_min ?? null,
+                        actual_max: dim.actual_max ?? null,
+                        cpk: dim.cpk ?? null,
+                        remarks: dim.remarks || null,
                         last_update: now,
                         updateby: effectiveUserId
                     }).execute();
                 }
             }
-            return { success: true, message: 'Record updated successfully' };
+            // 6. CC List - resolve email to user_id if needed
+            if (payload.cc_list !== undefined) {
+                await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', existing.record.npi_lot_id).execute();
+                for (const cc of payload.cc_list) {
+                    const resolvedUserId = await this.resolveCcUserId(cc);
+                    if (!resolvedUserId)
+                        continue; // Skip if can't resolve
+                    await trx.insertInto('NPI_CC').values({
+                        npi_cc_id: uuidv4(),
+                        npi_lot_id: existing.record.npi_lot_id,
+                        user_id: resolvedUserId,
+                        last_update: now,
+                        updateby: effectiveUserId
+                    }).execute();
+                }
+            }
+            return { success: true, data: { id }, message: 'Record updated successfully' };
+        });
+    }
+    /**
+     * Deletes an NPI record and all child tables
+     */
+    async deleteRecord(id) {
+        const existing = await npiRepository.findByIdDetailed(id);
+        if (!existing)
+            throw new NotFoundError('NPI Record not found');
+        const npiLotId = existing.record.npi_lot_id;
+        return await npiRepository.executeTransaction(async (trx) => {
+            await trx.deleteFrom('NPI_ATTACHMENT').where('npi_lot_id', '=', npiLotId).execute();
+            await trx.deleteFrom('NPI_VISUALCAT').where('npi_lot_id', '=', npiLotId).execute();
+            await trx.deleteFrom('NPI_DATACAT').where('npi_lot_id', '=', npiLotId).execute();
+            await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', npiLotId).execute();
+            await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', npiLotId).execute();
+            await trx.deleteFrom('NPI_LOTS').where('npi_lot_id', '=', npiLotId).execute();
+            return { success: true, data: { id }, message: 'NPI Record deleted successfully' };
         });
     }
 }

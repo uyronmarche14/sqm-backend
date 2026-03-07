@@ -53,21 +53,11 @@ export class MnrService {
             mnrtype_id: r.mnrtype_id,
             attention_id: r.attention_id,
             reference_no: r.reference_no,
-            mainDetails: {
-                mfgSites: r.site_id,
-                supplier: r.supplier_id,
-                model: r.model_id,
-                product: r.product_id,
-                mfgAreas: r.mfg_area_id,
-                category: r.defectcategory_id,
-                mnrType: r.mnrtype_id,
-                attention: r.attention_id,
-                reference: r.reference_no,
-                reportIssuance8D: r.report_issuance_8d === 1,
-                issueDate: r.issued_date,
-                initialReport: r.initial_report_date,
-                dueDate: r.due_date,
-            },
+            report_issuance_8d: r.report_issuance_8d === 1 || r.report_issuance_8d === true,
+            recurrence_ref: r.recurrence_ref,
+            issued_date: r.issued_date,
+            initial_report_date: r.initial_report_date,
+            due_date: r.due_date,
             part_name: r.part_name,
             part_code: r.part_code,
             last_update: r.last_update,
@@ -106,6 +96,12 @@ export class MnrService {
                 issuer_id: main.issuer_id,
                 checker_id: main.checker_id,
                 approver_id: main.approver_id,
+                issuer_date: main.issuer_date,
+                issuer_remarks: main.issuer_remarks,
+                checker_date: main.checker_date,
+                checker_remarks: main.checker_remarks,
+                approver_date: main.approver_date,
+                approver_remarks: main.approver_remarks,
                 site_name: main.site_name,
                 supplier_name: main.supplier_name,
                 product_name: main.product_name,
@@ -131,7 +127,27 @@ export class MnrService {
                 sort: { selected: main.sort, sorted: main.sort_sorted, rejected: main.sort_rejected, rate: main.sort_reject_rate, rework: main.sort_rework, remarks: main.sort_remarks },
                 other: { selected: main.other, qty: main.other_affected_qty, doc: main.other_affected_doc, remarks: main.other_remarks }
             },
-            copiedUsers: data.ccList.map(cc => ({ id: cc.user_id, value: cc.user_id, label: cc.full_name, email: cc.email })),
+            approval: {
+                issuer: main.issuer_id,
+                issuerName: main.issuer_name,
+                checker: main.checker_id,
+                checkerName: main.checker_name,
+                approver: main.approver_id,
+                approverName: main.approver_name,
+                issuerDate: main.issuer_date,
+                issuerRemarks: main.issuer_remarks,
+                checkerDate: main.checker_date,
+                checkerRemarks: main.checker_remarks,
+                approverDate: main.approver_date,
+                approverRemarks: main.approver_remarks,
+            },
+            copiedUsers: data.ccList.map(cc => {
+                const ccAny = cc;
+                const fullName = ccAny.full_name || ccAny.fullName || ccAny.username ||
+                    ((ccAny.first_name || '') + ' ' + (ccAny.last_name || '')).trim() || '';
+                console.log('[MNR CC] Raw CC entry:', JSON.stringify(cc));
+                return { id: ccAny.user_id, value: ccAny.user_id, label: fullName, full_name: fullName, email: ccAny.email || '' };
+            }),
             attachments: data.attachments,
             meta: {
                 last_update: main.last_update,
@@ -139,13 +155,39 @@ export class MnrService {
             }
         };
     }
-    async createRecord(payload, userId) {
+    async createRecord(payload, userId, files = []) {
         const mnrId = uuidv4();
         const controlNo = await this.generateControlNo();
         const now = new Date();
-        const main = payload.mainDetails || {};
-        const disp = payload.disposition || {};
+        // Extract main details from the standardized payload (snake_case _id keys)
+        const main = {
+            mfgSites: payload.site_id || '',
+            supplier: payload.supplier_id || '',
+            product: payload.product_id || '',
+            model: payload.model_id || '',
+            mfgAreas: payload.mfg_area_id || '',
+            category: payload.defectcategory_id || '',
+            mnrType: payload.mnrType || '',
+            attention: payload.attention_id || '',
+            reference: payload.reference || '',
+            remarks: payload.remarks || '',
+            reportIssuance8D: payload.reportIssuance8D,
+            recurrenceReference: payload.recurrenceRef || '',
+            issueDate: payload.issueDate || '',
+            initialReport: payload.initialReport || '',
+            dueDate: payload.dueDate || '',
+            actualInitialReport: payload.actualInitialReport || '',
+            actualFinalReport: payload.actualFinalReport || '',
+        };
+        // Accept both 'disposition' and 'disposition_data' (frontend sends 'disposition_data')
+        const disp = payload.disposition || payload.disposition_data || {};
         const nc = payload.nonConformity || {};
+        const approval = payload.approval || {};
+        // Diagnostic logger — remove after debugging
+        console.log('[MNR CREATE] Received payload → defects:', JSON.stringify(payload.defects, null, 2));
+        console.log('[MNR CREATE] Received payload → nonConformity:', JSON.stringify(nc, null, 2));
+        console.log('[MNR CREATE] Received payload → disposition:', JSON.stringify(disp, null, 2));
+        console.log('[MNR CREATE] Received payload → disposition_data:', JSON.stringify(payload.disposition_data, null, 2));
         const dbStatus = mapStatusToDB('DRAFT');
         // Resolve Disposition fields safely to booleans
         const rtvSelected = disp.rtv && typeof disp.rtv === 'object' ? disp.rtv.selected : !!disp.rtv;
@@ -156,17 +198,17 @@ export class MnrService {
             control_no: controlNo,
             request_status: dbStatus,
             date_created: now,
-            site_id: main.mfgSites || '',
-            product_id: main.product || payload.product_id || payload.productId || payload.product || '',
-            supplier_id: main.supplier || '',
-            model_id: main.model || payload.model_id || payload.model || '',
+            site_id: main.mfgSites,
+            product_id: main.product,
+            supplier_id: main.supplier,
+            model_id: main.model,
             mfg_area_id: main.mfgAreas || '',
             defectcategory_id: main.category || '',
             mnrtype_id: main.mnrType || '',
             attention_id: main.attention || '',
             reference_no: main.reference || null,
             report_issuance_8d: main.reportIssuance8D ? 1 : 0,
-            recurrence_ref: nc.recurrenceRef || null,
+            recurrence_ref: payload.recurrenceRef || null,
             issued_date: this.formatDate(main.issueDate),
             initial_report_date: this.formatDate(main.initialReport) || now,
             due_date: this.formatDate(main.dueDate) || now,
@@ -187,23 +229,60 @@ export class MnrService {
             other_remarks: typeof disp.other === 'object' ? disp.other.remarks : disp.otherRemarks || null,
             encoder_id: userId,
             encoder_date: now,
-            issuer_id: '',
+            issuer_id: approval.issuer || userId,
+            checker_id: approval.checker || null,
+            approver_id: approval.approver || null,
+            issuer_date: this.formatDate(approval.submitDate) || null,
+            issuer_remarks: approval.issuerRemarks || null,
+            checker_date: this.formatDate(approval.approvedDate) || null,
+            checker_remarks: approval.checkerRemarks || null,
+            approver_date: this.formatDate(approval.approvedDate2) || null,
+            approver_remarks: approval.approverRemarks || null,
             remarks: main.remarks || null,
             last_update: now,
             updateby: userId
         };
         return await mnrRepository.executeTransaction(async (trx) => {
+            // Defensive: Validate attention_id exists in USERS before inserting
+            // The Attention dropdown may source values from a non-USERS table,
+            // but MNR_LOTS has FK_MNR_LOTS_USERS1 referencing USERS.user_id
+            if (dbLotsPayload.attention_id) {
+                const attentionExists = await trx.selectFrom('USERS')
+                    .select('user_id')
+                    .where('user_id', '=', dbLotsPayload.attention_id)
+                    .executeTakeFirst();
+                if (!attentionExists) {
+                    console.warn(`[MNR] attention_id "${dbLotsPayload.attention_id}" not found in USERS — falling back to creator userId`);
+                    dbLotsPayload.attention_id = userId;
+                }
+            }
+            else {
+                // attention_id cannot be null in DB
+                dbLotsPayload.attention_id = userId;
+            }
             // 1. Insert Main Record
             await trx.insertInto('MNR_LOTS').values(dbLotsPayload).execute();
             // 2. Insert Defects Detail records
             if (payload.defects && Array.isArray(payload.defects)) {
                 for (const defect of payload.defects) {
+                    // Resolve defectclass_id: frontend may send UUID or label (e.g. "CRITICAL")
+                    let resolvedClassId = defect.classId || null;
+                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                    if (resolvedClassId && !uuidRegex.test(resolvedClassId)) {
+                        // classId is a label — look up UUID from DEFECTCLASS table
+                        const classRow = await trx.selectFrom('DEFECTCLASS')
+                            .select('defectclass_id')
+                            .where('defectclass_name', '=', resolvedClassId)
+                            .executeTakeFirst();
+                        resolvedClassId = classRow?.defectclass_id || null;
+                        console.log(`[MNR] Resolved defectclass "${defect.classId}" → ${resolvedClassId}`);
+                    }
                     await trx.insertInto('MNR_DETAILS').values({
                         mnr_detail_id: uuidv4(),
                         mnr_id: mnrId,
                         part_id: defect.partId || '',
                         defect_id: defect.defectId || '',
-                        defectclass_id: defect.classId || null,
+                        defectclass_id: resolvedClassId,
                         defect_qty: defect.qty || 0,
                         ca: defect.ca ? 1 : 0,
                         inspection_date: this.formatDate(defect.inspectionDate),
@@ -240,28 +319,46 @@ export class MnrService {
                 last_update: now,
                 updateby: userId
             }).execute();
-            // 4. Copied Users CC Data
+            // 4. Copied Users CC Data (accept both 'copiedUsers' and 'ccList')
+            const ccUsers = [];
             if (payload.copiedUsers && Array.isArray(payload.copiedUsers)) {
-                for (const ccId of payload.copiedUsers) {
-                    if (!ccId)
-                        continue;
-                    await trx.insertInto('MNR_CC').values({
-                        mnr_cc_id: uuidv4(),
-                        mnr_id: mnrId,
-                        user_id: ccId,
-                        last_update: now,
-                        updateby: userId
-                    }).execute();
+                ccUsers.push(...payload.copiedUsers);
+            }
+            else if (payload.ccList && Array.isArray(payload.ccList)) {
+                for (const cc of payload.ccList) {
+                    if (typeof cc === 'string')
+                        ccUsers.push(cc);
+                    else if (cc.id)
+                        ccUsers.push(cc.id);
                 }
+            }
+            for (const ccId of ccUsers) {
+                if (!ccId)
+                    continue;
+                await trx.insertInto('MNR_CC').values({
+                    mnr_cc_id: uuidv4(),
+                    mnr_id: mnrId,
+                    user_id: ccId,
+                    last_update: now,
+                    updateby: userId
+                }).execute();
             }
             // 5. Attachments
             if (payload.attachments && Array.isArray(payload.attachments)) {
                 for (const att of payload.attachments) {
+                    const originalName = att.file_name || att.name;
+                    if (!originalName) {
+                        console.warn('[MNR] Skipping attachment missing file_name:', att);
+                        continue;
+                    }
+                    // Match with Multer files if it's a new upload
+                    const uploadedFile = files.find(f => f.originalname === originalName);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
                     await trx.insertInto('MNR_ATTACHMENT').values({
-                        mnr_attachment_id: uuidv4(),
+                        mnr_attachment_id: att.id || uuidv4(),
                         mnr_id: mnrId,
-                        file_name: att.name,
-                        file_extension: att.extension || 'bin',
+                        file_name: diskFileName,
+                        file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
                         remarks: att.remarks || null,
                         last_update: now,
                         updateby: userId
@@ -272,52 +369,127 @@ export class MnrService {
         });
     }
     // Update and delete omitted for brevity, will be similar to execution loop
-    async updateRecord(id, payload, userId) {
+    async updateRecord(id, payload, userId, files = []) {
         const updates = payload.updates || payload;
         const now = new Date();
         return await mnrRepository.executeTransaction(async (trx) => {
+            // First, get the current record status to determine workflow transitions
+            const currentRecord = await trx.selectFrom('MNR_LOTS')
+                .select(['mnr_id', 'request_status', 'report_issuance_8d'])
+                .where((eb) => eb.or([
+                eb('mnr_id', '=', id),
+                eb('control_no', '=', id)
+            ]))
+                .executeTakeFirst();
+            if (!currentRecord)
+                throw new NotFoundError('MNR Record not found');
+            const currentStatus = mapStatusFromDB(currentRecord.request_status);
+            console.log(`[MNR Workflow] Current status: ${currentStatus}, Requested status: ${updates.status}`);
             const dbUpdates = {
                 last_update: now,
                 updateby: userId
             };
-            if (updates.status)
-                dbUpdates.request_status = mapStatusToDB(updates.status);
-            const main = updates.mainDetails || updates;
-            if (main.mfgSites)
-                dbUpdates.site_id = main.mfgSites;
-            if (main.supplier || main.supplierId)
-                dbUpdates.supplier_id = main.supplier || main.supplierId;
-            if (main.model)
-                dbUpdates.model_id = main.model;
-            if (main.mfgAreas)
-                dbUpdates.mfg_area_id = main.mfgAreas;
-            if (main.category)
-                dbUpdates.defectcategory_id = main.category;
-            if (main.mnrType)
-                dbUpdates.mnrtype_id = main.mnrType;
-            if (main.attention)
-                dbUpdates.attention_id = main.attention;
-            if (main.reference !== undefined)
-                dbUpdates.reference_no = main.reference;
-            if (main.reportIssuance8D !== undefined)
-                dbUpdates.report_issuance_8d = main.reportIssuance8D ? 1 : 0;
-            const nc = updates.nonConformity || {};
-            if (nc.recurrenceRef !== undefined)
-                dbUpdates.recurrence_ref = nc.recurrenceRef;
-            if (main.issueDate)
-                dbUpdates.issued_date = this.formatDate(main.issueDate);
-            if (main.initialReport)
-                dbUpdates.initial_report_date = this.formatDate(main.initialReport);
-            if (main.dueDate)
-                dbUpdates.due_date = this.formatDate(main.dueDate);
-            if (main.actualInitialReport)
-                dbUpdates.actual_initial_report_date = this.formatDate(main.actualInitialReport);
-            if (main.actualFinalReport)
-                dbUpdates.actual_final_report_date = this.formatDate(main.actualFinalReport);
-            if (main.remarks !== undefined)
-                dbUpdates.remarks = main.remarks;
-            // Disposition
-            const disp = updates.disposition || {};
+            let targetStatus = updates.status;
+            // ============================================================================
+            // WORKFLOW STATE TRANSITION LOGIC
+            // ============================================================================
+            // If status is being updated, apply context-aware workflow transitions
+            if (targetStatus) {
+                const upperTarget = targetStatus.toUpperCase();
+                // Handle SUBMIT action based on current context
+                if (upperTarget === 'SUBMITTED' || upperTarget === 'SUBMIT') {
+                    // Context-aware transitions:
+                    // - DRAFT → SUBMITTED (initial submission)
+                    // - IR → FR (submitting Initial Report response)
+                    // - FR → RESPONSE_AWAIT_APPROVAL (submitting Final Report response)
+                    if (currentStatus === 'IR') {
+                        targetStatus = 'FR';
+                        console.log(`[MNR Workflow] Transition: IR → FR (Initial Report submitted)`);
+                    }
+                    else if (currentStatus === 'FR') {
+                        targetStatus = 'RESPONSE_AWAIT_APPROVAL';
+                        console.log(`[MNR Workflow] Transition: FR → RESPONSE_AWAIT_APPROVAL (Final Report submitted, awaiting approval)`);
+                    }
+                    else if (currentStatus === 'DRAFT') {
+                        targetStatus = 'SUBMITTED';
+                        console.log(`[MNR Workflow] Transition: DRAFT → SUBMITTED (Initial submission)`);
+                    }
+                }
+                // Handle ISSUED status - check if 8D is required to bypass to IR
+                if (upperTarget === 'ISSUED') {
+                    let is8DRequired = false;
+                    if (updates.reportIssuance8D !== undefined) {
+                        is8DRequired = !!updates.reportIssuance8D;
+                    }
+                    else {
+                        is8DRequired = currentRecord?.report_issuance_8d === 1 || currentRecord?.report_issuance_8d === true;
+                    }
+                    if (is8DRequired) {
+                        targetStatus = 'IR';
+                        console.log(`[MNR Workflow] Record ${id} requires 8D, bypassing ISSUED directly to IR`);
+                    }
+                }
+                // Handle RESPONSE_RECEIVED → automatically move to RESPONSE_AWAIT_APPROVAL
+                if (upperTarget === 'RESPONSE_RECEIVED') {
+                    targetStatus = 'RESPONSE_AWAIT_APPROVAL';
+                    console.log(`[MNR Workflow] Response received, moving to RESPONSE_AWAIT_APPROVAL`);
+                }
+                // Handle CHECKED context-awareness
+                if (upperTarget === 'CHECKED' || upperTarget === 'CHECK') {
+                    if (currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+                        targetStatus = 'RESPONSE_CHECKED';
+                        console.log(`[MNR Workflow] Transition: RESPONSE_AWAIT_APPROVAL → RESPONSE_CHECKED (Cycle 2 Check)`);
+                    }
+                    else {
+                        targetStatus = 'CHECKED';
+                    }
+                }
+                // Handle APPROVED response context-awareness
+                if (upperTarget === 'CLOSED') {
+                    if (currentStatus === 'RESPONSE_CHECKED' || currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+                        targetStatus = 'CLOSED';
+                        console.log(`[MNR Workflow] Transition: RESPONSE_CHECKED → CLOSED (Cycle 2 Approve)`);
+                    }
+                }
+            }
+            if (targetStatus)
+                dbUpdates.request_status = mapStatusToDB(targetStatus);
+            // Main details — frontend sends standardized snake_case _id keys
+            if (updates.site_id)
+                dbUpdates.site_id = updates.site_id;
+            if (updates.supplier_id)
+                dbUpdates.supplier_id = updates.supplier_id;
+            if (updates.model_id)
+                dbUpdates.model_id = updates.model_id;
+            if (updates.mfg_area_id)
+                dbUpdates.mfg_area_id = updates.mfg_area_id;
+            if (updates.defectcategory_id)
+                dbUpdates.defectcategory_id = updates.defectcategory_id;
+            if (updates.mnrType)
+                dbUpdates.mnrtype_id = updates.mnrType;
+            if (updates.attention_id)
+                dbUpdates.attention_id = updates.attention_id;
+            if (updates.reference !== undefined)
+                dbUpdates.reference_no = updates.reference;
+            if (updates.reportIssuance8D !== undefined)
+                dbUpdates.report_issuance_8d = updates.reportIssuance8D ? 1 : 0;
+            if (updates.recurrenceRef !== undefined) {
+                dbUpdates.recurrence_ref = updates.recurrenceRef;
+            }
+            if (updates.issueDate)
+                dbUpdates.issued_date = this.formatDate(updates.issueDate);
+            if (updates.initialReport)
+                dbUpdates.initial_report_date = this.formatDate(updates.initialReport);
+            if (updates.dueDate)
+                dbUpdates.due_date = this.formatDate(updates.dueDate);
+            if (updates.actualInitialReport)
+                dbUpdates.actual_initial_report_date = this.formatDate(updates.actualInitialReport);
+            if (updates.actualFinalReport)
+                dbUpdates.actual_final_report_date = this.formatDate(updates.actualFinalReport);
+            if (updates.remarks !== undefined)
+                dbUpdates.remarks = updates.remarks;
+            // Disposition (accept both 'disposition' and 'disposition_data')
+            const disp = updates.disposition || updates.disposition_data || {};
             if (disp.rtv !== undefined) {
                 dbUpdates.rtv = typeof disp.rtv === 'object' ? (disp.rtv.selected ? 1 : 0) : (disp.rtv ? 1 : 0);
                 if (typeof disp.rtv === 'object') {
@@ -402,11 +574,36 @@ export class MnrService {
                         dbUpdates.other_remarks = u.otherRemarks;
                 }
             }
+            // 4. Attachments (Update)
+            const updateAtts = updates.attachments;
+            if (updateAtts !== undefined && Array.isArray(updateAtts)) {
+                console.log(`[MNR Update] Syncing ${updateAtts.length} attachments for record ${id}`);
+                await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', id).execute();
+                for (const att of updateAtts) {
+                    const originalName = att.file_name || att.name;
+                    if (!originalName)
+                        continue;
+                    const uploadedFile = files.find(f => f.originalname === originalName);
+                    const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
+                    await trx.insertInto('MNR_ATTACHMENT').values({
+                        mnr_attachment_id: att.id || uuidv4(),
+                        mnr_id: id,
+                        file_name: diskFileName,
+                        file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
+                        remarks: att.remarks || null,
+                        last_update: now,
+                        updateby: userId
+                    }).execute();
+                }
+            }
             // Update Main Fields
             if (Object.keys(dbUpdates).length > 2) {
                 await trx.updateTable('MNR_LOTS')
                     .set(dbUpdates)
-                    .where('mnr_id', '=', id)
+                    .where((eb) => eb.or([
+                    eb('mnr_id', '=', id),
+                    eb('control_no', '=', id)
+                ]))
                     .execute();
             }
             // Detailed handling for CC, Defects, and Response is simplified for exact parity
@@ -416,17 +613,28 @@ export class MnrService {
     }
     async deleteRecord(id) {
         return await mnrRepository.executeTransaction(async (trx) => {
-            await trx.deleteFrom('MNR_CC').where('mnr_id', '=', id).execute();
-            await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', id).execute();
-            await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', id).execute();
-            const responses = await trx.selectFrom('MNR_RESPONSE').select('mnr_response_id').where('mnr_id', '=', id).execute();
+            // Resolve real mnr_id if control_no was passed
+            const record = await trx.selectFrom('MNR_LOTS')
+                .select('mnr_id')
+                .where((eb) => eb.or([
+                eb('mnr_id', '=', id),
+                eb('control_no', '=', id)
+            ]))
+                .executeTakeFirst();
+            if (!record)
+                return { success: false, message: 'Record not found' };
+            const realId = record.mnr_id;
+            await trx.deleteFrom('MNR_CC').where('mnr_id', '=', realId).execute();
+            await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', realId).execute();
+            await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', realId).execute();
+            const responses = await trx.selectFrom('MNR_RESPONSE').select('mnr_response_id').where('mnr_id', '=', realId).execute();
             for (const res of responses) {
                 await trx.deleteFrom('MNR_RESPONSE_ATTACHMENT').where('mnr_response_id', '=', res.mnr_response_id).execute();
             }
-            await trx.deleteFrom('MNR_RESPONSE').where('mnr_id', '=', id).execute();
-            await trx.deleteFrom('MNR_DETAILS').where('mnr_id', '=', id).execute();
+            await trx.deleteFrom('MNR_RESPONSE').where('mnr_id', '=', realId).execute();
+            await trx.deleteFrom('MNR_DETAILS').where('mnr_id', '=', realId).execute();
             // Delete Header last
-            await trx.deleteFrom('MNR_LOTS').where('mnr_id', '=', id).execute();
+            await trx.deleteFrom('MNR_LOTS').where('mnr_id', '=', realId).execute();
             return { success: true, message: 'Record and all associated data deleted successfully' };
         });
     }

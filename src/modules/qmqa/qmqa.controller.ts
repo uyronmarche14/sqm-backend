@@ -243,11 +243,12 @@ export class QmqaController {
       const id = req.params.id as string;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
-      const { skip_initial, initial_remarks, skipInitial, initialReport } = req.body;
+      const { skip_initial, initial_remarks, skipInitial, initialReport, is_submit, isSubmit } = req.body;
 
       const result = await qmqaService.saveInitialReport(id, userId, {
         skip_initial: skip_initial === 'true' || skip_initial === true || skipInitial === 'true' || skipInitial === true,
         initial_remarks: initial_remarks || initialReport || null,
+        is_submit: is_submit === 'true' || is_submit === true || isSubmit === 'true' || isSubmit === true,
       }, files);
       return res.json(result);
     } catch (error) {
@@ -261,10 +262,11 @@ export class QmqaController {
       const id = req.params.id as string;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
-      const { final_remarks } = req.body;
+      const { final_remarks, is_submit, isSubmit } = req.body;
 
       const result = await qmqaService.submitFinalReport(id, userId, {
         final_remarks: final_remarks || null,
+        is_submit: is_submit === 'true' || is_submit === true || isSubmit === 'true' || isSubmit === true,
       }, files);
       return res.json(result);
     } catch (error) {

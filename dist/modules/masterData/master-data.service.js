@@ -163,13 +163,13 @@ export class MasterDataService {
             throw new NotFoundError('Record not found');
         return mapper(row);
     }
-    async create({ repo, mapper, toDB }, payload) {
+    async create({ repo, mapper, toDB }, payload, userId = 'SYSTEM') {
         const id = uuidv4();
-        const dbPayload = toDB(id, payload);
+        const dbPayload = toDB(id, payload, userId);
         // All master data tables have last_update (NOT NULL) and updateby (NOT NULL)
         dbPayload.last_update = new Date();
         if (!dbPayload.updateby)
-            dbPayload.updateby = 'SYSTEM';
+            dbPayload.updateby = userId;
         const created = await repo.create(dbPayload);
         // If it's a join table, we must fetch Detailed after insert to get the joined data names
         if (repo.findByIdDetailed) {
@@ -178,14 +178,15 @@ export class MasterDataService {
         }
         return mapper(created);
     }
-    async update({ repo, mapper, idCol, toDB }, id, payload) {
+    async update({ repo, mapper, idCol, toDB }, id, payload, userId = 'SYSTEM') {
         const exists = await repo.findById(id);
         if (!exists)
             throw new NotFoundError('Record not found');
-        const dbPayload = toDB(id, payload);
+        const dbPayload = toDB(id, payload, userId);
         // Remove id from DB payload if present for updates, so we don't accidentally update the PK
         delete dbPayload[idCol];
         dbPayload.last_update = new Date();
+        dbPayload.updateby = userId;
         const updated = await repo.update(id, dbPayload);
         if (repo.findByIdDetailed) {
             const detailed = await repo.findByIdDetailed(id);

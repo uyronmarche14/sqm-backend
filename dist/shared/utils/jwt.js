@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { UnauthorizedError } from '../errors/AppError.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-development-key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m';
-const REFRESH_SECRET = process.env.REFRESH_SECRET || 'super-secret-refresh-key';
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'super-secret-refresh-key';
 const REFRESH_EXPIRES_IN = process.env.REFRESH_EXPIRES_IN || '7d';
 /**
  * Generates an Access Token (Short Lived)

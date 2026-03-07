@@ -34,6 +34,8 @@ export class QmqaService {
     return schedules.map((s: any) => ({
       ...s,
       status: mapStatusFromDB(s.request_status),
+      recordId: s.record_id || null,
+      recordStatus: s.record_status ? mapStatusFromDB(s.record_status) : null,
       created_at: s.created_date,
     }));
   }
@@ -44,6 +46,8 @@ export class QmqaService {
     return {
       ...s,
       status: mapStatusFromDB(s.request_status),
+      recordId: s.record_id || null,
+      recordStatus: s.record_status ? mapStatusFromDB(s.record_status) : null,
       created_at: s.created_date,
     };
   }
@@ -393,68 +397,133 @@ export class QmqaService {
   // WORKFLOW ACTIONS
   // ==========================================
 
-  /** DRAFT → AWAITING_APPROVAL (AA) */
+  /** Smart Submit: DRAFT → AA, WITH_INITIAL_REPORT → WITH_FINAL_REPORT, WITH_FINAL_REPORT → RA */
   async submit(id: string, userId: string) {
     const record = await qmqaRepository.findRecordByIdDetailed(id);
     if (!record) throw new NotFoundError('QMQA Record not found');
 
     const currentStatus = mapStatusFromDB(record.request_status);
-    if (currentStatus !== 'DRAFT') {
-      throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
-    }
-
-    return await qmqaRepository.executeTransaction(async (trx) => {
-      await trx.updateTable('QMQA')
-        .set({
-          request_status: mapStatusToDB('AAPPROVAL'),
-          last_update: new Date(),
-          updateby: userId
-        })
-        .where('qmqa_id', '=', id)
-        .execute();
-      return { success: true, message: 'Record submitted for approval' };
-    });
-  }
-
-  /** AWAITING_APPROVAL → AWAITING_APPROVAL (Check step) */
-  async check(id: string, userId: string, remarks?: string) {
-    const record = await qmqaRepository.findRecordByIdDetailed(id);
-    if (!record) throw new NotFoundError('QMQA Record not found');
-
-    const currentStatus = mapStatusFromDB(record.request_status);
-    if (currentStatus !== 'AAPPROVAL' && currentStatus !== 'AWAITING_APPROVAL') {
-      throw new Error(`Cannot check: record is in ${currentStatus}, expected AWAITING_APPROVAL`);
+    const validStatuses = ['DRAFT', 'REJECTED', 'ISSUED', 'WITH_INITIAL_REPORT', 'WITH_FINAL_REPORT'];
+    if (!validStatuses.includes(currentStatus)) {
+      throw new Error(`Cannot submit: record is in ${currentStatus}, expected one of ${validStatuses.join(', ')}`);
     }
 
     const now = new Date();
     return await qmqaRepository.executeTransaction(async (trx) => {
+      let nextStatus = 'AAPPROVAL';
+      
+      if (currentStatus === 'ISSUED') {
+        nextStatus = 'WITH_INITIAL_REPORT';
+      } else if (currentStatus === 'WITH_INITIAL_REPORT') {
+        nextStatus = 'WITH_FINAL_REPORT';
+      } else if (currentStatus === 'WITH_FINAL_REPORT') {
+        nextStatus = 'RESPONSE_AWAIT_APPROVAL';
+      }
+
       await trx.updateTable('QMQA')
         .set({
-          request_status: mapStatusToDB('CHECKED'),
-          checker_id: userId,
-          checker_remarks: remarks || null,
-          checker_date: now,
+          request_status: mapStatusToDB(nextStatus),
           last_update: now,
           updateby: userId
         })
         .where('qmqa_id', '=', id)
         .execute();
+        
+      return { success: true, message: `Record submitted successfully to ${nextStatus}` };
+    });
+  }
+
+  /** AWAITING_APPROVAL → AWAITING_APPROVAL (Check step) OR RESPONSE_AWAIT_APPROVAL (Cycle 2 check) */
+  async check(id: string, userId: string, remarks?: string) {
+    const record = await qmqaRepository.findRecordByIdDetailed(id);
+    if (!record) throw new NotFoundError('QMQA Record not found');
+
+    const currentStatus = mapStatusFromDB(record.request_status);
+    if (currentStatus !== 'AAPPROVAL' && currentStatus !== 'AWAITING_APPROVAL' && currentStatus !== 'RESPONSE_AWAIT_APPROVAL') {
+      throw new Error(`Cannot check: record is in ${currentStatus}, expected AWAITING_APPROVAL or RESPONSE_AWAIT_APPROVAL`);
+    }
+
+    const now = new Date();
+    return await qmqaRepository.executeTransaction(async (trx) => {
+      if (currentStatus === 'AAPPROVAL' || currentStatus === 'AWAITING_APPROVAL') {
+        // Cycle 1 Check
+        await trx.updateTable('QMQA')
+          .set({
+            request_status: mapStatusToDB('CHECKED'),
+            checker_id: userId,
+            checker_remarks: remarks || null,
+            checker_date: now,
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+      } else if (currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+        // Cycle 2 Check: Update QMQA_RESPONSE table, keep status as RESPONSE_AWAIT_APPROVAL
+        const response = await qmqaRepository.findResponseByQmqaId(id);
+        if (response) {
+          await trx.updateTable('QMQA_RESPONSE')
+            .set({
+              checker_id: userId,
+              checker_remarks: remarks || null,
+              checker_date: now,
+              last_update: now,
+              updateby: userId
+            })
+            .where('qmqa_response_id', '=', response.qmqa_response_id)
+            .execute();
+        }
+        await trx.updateTable('QMQA')
+          .set({
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+      }
       return { success: true, message: 'Record checked' };
     });
   }
 
-  /** AWAITING_APPROVAL → APPROVED (AP) */
+  /** AWAITING_APPROVAL → APPROVED (AP) OR RESPONSE_AWAIT_APPROVAL → CLOSED */
   async approve(id: string, userId: string, remarks?: string) {
     const record = await qmqaRepository.findRecordByIdDetailed(id);
     if (!record) throw new NotFoundError('QMQA Record not found');
 
     const currentStatus = mapStatusFromDB(record.request_status);
-    if (currentStatus !== 'AAPPROVAL' && currentStatus !== 'AWAITING_APPROVAL' && currentStatus !== 'CHECKED') {
-      throw new Error(`Cannot approve: record is in ${currentStatus}, expected AWAITING_APPROVAL or CHECKED`);
+    if (currentStatus !== 'AAPPROVAL' && currentStatus !== 'AWAITING_APPROVAL' && currentStatus !== 'CHECKED' && currentStatus !== 'RESPONSE_AWAIT_APPROVAL') {
+      throw new Error(`Cannot approve: record is in ${currentStatus}, expected AWAITING_APPROVAL, CHECKED, or RESPONSE_AWAIT_APPROVAL`);
     }
 
     const now = new Date();
     return await qmqaRepository.executeTransaction(async (trx) => {
+      if (currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+        // Cycle 2 Approve -> CLOSED
+        const response = await qmqaRepository.findResponseByQmqaId(id);
+        if (response) {
+          await trx.updateTable('QMQA_RESPONSE')
+            .set({
+              approver_id: userId,
+              approver_remarks: remarks || null,
+              approver_date: now,
+              last_update: now,
+              updateby: userId
+            })
+            .where('qmqa_response_id', '=', response.qmqa_response_id)
+            .execute();
+        }
+        await trx.updateTable('QMQA')
+          .set({
+            request_status: mapStatusToDB('CLOSED'),
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+        return { success: true, message: 'Response approved, record CLOSED' };
+      }
+
+      // Cycle 1 Approve -> APPROVED
       await trx.updateTable('QMQA')
         .set({
           request_status: mapStatusToDB('APPROVED'),
@@ -470,18 +539,42 @@ export class QmqaService {
     });
   }
 
-  /** AWAITING_APPROVAL → REJECTED (RE) → returns to DRAFT */
+  /** AWAITING_APPROVAL → DRAFT OR RESPONSE_AWAIT_APPROVAL → RESPONSE_REJECTED */
   async reject(id: string, userId: string, remarks?: string) {
     const record = await qmqaRepository.findRecordByIdDetailed(id);
     if (!record) throw new NotFoundError('QMQA Record not found');
 
     const currentStatus = mapStatusFromDB(record.request_status);
-    if (currentStatus !== 'AAPPROVAL' && currentStatus !== 'AWAITING_APPROVAL' && currentStatus !== 'CHECKED') {
-      throw new Error(`Cannot reject: record is in ${currentStatus}, expected AWAITING_APPROVAL or CHECKED`);
+    if (currentStatus !== 'AAPPROVAL' && currentStatus !== 'AWAITING_APPROVAL' && currentStatus !== 'CHECKED' && currentStatus !== 'RESPONSE_AWAIT_APPROVAL') {
+      throw new Error(`Cannot reject: record is in ${currentStatus}, expected AWAITING_APPROVAL, CHECKED, or RESPONSE_AWAIT_APPROVAL`);
     }
 
     const now = new Date();
     return await qmqaRepository.executeTransaction(async (trx) => {
+      if (currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
+        const response = await qmqaRepository.findResponseByQmqaId(id);
+        if (response) {
+          await trx.updateTable('QMQA_RESPONSE')
+            .set({
+              checker_remarks: remarks || response.checker_remarks, // store rejection reason
+              last_update: now,
+              updateby: userId
+            })
+            .where('qmqa_response_id', '=', response.qmqa_response_id)
+            .execute();
+        }
+        await trx.updateTable('QMQA')
+          .set({
+            request_status: mapStatusToDB('RESPONSE_REJECTED'),
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+        return { success: true, message: 'Response rejected and returned to supplier' };
+      }
+
+      // Cycle 1 Reject
       await trx.updateTable('QMQA')
         .set({
           request_status: mapStatusToDB('DRAFT'),
@@ -597,6 +690,7 @@ export class QmqaService {
   async saveInitialReport(id: string, userId: string, payload: {
     skip_initial?: boolean;
     initial_remarks?: string;
+    is_submit?: boolean;
   }, files: any[] = []) {
     const record = await qmqaRepository.findRecordByIdDetailed(id);
     if (!record) throw new NotFoundError('QMQA Record not found');
@@ -663,17 +757,27 @@ export class QmqaService {
         }).execute();
       }
 
-      // Transition status: ISSUED → WITH_INITIAL_REPORT
-      await trx.updateTable('QMQA')
-        .set({
-          request_status: mapStatusToDB('WITH_INITIAL_REPORT'),
-          last_update: now,
-          updateby: userId
-        })
-        .where('qmqa_id', '=', id)
-        .execute();
+      // Transition status ONLY if is_submit is true
+      if (payload.is_submit) {
+        await trx.updateTable('QMQA')
+          .set({
+            request_status: mapStatusToDB('WITH_INITIAL_REPORT'),
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+      } else {
+        await trx.updateTable('QMQA')
+          .set({
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+      }
 
-      return { success: true, message: 'Initial report saved successfully' };
+      return { success: true, message: payload.is_submit ? 'Initial report submitted successfully' : 'Initial report saved successfully' };
     });
   }
 
@@ -683,6 +787,7 @@ export class QmqaService {
    */
   async submitFinalReport(id: string, userId: string, payload: {
     final_remarks?: string;
+    is_submit?: boolean;
   }, files: any[] = []) {
     const record = await qmqaRepository.findRecordByIdDetailed(id);
     if (!record) throw new NotFoundError('QMQA Record not found');
@@ -750,17 +855,27 @@ export class QmqaService {
         }).execute();
       }
 
-      // Transition status: → WITH_FINAL_REPORT
-      await trx.updateTable('QMQA')
-        .set({
-          request_status: mapStatusToDB('WITH_FINAL_REPORT'),
-          last_update: now,
-          updateby: userId
-        })
-        .where('qmqa_id', '=', id)
-        .execute();
+      // Transition status: → WITH_FINAL_REPORT ONLY if is_submit is true
+      if (payload.is_submit) {
+        await trx.updateTable('QMQA')
+          .set({
+            request_status: mapStatusToDB('WITH_FINAL_REPORT'),
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+      } else {
+        await trx.updateTable('QMQA')
+          .set({
+            last_update: now,
+            updateby: userId
+          })
+          .where('qmqa_id', '=', id)
+          .execute();
+      }
 
-      return { success: true, message: 'Final report submitted successfully' };
+      return { success: true, message: payload.is_submit ? 'Final report submitted successfully' : 'Final report saved successfully' };
     });
   }
   /**
@@ -782,7 +897,7 @@ export class QmqaService {
     return await qmqaRepository.executeTransaction(async (trx) => {
       await trx.updateTable('QMQA')
         .set({
-          request_status: mapStatusToDB('VERIFIED'),
+          request_status: mapStatusToDB('RESPONSE_AWAIT_APPROVAL'),
           verification_remarks: payload.verification_remarks || null,
           last_update: now,
           updateby: userId

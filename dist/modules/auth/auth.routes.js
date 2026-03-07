@@ -6,6 +6,6 @@ const router = Router();
 // Public Routes
 router.post('/login', validate(loginSchema), authController.login);
 router.post('/logout', authController.logout);
-// Protected Routes (Example)
-// router.post('/refresh', requireAuth, authController.refresh);
+// Protected Routes / Token Routes
+router.post('/refresh', authController.refresh);
 export default router;

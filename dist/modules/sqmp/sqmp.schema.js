@@ -18,28 +18,51 @@ const SqmpCcUserSchema = z.object({
     user_name: z.string().optional(),
     user_email: z.string().optional(),
 });
+// Helper: Auto-parse JSON strings from FormData
+const JsonParsed = (schema) => z.preprocess((val) => {
+    if (typeof val === 'string') {
+        try {
+            return JSON.parse(val);
+        }
+        catch {
+            return val;
+        }
+    }
+    return val;
+}, schema);
+const JsonParsedArray = (schema) => z.preprocess((val) => {
+    if (typeof val === 'string') {
+        try {
+            return JSON.parse(val);
+        }
+        catch {
+            return [];
+        }
+    }
+    return val;
+}, z.array(schema).optional());
 /**
  * Create SQMP Request Schema
  */
 export const SqmpCreateSchema = z.object({
     body: z.object({
-        registration_date: z.string().datetime().or(z.date()).optional(),
+        registration_date: z.string().or(z.date()).nullable().optional(),
         site_id: z.string().uuid('Valid Site ID is required'),
-        supplier_id: z.string().uuid().or(z.string().length(0)).optional(),
-        attention_id: z.string().uuid().or(z.string().length(0)).optional(),
-        fiscal_year: z.number().int().min(2000).max(2100).optional(),
-        semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.number().int()).optional(),
-        issued_date: z.string().datetime().or(z.date()).optional(),
-        due_date: z.string().datetime().or(z.date()).optional(),
+        supplier_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+        attention_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+        fiscal_year: z.coerce.number().int().min(2000).max(2100).optional(),
+        semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()).optional(),
+        issued_date: z.string().or(z.date()).nullable().optional(),
+        due_date: z.string().or(z.date()).nullable().optional(),
         model_id: z.string().uuid().or(z.string().length(0)).optional(),
-        revision: z.number().int().min(0).optional(),
+        revision: z.coerce.number().int().min(0).optional(),
         remarks: z.string().optional(),
         main_document_remarks: z.string().optional(),
         appendix_sheet_remarks: z.string().optional(),
-        // Arrays for nested data
-        main_documents: z.array(SqmpAttachmentSchema).optional(),
-        appendix_documents: z.array(SqmpAttachmentSchema).optional(),
-        cc_list: z.array(SqmpCcUserSchema).optional()
+        // Arrays for nested data (Use JsonParsedArray for FormData support)
+        main_documents: JsonParsedArray(SqmpAttachmentSchema),
+        appendix_documents: JsonParsedArray(SqmpAttachmentSchema),
+        cc_list: JsonParsedArray(SqmpCcUserSchema)
     })
 });
 /**
@@ -47,36 +70,48 @@ export const SqmpCreateSchema = z.object({
  */
 export const SqmpUpdateSchema = z.object({
     params: z.object({
-        id: z.string().uuid('Invalid SQMP ID format')
+        id: z.string().min(1, 'Invalid SQMP ID format')
     }),
     body: z.object({
-        registration_date: z.string().datetime().or(z.date()).optional(),
+        registration_date: z.string().or(z.date()).nullable().optional(),
         site_id: z.string().uuid().optional(),
-        fiscal_year: z.number().int().optional(),
-        semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.number().int()).optional(),
-        issued_date: z.string().datetime().or(z.date()).optional(),
-        due_date: z.string().datetime().or(z.date()).optional(),
-        supplier_id: z.string().uuid().or(z.string().length(0)).optional(),
-        attention_id: z.string().uuid().or(z.string().length(0)).optional(),
-        model_id: z.string().uuid().or(z.string().length(0)).optional(),
-        revision: z.number().int().min(0).optional(),
+        fiscal_year: z.coerce.number().int().optional(),
+        semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()).optional(),
+        issued_date: z.string().or(z.date()).nullable().optional(),
+        due_date: z.string().or(z.date()).nullable().optional(),
+        supplier_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+        attention_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+        model_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+        revision: z.coerce.number().int().min(0).optional(),
         remarks: z.string().optional(),
         main_document_remarks: z.string().optional(),
         appendix_sheet_remarks: z.string().optional(),
         status: z.nativeEnum(WorkflowStatusEnum).optional(),
         request_status: z.string().optional(), // Legacy compat
-        issuer_id: z.string().uuid().optional(),
+        issuer_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
         issuer_remarks: z.string().optional(),
-        issuer_date: z.string().datetime().or(z.date()).optional(),
-        checker_id: z.string().uuid().optional(),
+        issuer_date: z.string().or(z.date()).nullable().optional(),
+        checker_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
         checker_remarks: z.string().optional(),
-        checker_date: z.string().datetime().or(z.date()).optional(),
-        approver_id: z.string().uuid().optional(),
+        checker_date: z.string().or(z.date()).nullable().optional(),
+        approver_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
         approver_remarks: z.string().optional(),
-        approver_date: z.string().datetime().or(z.date()).optional(),
+        approver_date: z.string().or(z.date()).nullable().optional(),
         main_documents: z.array(SqmpAttachmentSchema).optional(),
         appendix_documents: z.array(SqmpAttachmentSchema).optional(),
-        cc_list: z.array(SqmpCcUserSchema).optional()
+        cc_list: z.array(SqmpCcUserSchema).optional(),
+        // Support for supplier responses and closures
+        responses: z.array(z.object({
+            sqmp_response_id: z.string().uuid().optional(),
+            response_date: z.string().or(z.date()).nullable().optional(),
+            main_document_remarks: z.string().optional(),
+            appendix_sheet_remarks: z.string().optional(),
+            closure_remarks: z.string().optional(),
+            // Nested attachments in responses
+            documents: z.array(SqmpAttachmentSchema).optional(),
+            appendixes: z.array(SqmpAttachmentSchema).optional(),
+            closures: z.array(SqmpAttachmentSchema).optional()
+        })).optional()
     })
 });
 /**
@@ -84,7 +119,7 @@ export const SqmpUpdateSchema = z.object({
  */
 export const SqmpActionSchema = z.object({
     params: z.object({
-        id: z.string().uuid('Invalid SQMP ID format')
+        id: z.string().min(1, 'Invalid SQMP ID format')
     }),
     body: z.object({
         remarks: z.string().optional()
@@ -95,7 +130,12 @@ export const SqmpActionSchema = z.object({
  */
 export const SqmpIdParamSchema = z.object({
     params: z.object({
-        id: z.string().uuid('Invalid SQMP ID format'),
-        attachmentId: z.string().uuid('Invalid Attachment ID format').optional()
+        id: z.string().min(1, 'Invalid SQMP ID format'),
+        attachmentId: z.string().min(1, 'Invalid Attachment ID format').optional()
+    })
+});
+export const SqmpAttachmentParamSchema = z.object({
+    params: z.object({
+        attachmentId: z.string().min(1, 'Invalid Attachment ID format')
     })
 });
