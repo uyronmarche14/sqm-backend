@@ -36,11 +36,11 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
       if (normalizedStatus === 'ACTIVE') {
           query = query.where('s.request_status', 'not in', ['CL', 'CA', 'RE']);
       } else if (normalizedStatus === 'RESPONSE') {
-          query = query.where('s.request_status', 'in', ['RW', 'RS']);
+          query = query.where('s.request_status', 'in', ['RW']);
       } else if (normalizedStatus === 'A_APPROVAL' || normalizedStatus === 'AWAITING_APPROVAL') {
           query = query.where('s.request_status', 'in', ['SU', 'AA', 'CK']);
       } else if (normalizedStatus === 'RESPONSE_APPROVAL' || normalizedStatus === 'RESPONSE_AWAITING_APPROVAL') {
-          query = query.where('s.request_status', 'in', ['RA', 'RC']);
+          query = query.where('s.request_status', 'in', ['RA', 'RC', 'RS']);
       } else {
           query = query.where('s.request_status', '=', mapStatusToDB(normalizedStatus));
       }

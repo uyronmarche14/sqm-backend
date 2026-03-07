@@ -57,6 +57,10 @@ export class SqmpResponseService {
         updateby: userId
       };
 
+      if (payload.issuer_id !== undefined) respData.issuer_id = this.sanitizeUuid(payload.issuer_id);
+      if (payload.issuer_remarks !== undefined) respData.issuer_remarks = payload.issuer_remarks;
+      if (payload.issuer_date !== undefined) respData.issuer_date = this.parseDate(payload.issuer_date);
+
       if (payload.checker_id !== undefined) respData.checker_id = this.sanitizeUuid(payload.checker_id);
       if (payload.checker_remarks !== undefined) respData.checker_remarks = payload.checker_remarks;
       if (payload.checker_date !== undefined) respData.checker_date = this.parseDate(payload.checker_date);
@@ -84,7 +88,7 @@ export class SqmpResponseService {
             const originalLower = originalNameTrimmed.toLowerCase();
             const remarksLower = (finalRemarks || '').toLowerCase();
             
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
+            if (!remarksLower.includes(`original: ${originalLower}`)) {
                finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
             }
           }
@@ -201,7 +205,7 @@ export class SqmpResponseService {
         .execute();
 
       await trx.updateTable('SQMP')
-        .set({ request_status: mapStatusToDB('RESPONSE_CHECKED'), last_update: now, updateby: userId })
+        .set({ request_status: mapStatusToDB('RESPONSE_AWAITING_APPROVAL'), last_update: now, updateby: userId })
         .where('sqmp_id', '=', sqmpId)
         .execute();
 
@@ -209,7 +213,7 @@ export class SqmpResponseService {
         sqmp_status_remarks_id: uuidv4(),
         sqmp_id: sqmpId,
         remarks: remarks,
-        request_status: mapStatusToDB('RESPONSE_CHECKED'),
+        request_status: mapStatusToDB('RESPONSE_AWAITING_APPROVAL'),
         remarks_by_id: userId,
         remarks_date: now
       }).execute();

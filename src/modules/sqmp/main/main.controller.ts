@@ -80,6 +80,16 @@ export class MainSqmpController {
       const remarks = req.body?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       
+      const record = await mainSqmpService.getRecordById(id);
+      const statusStr = (record?.status || '').toUpperCase();
+
+      // Cycle 2 logic: Awaiting Checked (RESPONSE_SUBMITTED) -> Awaiting Approval (RESPONSE_AWAITING_APPROVAL)
+      if (statusStr === 'RESPONSE_SUBMITTED') {
+        const { sqmpResponseService } = await import('../response/response.service.js');
+        const result = await sqmpResponseService.checkResponse(id, remarks || '', userId);
+        return res.json(successResponse(result));
+      }
+
       const updatePayload = { 
         request_status: 'CHECKED', 
         checker_id: userId,
@@ -88,7 +98,7 @@ export class MainSqmpController {
       };
       
       const result = await mainSqmpService.updateRecord(id, updatePayload, userId, []);
-      res.json(result);
+      return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] CHECK error:', error);
       next(error);
@@ -101,6 +111,16 @@ export class MainSqmpController {
       const remarks = req.body?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       
+      const record = await mainSqmpService.getRecordById(id);
+      const statusStr = (record?.status || '').toUpperCase();
+
+      // Cycle 2 logic: Awaiting Approval (RESPONSE_AWAITING_APPROVAL) -> CLOSED
+      if (statusStr === 'RESPONSE_AWAITING_APPROVAL') {
+        const { sqmpResponseService } = await import('../response/response.service.js');
+        const result = await sqmpResponseService.approveResponse(id, remarks || '', userId);
+        return res.json(successResponse(result));
+      }
+
       const updatePayload = { 
         request_status: 'APPROVED', 
         approver_id: userId,
@@ -109,7 +129,7 @@ export class MainSqmpController {
       };
       
       const result = await mainSqmpService.updateRecord(id, updatePayload, userId, []);
-      res.json(result);
+      return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] APPROVE error:', error);
       next(error);
@@ -122,6 +142,16 @@ export class MainSqmpController {
       const remarks = req.body?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       
+      const record = await mainSqmpService.getRecordById(id);
+      const statusStr = (record?.status || '').toUpperCase();
+
+      // Cycle 2 logic: Response Rejected
+      if (statusStr === 'RESPONSE_SUBMITTED' || statusStr === 'RESPONSE_AWAITING_APPROVAL') {
+        const { sqmpResponseService } = await import('../response/response.service.js');
+        const result = await sqmpResponseService.rejectResponse(id, remarks || '', userId);
+        return res.json(successResponse(result));
+      }
+
       const updatePayload = { 
         request_status: 'REJECTED', 
         approver_remarks: remarks,
@@ -129,7 +159,7 @@ export class MainSqmpController {
       };
       
       const result = await mainSqmpService.updateRecord(id, updatePayload, userId, []);
-      res.json(result);
+      return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] REJECT error:', error);
       next(error);

@@ -72,12 +72,14 @@ export const mapStatusFromDB = (code: string): string => {
       'RA': 'RESPONSE_AWAIT_APPROVAL',
       'RC': 'RESPONSE_CHECKED',
       'RJ': 'RREJECTED',
+      'RRJ': 'RESPONSE_REJECTED', // Alias support or ensure logic handles it
       // QMQA Response Statuses
       'WI': 'WITH_INITIAL_REPORT',
       'WF': 'WITH_FINAL_REPORT',
       'RL': 'RELEASE',
       'HO': 'HOLD',
       'CA': 'CANCEL',
+      'CC': 'CANCELLED', // Alias if needed or just CA
       'CL': 'CLOSED'
   };
   return map[code] || code;

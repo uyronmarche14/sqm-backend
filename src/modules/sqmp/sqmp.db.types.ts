@@ -71,6 +71,7 @@ export interface SqmpResponseTable {
   main_document_remarks: string | null;
   appendix_sheet_remarks: string | null;
   closure_remarks: string | null;
+  issuer_id: string | null;
   issuer_remarks: string | null;
   issuer_date: Date | string | null;
   checker_id: string | null;

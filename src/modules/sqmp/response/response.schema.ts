@@ -27,6 +27,9 @@ export const SqmpResponseUpsertSchema = z.object({
     remarks: z.string().optional(),
     
     // Approval fields (Cycle 2)
+    issuer_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+    issuer_remarks: z.string().optional(),
+    issuer_date: z.string().or(z.date()).nullable().optional(),
     checker_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
     checker_remarks: z.string().optional(),
     checker_date: z.string().or(z.date()).nullable().optional(),
