@@ -3,6 +3,7 @@ import { sqmpRepository } from '../sqmp.repository.js';
 import { SQMPResponseUpsertInput } from './response.schema.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
 import { mapStatusToDB } from '../../../shared/utils/status-mapper.js';
+import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 
 export class SqmpResponseService {
   private parseDate(d?: Date | string | null): Date | null {
@@ -80,18 +81,7 @@ export class SqmpResponseService {
         await trx.deleteFrom('SQMP_RESPONSE_DOCUMENT').where('sqmp_response_id', '=', responseIdToUse).execute();
         for (const doc of payload.documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
-          const originalName = uploadedFile ? uploadedFile.originalname : doc.file_name;
-          let finalRemarks = doc.remarks;
-          
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(doc.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_RESPONSE_DOCUMENT').values({
             sqmp_response_document_id: doc.sqmp_attachment_id || uuidv4(),
@@ -110,18 +100,7 @@ export class SqmpResponseService {
         await trx.deleteFrom('SQMP_RESPONSE_APPENDIX').where('sqmp_response_id', '=', responseIdToUse).execute();
         for (const app of payload.appendixes) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
-          const originalName = uploadedFile ? uploadedFile.originalname : app.file_name;
-          let finalRemarks = app.remarks;
-
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(app.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_RESPONSE_APPENDIX').values({
             sqmp_response_appendix_id: app.sqmp_attachment_id || uuidv4(),
@@ -140,18 +119,7 @@ export class SqmpResponseService {
         await trx.deleteFrom('SQMP_RESPONSE_CLOSURE').where('sqmp_response_id', '=', responseIdToUse).execute();
         for (const cls of payload.closures) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === cls.file_name.trim().toLowerCase());
-          const originalName = uploadedFile ? uploadedFile.originalname : cls.file_name;
-          let finalRemarks = cls.remarks;
-
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(cls.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_RESPONSE_CLOSURE').values({
             sqmp_response_closure_id: cls.sqmp_attachment_id || uuidv4(),

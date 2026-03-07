@@ -3,6 +3,7 @@ import { sqmpRepository } from '../sqmp.repository.js';
 import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../../shared/utils/status-mapper.js';
+import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 
 export class MainSqmpService {
   private async generateControlNo(fiscalYear?: number, semester?: string | number): Promise<string> {
@@ -101,17 +102,7 @@ export class MainSqmpService {
         for (const doc of payload.main_documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
-          const originalName = uploadedFile ? uploadedFile.originalname : doc.file_name;
-          let finalRemarks = doc.remarks || '';
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(doc.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_DOCUMENT').values({
             sqmp_document_id: doc.sqmp_attachment_id || uuidv4(),
@@ -130,18 +121,7 @@ export class MainSqmpService {
         for (const app of payload.appendix_documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
-          const originalName = uploadedFile ? uploadedFile.originalname : app.file_name;
-          let finalRemarks = app.remarks || '';
-          
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(app.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_APPENDIX').values({
             sqmp_appendix_id: app.sqmp_attachment_id || uuidv4(),
@@ -228,17 +208,7 @@ export class MainSqmpService {
         for (const doc of payload.main_documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
-          const originalName = uploadedFile ? uploadedFile.originalname : doc.file_name;
-          let finalRemarks = doc.remarks || '';
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(doc.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_DOCUMENT').values({
             sqmp_document_id: doc.sqmp_attachment_id || uuidv4(),
@@ -258,17 +228,7 @@ export class MainSqmpService {
         for (const app of payload.appendix_documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
           const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
-          const originalName = uploadedFile ? uploadedFile.originalname : app.file_name;
-          let finalRemarks = app.remarks || '';
-          if (uploadedFile) {
-            const originalNameTrimmed = originalName.trim();
-            const originalLower = originalNameTrimmed.toLowerCase();
-            const remarksLower = (finalRemarks || '').toLowerCase();
-            
-            if (!remarksLower.includes(`(original: ${originalLower})`) && !remarksLower.includes(`original: ${originalLower}`)) {
-               finalRemarks = finalRemarks ? `${finalRemarks} (Original: ${originalNameTrimmed})` : `Original: ${originalNameTrimmed}`;
-            }
-          }
+          const finalRemarks = sanitizeAttachmentRemarks(app.remarks, uploadedFile?.originalname);
 
           await trx.insertInto('SQMP_APPENDIX').values({
             sqmp_appendix_id: app.sqmp_attachment_id || uuidv4(),
