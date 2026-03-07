@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sqmpRepository } from '../sqmp.repository.js';
 import { SQMPResponseUpsertInput } from './response.schema.js';
-import { NotFoundError } from '../../../shared/errors/AppError.js';
+import { NotFoundError, ForbiddenError, BadRequestError } from '../../../shared/errors/AppError.js';
 import { mapStatusToDB } from '../../../shared/utils/status-mapper.js';
 import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 
@@ -23,6 +23,10 @@ export class SqmpResponseService {
   async upsertResponse(sqmpId: string, payload: SQMPResponseUpsertInput, userId: string, files: any[] = []) {
     const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
+
+    if (mainRecord.record.supplier_id !== userId) {
+      throw new ForbiddenError('Only the assigned supplier can submit or modify a response');
+    }
 
     const now = new Date();
     const responseId = payload.sqmp_response_id || uuidv4();
@@ -156,6 +160,16 @@ export class SqmpResponseService {
   }
 
   async checkResponse(sqmpId: string, remarks: string, userId: string) {
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+    if (!mainRecord) throw new NotFoundError('SQM Plan not found');
+    
+    if (mainRecord.record.request_status !== mapStatusToDB('RESPONSE_SUBMITTED')) {
+      throw new BadRequestError('Invalid Transition: Response is not yet submitted');
+    }
+    if (mainRecord.record.checker_id !== userId) {
+      throw new ForbiddenError('Only the assigned checker can verify this response');
+    }
+
     const now = new Date();
     const latestResponse = await sqmpRepository.findLatestResponse(sqmpId);
     if (!latestResponse) throw new NotFoundError('No response found to check');
@@ -191,6 +205,16 @@ export class SqmpResponseService {
   }
 
   async approveResponse(sqmpId: string, remarks: string, userId: string) {
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+    if (!mainRecord) throw new NotFoundError('SQM Plan not found');
+
+    if (mainRecord.record.request_status !== mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
+      throw new BadRequestError('Invalid Transition: Response is not awaiting approval');
+    }
+    if (mainRecord.record.approver_id !== userId) {
+      throw new ForbiddenError('Only the assigned approver can approve this response');
+    }
+
     const now = new Date();
     const latestResponse = await sqmpRepository.findLatestResponse(sqmpId);
     if (!latestResponse) throw new NotFoundError('No response found to approve');
@@ -226,6 +250,22 @@ export class SqmpResponseService {
   }
 
   async rejectResponse(sqmpId: string, remarks: string, userId: string) {
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+    if (!mainRecord) throw new NotFoundError('SQM Plan not found');
+
+    const dbStatus = mainRecord.record.request_status;
+    if (dbStatus === mapStatusToDB('RESPONSE_SUBMITTED')) {
+      if (mainRecord.record.checker_id !== userId) {
+        throw new ForbiddenError('Only the assigned checker can reject at this stage');
+      }
+    } else if (dbStatus === mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
+      if (mainRecord.record.approver_id !== userId) {
+        throw new ForbiddenError('Only the assigned approver can reject at this stage');
+      }
+    } else {
+      throw new BadRequestError('Invalid Transition: Record cannot be rejected at this stage');
+    }
+
     const now = new Date();
     const latestResponse = await sqmpRepository.findLatestResponse(sqmpId);
     if (!latestResponse) throw new NotFoundError('No response found to reject');

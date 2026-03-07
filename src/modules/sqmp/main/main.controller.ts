@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { mainSqmpService } from './main.service.js';
 import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema } from './main.schema.js';
 import { successResponse, createResponse } from '../../../shared/utils/api-response.js';
+import { BadRequestError, ForbiddenError } from '../../../shared/errors/AppError.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,12 +66,18 @@ export class MainSqmpController {
     try {
       const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+
+      const record = await mainSqmpService.getRecordById(id);
+      const statusStr = (record?.status || '').toUpperCase();
+      if (!['DRAFT', 'REJECTED', 'NEW'].includes(statusStr)) {
+         throw new BadRequestError('Invalid Transition: Record is not in DRAFT or REJECTED state');
+      }
       
       const result = await mainSqmpService.updateRecord(id, { request_status: 'SUBMITTED' }, userId, []);
-      res.json(result);
+      return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] SUBMIT error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -90,6 +97,14 @@ export class MainSqmpController {
         return res.json(successResponse(result));
       }
 
+      // Cycle 1 Logic
+      if (statusStr !== 'SUBMITTED') {
+        throw new BadRequestError('Invalid Transition: Plan is not submitted');
+      }
+      if (record?.checker_id && record.checker_id !== userId) {
+        throw new ForbiddenError('Only the assigned checker can verify this plan');
+      }
+
       const updatePayload = { 
         request_status: 'CHECKED', 
         checker_id: userId,
@@ -101,7 +116,7 @@ export class MainSqmpController {
       return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] CHECK error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -121,6 +136,14 @@ export class MainSqmpController {
         return res.json(successResponse(result));
       }
 
+      // Cycle 1 Logic
+      if (statusStr !== 'AWAITING_APPROVAL' && statusStr !== 'CHECKED' && statusStr !== 'SUBMITTED') {
+        throw new BadRequestError('Invalid Transition: Plan is not awaiting approval');
+      }
+      if (record?.approver_id && record.approver_id !== userId) {
+         throw new ForbiddenError('Only the assigned approver can approve this plan');
+      }
+
       const updatePayload = { 
         request_status: 'APPROVED', 
         approver_id: userId,
@@ -132,7 +155,7 @@ export class MainSqmpController {
       return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] APPROVE error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -152,6 +175,16 @@ export class MainSqmpController {
         return res.json(successResponse(result));
       }
 
+      // Cycle 1 Logic
+      if (statusStr !== 'SUBMITTED' && statusStr !== 'CHECKED' && statusStr !== 'AWAITING_APPROVAL') {
+        throw new BadRequestError('Invalid Transition: Plan cannot be rejected at this stage');
+      }
+      if (record?.checker_id === userId || record?.approver_id === userId) {
+         // authorized
+      } else if (record?.checker_id || record?.approver_id) {
+         throw new ForbiddenError('Only assigned checkers or approvers can reject this plan');
+      }
+
       const updatePayload = { 
         request_status: 'REJECTED', 
         approver_remarks: remarks,
@@ -162,7 +195,7 @@ export class MainSqmpController {
       return res.json(result);
     } catch (error) {
       console.error('[SQMP-MAIN] REJECT error:', error);
-      next(error);
+      return next(error);
     }
   }
 
