@@ -1,11 +1,46 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sqmpRepository } from '../sqmp.repository.js';
+import { userRepository } from '../../users/user.repository.js';
 import { SQMPResponseUpsertInput } from './response.schema.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../../shared/errors/AppError.js';
 import { mapStatusToDB } from '../../../shared/utils/status-mapper.js';
 import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 
 export class SqmpResponseService {
+  private async getRoleName(roleId?: string): Promise<string> {
+      if (!roleId) return 'UNKNOWN';
+      const roleObj = await userRepository.findRoleById(roleId);
+      return roleObj?.role_name || 'UNKNOWN';
+  }
+
+  private async validateResponseAccess(mainRecord: any, roleName: string, userId: string, operation: 'upsert' | 'workflow' = 'workflow'): Promise<void> {
+    const isSupplier = roleName.toUpperCase().includes('SUPPLIER');
+    const isGlobalRole = ['ADMIN', 'MPD'].some(r => roleName.toUpperCase().includes(r));
+
+    if (isGlobalRole) return;
+
+    if (operation === 'upsert') {
+        if (!isSupplier) {
+            throw new ForbiddenError('Only suppliers are permitted to submit responses.');
+        }
+        if (mainRecord.supplier_id !== userId) {
+            throw new ForbiddenError('Access Denied: This SQM Plan is assigned to a different supplier.');
+        }
+    } else {
+        // Workflow roles (checker, approver)
+        const userObj = await userRepository.findById(userId);
+        const userSiteId = userObj?.site_id;
+
+        const isChecker = mainRecord.checker_id === userId;
+        const isApprover = mainRecord.approver_id === userId;
+        const isSameSite = mainRecord.site_id === userSiteId;
+
+        if (!isChecker && !isApprover && !isSameSite) {
+            throw new ForbiddenError('Access Denied: You do not have permission to perform this workflow action.');
+        }
+    }
+  }
+
   private parseDate(d?: Date | string | null): Date | null {
     if (!d || d === '') return null;
     const parsed = new Date(d);
@@ -20,20 +55,18 @@ export class SqmpResponseService {
   /**
    * Upsert a single response record and its attachments
    */
-  async upsertResponse(sqmpId: string, payload: SQMPResponseUpsertInput, userId: string, files: any[] = []) {
-    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+  async upsertResponse(sqmpId: string, payload: SQMPResponseUpsertInput, userId: string, roleId: string, files: any[] = []) {
+    const roleName = await this.getRoleName(roleId);
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
-    if (mainRecord.record.supplier_id !== userId) {
-      throw new ForbiddenError('Only the assigned supplier can submit or modify a response');
-    }
+    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'upsert');
 
     const now = new Date();
     const responseId = payload.sqmp_response_id || uuidv4();
 
     return await sqmpRepository.executeTransaction(async (trx) => {
       // 1. Upsert Response Header
-      // Check by provided ID first if any, otherwise check by sqmp_id (since only 1 response allowed per plan)
       let existingResp = null;
       if (payload.sqmp_response_id) {
         existingResp = await trx.selectFrom('SQMP_RESPONSE')
@@ -159,15 +192,15 @@ export class SqmpResponseService {
     });
   }
 
-  async checkResponse(sqmpId: string, remarks: string, userId: string) {
-    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+  async checkResponse(sqmpId: string, remarks: string, userId: string, roleId: string) {
+    const roleName = await this.getRoleName(roleId);
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
     
+    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'workflow');
+
     if (mainRecord.record.request_status !== mapStatusToDB('RESPONSE_SUBMITTED')) {
       throw new BadRequestError('Invalid Transition: Response is not yet submitted');
-    }
-    if (mainRecord.record.checker_id !== userId) {
-      throw new ForbiddenError('Only the assigned checker can verify this response');
     }
 
     const now = new Date();
@@ -204,15 +237,15 @@ export class SqmpResponseService {
     });
   }
 
-  async approveResponse(sqmpId: string, remarks: string, userId: string) {
-    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+  async approveResponse(sqmpId: string, remarks: string, userId: string, roleId: string) {
+    const roleName = await this.getRoleName(roleId);
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
+
+    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'workflow');
 
     if (mainRecord.record.request_status !== mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
       throw new BadRequestError('Invalid Transition: Response is not awaiting approval');
-    }
-    if (mainRecord.record.approver_id !== userId) {
-      throw new ForbiddenError('Only the assigned approver can approve this response');
     }
 
     const now = new Date();
@@ -249,20 +282,15 @@ export class SqmpResponseService {
     });
   }
 
-  async rejectResponse(sqmpId: string, remarks: string, userId: string) {
-    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId);
+  async rejectResponse(sqmpId: string, remarks: string, userId: string, roleId: string) {
+    const roleName = await this.getRoleName(roleId);
+    const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
+    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'workflow');
+
     const dbStatus = mainRecord.record.request_status;
-    if (dbStatus === mapStatusToDB('RESPONSE_SUBMITTED')) {
-      if (mainRecord.record.checker_id !== userId) {
-        throw new ForbiddenError('Only the assigned checker can reject at this stage');
-      }
-    } else if (dbStatus === mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
-      if (mainRecord.record.approver_id !== userId) {
-        throw new ForbiddenError('Only the assigned approver can reject at this stage');
-      }
-    } else {
+    if (dbStatus !== mapStatusToDB('RESPONSE_SUBMITTED') && dbStatus !== mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
       throw new BadRequestError('Invalid Transition: Record cannot be rejected at this stage');
     }
 

@@ -48,6 +48,10 @@ export const SqmpCreateSchema = z.object({
     remarks: z.string().optional(),
     main_document_remarks: z.string().optional(),
     appendix_sheet_remarks: z.string().optional(),
+    request_status: z.string().optional(),
+    
+    checker_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
+    approver_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
     
     // Arrays for nested data (auto-parse JSON strings from FormData)
     main_documents: JsonParsedArray(SqmpAttachmentSchema),

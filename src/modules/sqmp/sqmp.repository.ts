@@ -8,7 +8,7 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
     super('SQMP');
   }
 
-  async findAllDetailed(status?: string) {
+  async findAllDetailed(status?: string, userId?: string, userRole?: string) {
     let query = db.selectFrom('SQMP as s')
       .leftJoin('MFG_SITES as site', 's.site_id', 'site.site_id')
       .leftJoin('SUPPLIERS as supp', 's.supplier_id', 'supp.supplier_id')
@@ -30,6 +30,28 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
       ])
       .orderBy('s.registration_date', 'desc');
 
+    // 1. Horizontal Security Guards (IDOR Context)
+    if (userId && userRole) {
+      const isSupplier = userRole.toUpperCase().includes('SUPPLIER');
+      
+      if (isSupplier) {
+        // Suppliers can only see their own records
+        query = query.where('s.supplier_id', '=', userId);
+      } else {
+        // Internal users: Check if they are restricted by site
+        // Fetch user site first or join? Joining USERS for the current user is heavy
+        // We'll perform a subquery or assume the service passes the context if available.
+        // For baseline, we filter by the user's assigned site if they aren't admin.
+        const isGlobalRole = ['ADMIN', 'MPD'].some(r => userRole.toUpperCase().includes(r));
+        
+        if (!isGlobalRole) {
+          query = query.innerJoin('USERS as curr_user', (join) => 
+            join.on('curr_user.user_id', '=', userId)
+          ).whereRef('s.site_id', '=', 'curr_user.site_id');
+        }
+      }
+    }
+
     if (status) {
       const normalizedStatus = status.toUpperCase();
       
@@ -49,8 +71,10 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
     return await query.execute();
   }
 
-  async findByIdDetailed(idOrControlNo: string) {
-    const record = await db.selectFrom('SQMP as s')
+  async findByIdDetailed(idOrControlNo: string, userId?: string, userRole?: string) {
+    const { sql } = await import('kysely');
+    
+    let query = db.selectFrom('SQMP as s')
       .leftJoin('MFG_SITES as site', 's.site_id', 'site.site_id')
       .leftJoin('SUPPLIERS as supp', 's.supplier_id', 'supp.supplier_id')
       .leftJoin('MODELS as model', 's.model_id', 'model.model_id')
@@ -67,94 +91,95 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
         'enc.full_name as encoder_name',
         'iss.full_name as issuer_name',
         'chk.full_name as checker_name',
-        'apr.full_name as approver_name'
+        'apr.full_name as approver_name',
+        // Aggregate Main Documents
+        sql<string>`(
+          SELECT * FROM SQMP_DOCUMENT 
+          WHERE sqmp_id = s.sqmp_id 
+          FOR JSON PATH
+        )`.as('mainDocumentsJson'),
+        // Aggregate Appendix Sheets
+        sql<string>`(
+          SELECT * FROM SQMP_APPENDIX 
+          WHERE sqmp_id = s.sqmp_id 
+          FOR JSON PATH
+        )`.as('appendixDocumentsJson'),
+        // Aggregate CC List
+        sql<string>`(
+          SELECT cc.*, u.full_name as user_name, u.email as user_email
+          FROM SQMP_CC cc
+          LEFT JOIN USERS u ON cc.user_id = u.user_id
+          WHERE cc.sqmp_id = s.sqmp_id 
+          FOR JSON PATH
+        )`.as('ccListJson'),
+        // Aggregate Responses (with sub-aggregated documents/appendixes/closures)
+        sql<string>`(
+          SELECT 
+            r.*,
+            (SELECT * FROM SQMP_RESPONSE_DOCUMENT WHERE sqmp_response_id = r.sqmp_response_id FOR JSON PATH) as documents,
+            (SELECT * FROM SQMP_RESPONSE_APPENDIX WHERE sqmp_response_id = r.sqmp_response_id FOR JSON PATH) as appendixes,
+            (SELECT * FROM SQMP_RESPONSE_CLOSURE WHERE sqmp_response_id = r.sqmp_response_id FOR JSON PATH) as closures
+          FROM SQMP_RESPONSE r
+          WHERE r.sqmp_id = s.sqmp_id 
+          ORDER BY r.response_date ASC
+          FOR JSON PATH
+        )`.as('responsesJson'),
+        // Aggregate Status Remarks
+        sql<string>`(
+          SELECT sr.*, u.full_name as remarks_by_name
+          FROM SQMP_STATUS_REMARKS sr
+          LEFT JOIN USERS u ON sr.remarks_by_id = u.user_id
+          WHERE sr.sqmp_id = s.sqmp_id 
+          ORDER BY sr.remarks_date DESC
+          FOR JSON PATH
+        )`.as('statusRemarksJson')
       ])
       .where((eb: any) => eb.or([
         eb('s.sqmp_id', '=', idOrControlNo),
         eb('s.control_no', '=', idOrControlNo)
-      ]))
-      .executeTakeFirst();
+      ]));
 
-    if (!record) return null;
-
-    // Subtables
-    const recordId = record.sqmp_id || (record as any).SQMP_ID || record.id;
-    const mainDocuments = await db.selectFrom('SQMP_DOCUMENT')
-      .selectAll()
-      .select(['sqmp_document_id as id'])
-      .where('sqmp_id', '=', recordId)
-      .execute();
-
-    const appendixDocuments = await db.selectFrom('SQMP_APPENDIX')
-      .selectAll()
-      .select(['sqmp_appendix_id as id'])
-      .where('sqmp_id', '=', recordId)
-      .execute();
-
-    const ccList = await db.selectFrom('SQMP_CC as cc')
-      .leftJoin('USERS as u', 'cc.user_id', 'u.user_id')
-      .select([
-        'cc.sqmp_cc_id',
-        'cc.sqmp_id',
-        'cc.user_id',
-        'cc.last_update',
-        'cc.updateby',
-        'u.full_name as user_name',
-        'u.email as user_email'
-      ])
-      .where('cc.sqmp_id', '=', recordId)
-      .execute();
-
-    // Fetch Responses
-    const responses = await db.selectFrom('SQMP_RESPONSE')
-      .selectAll()
-      .where('sqmp_id', '=', recordId)
-      .orderBy('response_date', 'asc')
-      .execute();
-
-    const detailedResponses = [];
-    for (const resp of responses) {
-      const respId = resp.sqmp_response_id || (resp as any).SQMP_RESPONSE_ID;
-      const docs = await db.selectFrom('SQMP_RESPONSE_DOCUMENT')
-        .selectAll()
-        .where('sqmp_response_id', '=', respId)
-        .execute();
+    // 1. Horizontal Security Guards (IDOR Context)
+    if (userId && userRole) {
+      const isSupplier = userRole.toUpperCase().includes('SUPPLIER');
       
-      const apps = await db.selectFrom('SQMP_RESPONSE_APPENDIX')
-        .selectAll()
-        .where('sqmp_response_id', '=', respId)
-        .execute();
-
-      const closures = await db.selectFrom('SQMP_RESPONSE_CLOSURE')
-        .selectAll()
-        .where('sqmp_response_id', '=', respId)
-        .execute();
-
-      detailedResponses.push({
-        ...resp,
-        documents: docs,
-        appendixes: apps,
-        closures: closures
-      });
+      if (isSupplier) {
+        query = query.where('s.supplier_id', '=', userId);
+      } else {
+        const isGlobalRole = ['ADMIN', 'MPD'].some(r => userRole.toUpperCase().includes(r));
+        
+        if (!isGlobalRole) {
+          query = query.innerJoin('USERS as curr_user', (join) => 
+            join.on('curr_user.user_id', '=', userId)
+          ).whereRef('s.site_id', '=', 'curr_user.site_id');
+        }
+      }
     }
 
-    const statusRemarks = await db.selectFrom('SQMP_STATUS_REMARKS as sr')
-      .leftJoin('USERS as u', 'sr.remarks_by_id', 'u.user_id')
-      .selectAll('sr')
-      .select([
-        'u.full_name as remarks_by_name'
-      ])
-      .where('sqmp_id', '=', recordId)
-      .orderBy('remarks_date', 'desc')
-      .execute();
+    const result = await query.executeTakeFirst();
+    if (!result) return null;
 
-    return { 
-      record, 
-      mainDocuments, 
-      appendixDocuments, 
-      ccList, 
-      responses: detailedResponses,
-      statusRemarks
+    // Helper to parse JSON if string, otherwise return as-is
+    const parse = (val: any) => {
+        if (!val) return [];
+        if (typeof val === 'string') {
+            try { return JSON.parse(val); } catch (e) { return []; }
+        }
+        return val;
+    };
+
+    return {
+      record: result,
+      mainDocuments: parse(result.mainDocumentsJson),
+      appendixDocuments: parse(result.appendixDocumentsJson),
+      ccList: parse(result.ccListJson),
+      responses: parse(result.responsesJson).map((resp: any) => ({
+          ...resp,
+          documents: parse(resp.documents),
+          appendixes: parse(resp.appendixes),
+          closures: parse(resp.closures)
+      })),
+      statusRemarks: parse(result.statusRemarksJson)
     };
   }
 

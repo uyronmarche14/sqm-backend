@@ -1,15 +1,51 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sqmpRepository } from '../sqmp.repository.js';
+import { userRepository } from '../../users/user.repository.js';
 import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
-import { NotFoundError } from '../../../shared/errors/AppError.js';
+import { NotFoundError, ForbiddenError } from '../../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../../shared/utils/status-mapper.js';
 import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 
 export class MainSqmpService {
+  private async getRoleName(roleId?: string): Promise<string> {
+      if (!roleId) return 'UNKNOWN';
+      const roleObj = await userRepository.findRoleById(roleId);
+      return roleObj?.role_name || 'UNKNOWN';
+  }
+
+  /**
+   * Internal Helper: Enforce RBAC/ABAC Context Guards
+   */
+  private async validateAccess(record: any, roleName: string, userId: string): Promise<void> {
+    const isSupplier = roleName.toUpperCase().includes('SUPPLIER');
+    const isGlobalRole = ['ADMIN', 'MPD'].some(r => roleName.toUpperCase().includes(r));
+
+    if (isGlobalRole) return;
+
+    const userObj = await userRepository.findById(userId);
+    const userSiteId = userObj?.site_id;
+
+    const isOwner = record.encoder_id === userId;
+    const isChecker = record.checker_id === userId;
+    const isApprover = record.approver_id === userId;
+    const isIssuer = record.issuer_id === userId;
+    const isSameSite = record.site_id === userSiteId;
+
+    if (isSupplier) {
+      if (record.supplier_id !== userId) {
+        throw new ForbiddenError('Access Denied: Record does not belong to your company.');
+      }
+      return;
+    }
+
+    if (!isOwner && !isChecker && !isApprover && !isIssuer && !isSameSite) {
+      throw new ForbiddenError('Access Denied: You do not have permission to access or modify this record.');
+    }
+  }
+
   private async generateControlNo(fiscalYear?: number, semester?: string | number): Promise<string> {
     const fy = fiscalYear || new Date().getFullYear();
     const sem = semester?.toString().toUpperCase() || '1ST';
-    // In production, should get MAX() + 1
     const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     return `SQMP-${fy}-${sem}-C${random}`;
   }
@@ -35,8 +71,9 @@ export class MainSqmpService {
       return val;
   }
 
-  async getAllRecords(status?: string) {
-    const records = await sqmpRepository.findAllDetailed(status);
+  async getAllRecords(status?: string, userId?: string, roleId?: string) {
+    const roleName = await this.getRoleName(roleId);
+    const records = await sqmpRepository.findAllDetailed(status, userId, roleName);
     return records.map((r: any) => ({
       ...r,
       status: mapStatusFromDB(r.request_status),
@@ -45,8 +82,9 @@ export class MainSqmpService {
     }));
   }
 
-  async getRecordById(id: string) {
-    const data = await sqmpRepository.findByIdDetailed(id);
+  async getRecordById(id: string, userId?: string, roleId?: string) {
+    const roleName = await this.getRoleName(roleId);
+    const data = await sqmpRepository.findByIdDetailed(id, userId, roleName);
     if (!data) throw new NotFoundError('SQMP Record not found');
 
     const { record, mainDocuments, appendixDocuments, ccList, responses, statusRemarks } = data;
@@ -55,8 +93,8 @@ export class MainSqmpService {
       ...record,
       status: mapStatusFromDB(record.request_status),
       semester: this.fromDBSemester(record.semester),
-      main_documents: mainDocuments || [],
-      appendix_documents: appendixDocuments || [],
+      documents: mainDocuments || [],
+      appendixes: appendixDocuments || [],
       cc_list: ccList || [],
       responses: responses || [],
       status_remarks: statusRemarks || []
@@ -88,16 +126,16 @@ export class MainSqmpService {
       encoder_date: now,
       issuer_id: userId,
       issuer_remarks: null,
-      request_status: mapStatusToDB('DRAFT'),
+      checker_id: payload.checker_id || null,
+      approver_id: payload.approver_id || null,
+      request_status: mapStatusToDB(payload.request_status || 'DRAFT'),
       last_update: now,
       updateby: userId
     };
 
     return await sqmpRepository.executeTransaction(async (trx) => {
-      // 1. Insert Main
       await trx.insertInto('SQMP').values(dbPayload).execute();
 
-      // 2. Insert Main Documents
       if (payload.main_documents?.length) {
         for (const doc of payload.main_documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
@@ -116,7 +154,6 @@ export class MainSqmpService {
         }
       }
 
-      // 3. Insert Appendix Documents
       if (payload.appendix_documents?.length) {
         for (const app of payload.appendix_documents) {
           const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
@@ -135,11 +172,10 @@ export class MainSqmpService {
         }
       }
 
-      // 4. CC List
       if (payload.cc_list?.length) {
         for (const cc of payload.cc_list) {
           await trx.insertInto('SQMP_CC').values({
-            sqmp_cc_id: cc.sqmp_cc_id || uuidv4(),
+            sqmp_cc_id: uuidv4(),
             sqmp_id: sqmpId,
             user_id: cc.user_id,
             last_update: now,
@@ -148,14 +184,18 @@ export class MainSqmpService {
         }
       }
 
-      return { success: true, data: { sqmp_id: sqmpId }, message: 'Record created successfully' };
+      return { success: true, sqmp_id: sqmpId, message: 'SQM Plan created successfully' };
     });
   }
 
-  async updateRecord(id: string, payload: SQMPUpdateInput, userId: string, files: any[] = []) {
+  async updateRecord(id: string, payload: SQMPUpdateInput, userId: string, roleId: string, files: any[] = []) {
+    const roleName = await this.getRoleName(roleId);
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
+    await this.validateAccess(existing.record, roleName, userId);
+
+    const record = existing.record;
     const now = new Date();
     const dbUpdates: any = {
       last_update: now,
@@ -193,16 +233,11 @@ export class MainSqmpService {
     if (payload.approver_date !== undefined) dbUpdates.approver_date = this.parseDate(payload.approver_date);
 
     return await sqmpRepository.executeTransaction(async (trx) => {
-      const recordId = existing.record.sqmp_id || (existing.record as any).SQMP_ID || existing.record.id;
-      // 1. Update Header
+      const recordId = record.sqmp_id;
       if (Object.keys(dbUpdates).length > 2) {
-        await trx.updateTable('SQMP')
-          .set(dbUpdates)
-          .where('sqmp_id', '=', recordId)
-          .execute();
+        await trx.updateTable('SQMP').set(dbUpdates).where('sqmp_id', '=', recordId).execute();
       }
 
-      // 2. Update Main Documents
       if (payload.main_documents !== undefined) {
         await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', recordId).execute();
         for (const doc of payload.main_documents) {
@@ -222,7 +257,6 @@ export class MainSqmpService {
         }
       }
 
-      // 3. Update Appendix Documents
       if (payload.appendix_documents !== undefined) {
         await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', recordId).execute();
         for (const app of payload.appendix_documents) {
@@ -241,84 +275,46 @@ export class MainSqmpService {
           }).execute();
         }
       }
-      // 4. CC List
+
       if (payload.cc_list !== undefined) {
-          await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', recordId).execute();
-          for (const cc of payload.cc_list) {
-            await trx.insertInto('SQMP_CC').values({
-              sqmp_cc_id: cc.sqmp_cc_id || uuidv4(),
-              sqmp_id: recordId,
-              user_id: cc.user_id,
-              last_update: now,
-              updateby: userId
-            }).execute();
-          }
-      }
-
-      // 5. Log Status Remarks (Moved from controller to service for consistency)
-      const remarkToLog = payload.checker_remarks || payload.approver_remarks || payload.issuer_remarks;
-      if (statusVal && remarkToLog) {
-         await trx.insertInto('SQMP_STATUS_REMARKS').values({
-            sqmp_status_remarks_id: uuidv4(),
+        await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', recordId).execute();
+        for (const cc of payload.cc_list) {
+          await trx.insertInto('SQMP_CC').values({
+            sqmp_cc_id: cc.sqmp_cc_id || uuidv4(),
             sqmp_id: recordId,
-            remarks: remarkToLog,
-            request_status: mapStatusToDB(statusVal),
-            remarks_by_id: userId,
-            remarks_date: now
-         }).execute();
+            user_id: cc.user_id,
+            last_update: now,
+            updateby: userId
+          }).execute();
+        }
       }
 
-      return { success: true, data: { id }, message: 'Record updated successfully' };
+      return { success: true, data: { id: recordId }, message: 'SQM Plan updated successfully' };
     });
   }
 
-  async cancelRecord(id: string, userId: string, remarks?: string) {
+  async deleteRecord(id: string, userId: string, roleId: string) {
+    const roleName = await this.getRoleName(roleId);
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    const now = new Date();
-    return await sqmpRepository.executeTransaction(async (trx) => {
-      await trx.updateTable('SQMP')
-        .set({
-          request_status: mapStatusToDB('CANCELLED'),
-          issuer_remarks: remarks || existing.record.issuer_remarks,
-          last_update: now,
-          updateby: userId
-        })
-        .where('sqmp_id', '=', existing.record.sqmp_id)
-        .execute();
-
-      if (remarks) {
-        await trx.insertInto('SQMP_STATUS_REMARKS').values({
-          sqmp_status_remarks_id: uuidv4(),
-          sqmp_id: existing.record.sqmp_id,
-          remarks: remarks,
-          request_status: mapStatusToDB('CANCELLED'),
-          remarks_by_id: userId,
-          remarks_date: now
-        }).execute();
-      }
-
-      return { success: true, data: { id }, message: 'SQM Plan cancelled successfully' };
-    });
-  }
-
-  async deleteRecord(id: string) {
-    const existing = await sqmpRepository.findByIdDetailed(id);
-    if (!existing) throw new NotFoundError('Record not found');
+    await this.validateAccess(existing.record, roleName, userId);
 
     return await sqmpRepository.executeTransaction(async (trx) => {
+        await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
         await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', existing.record.sqmp_id).execute();
         await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-        await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
         await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-        return { success: true, data: { id }, message: 'Record deleted successfully' };
+        return { success: true, message: 'Record deleted successfully' };
     });
   }
 
-  async issueRecord(id: string, userId: string, remarks?: string) {
+  async issueRecord(id: string, userId: string, roleId: string, remarks?: string) {
+    const roleName = await this.getRoleName(roleId);
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
+
+    await this.validateAccess(existing.record, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
@@ -348,9 +344,12 @@ export class MainSqmpService {
     });
   }
 
-  async requestResponse(id: string, userId: string, remarks?: string) {
+  async requestResponse(id: string, userId: string, roleId: string, remarks?: string) {
+    const roleName = await this.getRoleName(roleId);
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
+
+    await this.validateAccess(existing.record, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
@@ -379,34 +378,60 @@ export class MainSqmpService {
     });
   }
 
-  async closeRecord(id: string, userId: string, remarks?: string) {
+  async cancelRecord(id: string, userId: string, roleId: string, remarks?: string) {
+    const roleName = await this.getRoleName(roleId);
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
+
+    await this.validateAccess(existing.record, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: 'CL',
+          request_status: mapStatusToDB('CANCELLED'),
           issuer_remarks: remarks || existing.record.issuer_remarks,
           last_update: now,
           updateby: userId
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
-        
+
       if (remarks) {
-         await trx.insertInto('SQMP_STATUS_REMARKS').values({
-            sqmp_status_remarks_id: uuidv4(),
-            sqmp_id: existing.record.sqmp_id,
-            remarks: remarks,
-            request_status: 'CL',
-            remarks_by_id: userId,
-            remarks_date: now
-         }).execute();
+        await trx.insertInto('SQMP_STATUS_REMARKS').values({
+          sqmp_status_remarks_id: uuidv4(),
+          sqmp_id: existing.record.sqmp_id,
+          remarks: remarks,
+          request_status: mapStatusToDB('CANCELLED'),
+          remarks_by_id: userId,
+          remarks_date: now
+        }).execute();
       }
 
-      return { success: true, data: { id }, message: 'SQM Plan closed successfully' };
+      return { success: true, data: { id }, message: 'SQM Plan cancelled successfully' };
+    });
+  }
+
+  async closeRecord(id: string, userId: string, roleId: string, remarks?: string) {
+    const roleName = await this.getRoleName(roleId);
+    const existing = await sqmpRepository.findByIdDetailed(id);
+    if (!existing) throw new NotFoundError('Record not found');
+
+    await this.validateAccess(existing.record, roleName, userId);
+
+    const now = new Date();
+    return await sqmpRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('SQMP')
+        .set({
+          request_status: 'CL',
+          status_remarks: remarks || null,
+          last_update: now,
+          updateby: userId
+        })
+        .where('sqmp_id', '=', existing.record.sqmp_id)
+        .execute();
+
+      return { success: true, data: { id }, message: 'Record closed successfully' };
     });
   }
 }
