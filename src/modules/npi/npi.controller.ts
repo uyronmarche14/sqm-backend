@@ -142,7 +142,7 @@ export class NpiController {
       
       const result = await npiService.updateRecord(id, { 
         request_status: 'APPROVED',
-        status: WorkflowStatusEnum.FAPPROVED,
+        status: WorkflowStatusEnum.APPROVED,
         approverRemarks: req.body?.remarks || undefined
       }, userId, []);
       
@@ -160,7 +160,7 @@ export class NpiController {
       
       const result = await npiService.updateRecord(params.id, { 
         request_status: 'REJECTED',
-        status: WorkflowStatusEnum.RREJECTED,
+        status: WorkflowStatusEnum.REJECTED,
         approverRemarks: body?.remarks
       }, userId, []);
       

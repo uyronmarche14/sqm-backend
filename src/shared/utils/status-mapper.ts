@@ -1,78 +1,125 @@
+// =============================================================================
+// STATUS MAPPER — Backend DB Code ↔ Application Status
+// =============================================================================
+// This maps between the short DB codes (nvarchar(4)) and human-readable
+// status strings used in the application layer.
+// =============================================================================
+
+/**
+ * Convert a human-readable status string to its DB code.
+ * Example: 'DRAFT' → 'DR', 'AWAITING_APPROVAL' → 'AA'
+ */
 export const mapStatusToDB = (status: string): string => {
   const map: Record<string, string> = {
-      // Pre-Submission
-      'DRAFT': 'DR',
-      'NEW': 'NW',
-      'PLANNED': 'PL',
-      // Active Flow
-      'SUBMITTED': 'SU', //5m1e and Ogi 
+    // Pre-Submission
+    'DRAFT': 'DR',
+    'NEW': 'NW',
+    'PLANNED': 'PL',
 
-      // 1st cycle awaiting approval in awaiting approval menu of all module except the ogi
-      'AWAITING_APPROVAL': 'AA',  // 1st cycle awaiting approval
-      'AWAITING_CHECKED': 'CK', // 1st cycle awaiting checked
-      // Evaluation
-      // Final Stages
-      'APPROVED': 'AP',
-      'APPROVED_WC': 'AW',
-      'REJECTED': 'RE',
-      'REJECTED_AND_RETURNED': 'RR',
-      // MNR Specific
-      'ISSUED': 'IS',
-      'REPORT': 'RP',
-      'RESPONSE_': 'RW',
-      'RESPONSE_WITH_INITIAL_REPORT': 'WI', 
-      'RESPONSE_WITH_FINAL_REPORT': 'WF', 
-      'RESPONSE_REJECTED': 'RJ',
+    // Cycle 1
+    'AWAITING_CHECKED': 'AC',
+    'AWAITING_APPROVAL': 'AA',
+    'SUBMITTED': 'SU',         // 5M1E and OGI legacy
+    'APPROVED': 'AP',
+    'APPROVED_WC': 'AW',
+    'APPROVEDWC': 'AW',
+    'REJECTED': 'RE',
+    'REJECTED_AND_RETURNED': 'RR',
+    'RAR': 'RR',
 
-      // this are all filtered in just oine place the mnr qmqa and the sqmplan response awaiting approval menu
-      'RESPONSE_AWAITING_CHECKED': 'RC', //2nd cycle awaiting checked
-      'RESPONSE_AWAITING_APPROVED': 'RA', //2nd cycle awaiting approval
-      'CLOSED': 'CL',
+    // Post-Approval
+    'ISSUED': 'IS',
+    'RELEASE': 'RL',
+    'HOLD': 'HO',
+    'FAPPROVED': 'FA',
+    'EVALUATION': 'EV',
+    'CHECKED': 'CK',
 
-      // Post-Process
-      'RELEASE': 'RL',
-      'CANCELLED': 'CA',
+    // MNR Report Milestones
+    'REPORT': 'RP',
+    'IR': 'IR',
+    'FR': 'FR',
+
+    // Cycle 2: Response Flow
+    'RESPONSE_AWAITING': 'RW',
+    'RESPONSE_SUBMITTED': 'RS',
+    'RESPONSE_AWAITING_CHECKED': 'RC',
+    'RESPONSE_AWAITING_APPROVAL': 'RA',
+    'RESPONSE_RECEIVED': 'RV',
+    'RESPONSE_REJECTED': 'RJ',
+
+    // QMQA Response Stages
+    'WITH_INITIAL_REPORT': 'WI',
+    'WITH_FINAL_REPORT': 'WF',
+
+    // Terminal
+    'CLOSED': 'CL',
+    'CANCELLED': 'CA',
+    'CANCEL': 'CA',
+
+    // Legacy aliases (handle old code that may still send these)
+    'RESPONSE_AWAIT_APPROVAL': 'RA',
+    'RREJECTED': 'RJ',
+    'PENDING': 'PD',
+    'APPROVAL': 'AA',
   };
+
   const upperStatus = (status || '').toUpperCase();
-  const mapped = map[upperStatus];
-  if (!mapped) return 'DR'; // Default
-  return mapped;
+  return map[upperStatus] || 'DR';
 };
 
+/**
+ * Convert a DB code to its human-readable status string.
+ * Example: 'DR' → 'DRAFT', 'AA' → 'AWAITING_APPROVAL'
+ */
 export const mapStatusFromDB = (code: string): string => {
   const map: Record<string, string> = {
-      'DR': 'DRAFT',
-      'NW': 'NEW',
-      'PL': 'PLANNED',
-      'PD': 'PENDING',
-      'PN': 'PENDING',
-      'SU': 'SUBMITTED',
-      'AA': 'AAPPROVAL',
-      'CK': 'CHECKED',
-      'FA': 'FAPPROVED',
-      'EV': 'EVALUATION',
-      'AP': 'APPROVED',
-      'AW': 'APPROVED_WC',
-      'RE': 'REJECTED',
-      'RR': 'RAR',
-      'IS': 'ISSUED',
-      'FR': 'FR',
-      'IR': 'IR',
-      'RP': 'REPORT',
-      'RW': 'RESPONSE_AWAITING',
-      'RS': 'RESPONSE_SUBMITTED',
-      'RA': 'RESPONSE_AWAIT_APPROVAL',
-      'RC': 'RESPONSE_CHECKED',
-      'RJ': 'RREJECTED',
-      'RRJ': 'RESPONSE_REJECTED', // Alias support or ensure logic handles it
-      // QMQA Response Statuses
-      'WI': 'WITH_INITIAL_REPORT',
-      'WF': 'WITH_FINAL_REPORT',
-      'RL': 'RELEASE',
-      'HO': 'HOLD',
-      'CA': 'CANCEL',
-      'CC': 'CANCELLED', // Alias if needed or just CA
-      'CL': 'CLOSED'
+    // Pre-Submission
+    'DR': 'DRAFT',
+    'NW': 'NEW',
+    'PL': 'PLANNED',
+
+    // Cycle 1
+    'AC': 'AWAITING_CHECKED',
+    'AA': 'AWAITING_APPROVAL',
+    'SU': 'SUBMITTED',
+    'PD': 'PENDING',
+    'PN': 'PENDING',
+    'AP': 'APPROVED',
+    'AW': 'APPROVEDWC',
+    'RE': 'REJECTED',
+
+    // Post-Approval
+    'IS': 'ISSUED',
+    'RL': 'RELEASE',
+    'HO': 'HOLD',
+    'FA': 'FAPPROVED',
+    'EV': 'EVALUATION',
+    'CK': 'CHECKED',
+
+    // MNR Report Milestones
+    'RP': 'REPORT',
+    'IR': 'IR',
+    'FR': 'FR',
+
+    // Cycle 2
+    'RW': 'RESPONSE_AWAITING',
+    'RS': 'RESPONSE_SUBMITTED',
+    'RC': 'RESPONSE_AWAITING_CHECKED',
+    'RA': 'RESPONSE_AWAITING_APPROVAL',
+    'RV': 'RESPONSE_RECEIVED',
+    'RJ': 'RESPONSE_REJECTED',
+    'RR': 'REJECTED',             // RAR / Rejected-and-Revised
+
+    // QMQA Response Stages
+    'WI': 'WITH_INITIAL_REPORT',
+    'WF': 'WITH_FINAL_REPORT',
+
+    // Terminal
+    'CL': 'CLOSED',
+    'CA': 'CANCELLED',
+    'CC': 'CANCELLED',
   };
+
   return map[code] || code;
 };
