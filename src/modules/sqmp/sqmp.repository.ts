@@ -55,7 +55,10 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
     if (status) {
       const normalizedStatus = status.toUpperCase();
       
-      if (normalizedStatus === 'ACTIVE') {
+      if (normalizedStatus.includes(',')) {
+          const statuses = normalizedStatus.split(',').map(s => mapStatusToDB(s.trim()));
+          query = query.where('s.request_status', 'in', statuses);
+      } else if (normalizedStatus === 'ACTIVE') {
           query = query.where('s.request_status', 'not in', ['CL', 'CA', 'RE']);
       } else if (normalizedStatus === 'RESPONSE') {
           query = query.where('s.request_status', 'in', ['RW']);

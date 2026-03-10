@@ -114,7 +114,9 @@ export class QmqaService {
   async getAllRecords(filters?: { status?: string }) {
     let mappedStatus: string | string[] | undefined;
     if (filters?.status) {
-      if (filters.status.toUpperCase() === 'AWAITING_APPROVAL') {
+      if (filters.status.includes(',')) {
+        mappedStatus = filters.status.split(',').map(s => mapStatusToDB(s.trim()));
+      } else if (filters.status.toUpperCase() === 'AWAITING_APPROVAL') {
         mappedStatus = ['AA', 'CK']; // Awaiting Approval tab shows both unchecked and checked (pending final approval)
       } else {
         mappedStatus = mapStatusToDB(filters.status);

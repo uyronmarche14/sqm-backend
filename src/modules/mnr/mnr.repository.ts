@@ -9,7 +9,7 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
   /**
    * Fetch all records with full human-readable joins
    */
-  async findAllDetailed(statusFilter?: string) {
+  async findAllDetailed(statusFilter?: string | string[]) {
     let query = db.selectFrom('MNR_LOTS as l')
       .leftJoin('MFG_SITES as st', 'l.site_id', 'st.site_id')
       .leftJoin('SUPPLIERS as s', 'l.supplier_id', 's.supplier_id')
@@ -55,16 +55,28 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
       ]);
 
     if (statusFilter) {
-      // Include CHECKED (CK) records alongside SUBMITTED (SU) for Awaiting Approval
-      // so checked records remain visible on the page until approved
-      if (statusFilter === 'SU') {
-        query = query.where('l.request_status', 'in', ['SU', 'CK']);
-      } else if (statusFilter === 'RA') {
-        query = query.where('l.request_status', 'in', ['RA', 'RC']);
-      } else if (statusFilter === 'RP') {
-        query = query.where('l.request_status', 'in', ['IS', 'CL']);
+      if (Array.isArray(statusFilter)) {
+        // Expand the filter to include supplementary statuses
+        const expandedFilter = new Set<string>();
+        for (const status of statusFilter) {
+          expandedFilter.add(status);
+          if (status === 'SU') expandedFilter.add('CK');
+          if (status === 'RA') expandedFilter.add('RC');
+          if (status === 'RP') { expandedFilter.add('IS'); expandedFilter.add('CL'); }
+        }
+        query = query.where('l.request_status', 'in', Array.from(expandedFilter));
       } else {
-        query = query.where('l.request_status', '=', statusFilter);
+        // Include CHECKED (CK) records alongside SUBMITTED (SU) for Awaiting Approval
+        // so checked records remain visible on the page until approved
+        if (statusFilter === 'SU') {
+          query = query.where('l.request_status', 'in', ['SU', 'CK']);
+        } else if (statusFilter === 'RA') {
+          query = query.where('l.request_status', 'in', ['RA', 'RC']);
+        } else if (statusFilter === 'RP') {
+          query = query.where('l.request_status', 'in', ['IS', 'CL']);
+        } else {
+          query = query.where('l.request_status', '=', statusFilter);
+        }
       }
     }
 

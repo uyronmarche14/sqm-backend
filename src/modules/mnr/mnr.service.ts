@@ -27,7 +27,14 @@ export class MnrService {
   }
 
   async getAllRecords(statusFilter?: string) {
-    const dbFilter = statusFilter ? mapStatusToDB(statusFilter) : undefined;
+    let dbFilter: string[] | string | undefined;
+    if (statusFilter) {
+      if (statusFilter.includes(',')) {
+        dbFilter = statusFilter.split(',').map(s => mapStatusToDB(s.trim()));
+      } else {
+        dbFilter = mapStatusToDB(statusFilter.trim());
+      }
+    }
     const records = await mnrRepository.findAllDetailed(dbFilter);
     
     // Map DB flat rows back to expected DTO shape
