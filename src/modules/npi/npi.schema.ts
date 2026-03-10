@@ -187,5 +187,11 @@ export const NpiIdParamSchema = z.object({
   })
 });
 
+export const NpiAttachmentParamSchema = z.object({
+  params: z.object({
+    attachmentId: z.string().uuid('Invalid Attachment ID format')
+  })
+});
+
 export type NPICreationInput = z.infer<typeof NpiCreateSchema>['body'];
 export type NPIUpdateInput = z.infer<typeof NpiUpdateSchema>['body'];

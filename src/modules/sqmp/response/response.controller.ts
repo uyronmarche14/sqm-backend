@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { sqmpResponseService } from './response.service.js';
-import { SqmpResponseUpsertSchema, SqmpResponseActionSchema } from './response.schema.js';
+import { SqmpResponseUpsertSchema, SqmpResponseActionSchema, SqmpResponseAttachmentParamSchema } from './response.schema.js';
 import { successResponse } from '../../../shared/utils/api-response.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
 
 export class SqmpResponseController {
   async upsert(req: Request, res: Response, next: NextFunction) {
@@ -65,6 +66,20 @@ export class SqmpResponseController {
       res.json(successResponse(result));
     } catch (error) {
       console.error('[SQMP-RESPONSE] REJECT error:', error);
+      next(error);
+    }
+  }
+
+  async downloadAttachment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { attachmentId } = SqmpResponseAttachmentParamSchema.parse({ params: req.params }).params;
+      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('sqmp-response', attachmentId as string);
+      
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.download(filePath);
+    } catch (error) {
+      console.error('[SQMP-RESPONSE] DOWNLOAD error:', error);
       next(error);
     }
   }

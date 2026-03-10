@@ -1,14 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { npiService } from './npi.service.js';
-import { NpiCreateSchema, NpiUpdateSchema, NpiIdParamSchema, NpiActionSchema } from './npi.schema.js';
+import { NpiCreateSchema, NpiUpdateSchema, NpiIdParamSchema, NpiActionSchema, NpiAttachmentParamSchema } from './npi.schema.js';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const UPLOAD_DIR = path.join(__dirname, '../../../uploads/npi');
+import { attachmentService } from '../../shared/services/attachment.service.js';
 
 export class NpiController {
   
@@ -92,24 +87,11 @@ export class NpiController {
 
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
-      const { attachmentId } = NpiIdParamSchema.parse({ params: req.params }).params;
-      if (!attachmentId) throw new Error('Attachment ID is required');
-
-      // Attempt to look for it from db pool
-      // @ts-ignore
-      const { db } = await import('../../shared/infrastructure/db.js');
+      const { attachmentId } = NpiAttachmentParamSchema.parse({ params: req.params }).params;
+      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('npi-main', attachmentId as string);
       
-      const match = await db.selectFrom('NPI_ATTACHMENT').select('file_name').where('npi_attachment_id', '=', attachmentId).executeTakeFirst();
-      
-      if (!match) return res.status(404).json({ error: 'Attachment not found' });
-
-      const fs = await import('fs');
-      const filePath = path.join(UPLOAD_DIR, match.file_name);
-      
-      if (!fs.existsSync(filePath)) {
-          return res.status(404).json({ error: 'File not found on disk' });
-      }
-
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       return res.download(filePath);
     } catch (error) {
       console.error('[NPI] DOWNLOAD error:', error);

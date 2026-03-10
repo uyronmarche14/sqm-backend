@@ -3,9 +3,10 @@ import { qmqaService } from './qmqa.service.js';
 import { 
   QmqaScheduleCreateSchema, QmqaScheduleUpdateSchema, 
   QmqaRecordCreateSchema, QmqaRecordUpdateSchema, 
-  QmqaIdParamSchema, QmqaVerificationSchema
+  QmqaIdParamSchema, QmqaVerificationSchema, QmqaAttachmentParamSchema
 } from './qmqa.schema.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 
 export class QmqaController {
   
@@ -345,6 +346,21 @@ export class QmqaController {
       return res.json({ success: true, count });
     } catch (error) {
       return next(error);
+    }
+  }
+
+  async downloadAttachment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { moduleType, attachmentId } = QmqaAttachmentParamSchema.parse({ params: req.params }).params;
+      
+      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment(moduleType, attachmentId);
+      
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.download(filePath);
+    } catch (error) {
+      console.error('[QMQA] DOWNLOAD error:', error);
+      next(error);
     }
   }
 }

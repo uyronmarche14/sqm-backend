@@ -6,8 +6,10 @@ import { CreateFiveM1ESchema, UpdateFiveM1ESchema } from './fiveM1E.schema.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 
+import { requirePermission } from '../../shared/middleware/requirePermission.js';
+
 const router = express.Router();
-const upload = createModuleUpload('5m1e');
+const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
 
 /**
  * Middleware to parse JSON stringified arrays sent via FormData.
@@ -49,6 +51,7 @@ router.get(
  */
 router.post(
   '/', 
+  requirePermission('5M1E', 'add'),
   upload.any(),
   logUploads,
   handleUploadError,
@@ -72,6 +75,7 @@ router.get(
  */
 router.put(
   '/:id', 
+  requirePermission('5M1E', 'edit'),
   upload.any(),
   logUploads,
   handleUploadError,
@@ -86,16 +90,23 @@ router.put(
  */
 router.delete(
   '/:id',
+  requirePermission('5M1E', 'delete'),
   fiveM1EController.deleteApplication
 );
 
 /**
  * Workflow Action Subroutes
  */
-router.post('/:id/submit', fiveM1EController.submitApplication);
-router.post('/:id/check', fiveM1EController.checkApplication);
-router.post('/:id/approve', fiveM1EController.approveApplication);
-router.post('/:id/reject', fiveM1EController.rejectApplication);
-router.post('/:id/release', fiveM1EController.releaseApplication);
+router.post('/:id/submit', requirePermission('5M1E', 'submit'), fiveM1EController.submitApplication);
+router.post('/:id/check', requirePermission('5M1E', 'check'), fiveM1EController.checkApplication);
+router.post('/:id/approve', requirePermission('5M1E', 'approve'), fiveM1EController.approveApplication);
+router.post('/:id/reject', requirePermission('5M1E', 'reject'), fiveM1EController.rejectApplication);
+router.post('/:id/release', requirePermission('5M1E', 'release'), fiveM1EController.releaseApplication);
+
+/**
+ * Attachment Downloader
+ */
+router.get('/attachments/:attachmentId', fiveM1EController.downloadAttachment);
+router.get('/download/:attachmentId', fiveM1EController.downloadAttachment);
 
 export default router;

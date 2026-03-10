@@ -57,5 +57,11 @@ export const SqmpResponseActionSchema = z.object({
   }).optional()
 });
 
+export const SqmpResponseAttachmentParamSchema = z.object({
+  params: z.object({
+    attachmentId: z.string().uuid('Invalid Attachment ID format')
+  })
+});
+
 export type SQMPResponseUpsertInput = z.infer<typeof SqmpResponseUpsertSchema>['body'];
 export type SQMPResponseActionInput = z.infer<typeof SqmpResponseActionSchema>['body'];

@@ -5,41 +5,33 @@ export const mapStatusToDB = (status: string): string => {
       'NEW': 'NW',
       'PLANNED': 'PL',
       // Active Flow
-      'PENDING': 'PN',
-      'SUBMITTED': 'SU',
-      'AAPPROVAL': 'AA',
-      'AWAITING_APPROVAL': 'AA',
-      'CHECKED': 'CK',
+      'SUBMITTED': 'SU', //5m1e and Ogi 
+
+      // 1st cycle awaiting approval in awaiting approval menu of all module except the ogi
+      'AWAITING_APPROVAL': 'AA',  // 1st cycle awaiting approval
+      'AWAITING_CHECKED': 'CK', // 1st cycle awaiting checked
       // Evaluation
-      'FAPPROVED': 'FA',
-      'EVALUATION': 'EV',
       // Final Stages
       'APPROVED': 'AP',
       'APPROVED_WC': 'AW',
-      'APPROVEDWC': 'AW',
       'REJECTED': 'RE',
-      'RAR': 'RR',
+      'REJECTED_AND_RETURNED': 'RR',
       // MNR Specific
       'ISSUED': 'IS',
-      'FR': 'FR',
-      'IR': 'IR',
       'REPORT': 'RP',
-      'RESPONSE_AWAITING': 'RW',
-      'RESPONSE_SUBMITTED': 'RS',
-      'RESPONSE_AWAIT_APPROVAL': 'RA',
-      'RESPONSE_AWAITING_APPROVAL': 'RA',
-      'RESPONSE_CHECKED': 'RC',
-      'RREJECTED': 'RJ',
-      // QMQA Response Statuses
-      'WITH_INITIAL_REPORT': 'WI',
-      'WITH_FINAL_REPORT': 'WF',
+      'RESPONSE_': 'RW',
+      'RESPONSE_WITH_INITIAL_REPORT': 'WI', 
+      'RESPONSE_WITH_FINAL_REPORT': 'WF', 
       'RESPONSE_REJECTED': 'RJ',
+
+      // this are all filtered in just oine place the mnr qmqa and the sqmplan response awaiting approval menu
+      'RESPONSE_AWAITING_CHECKED': 'RC', //2nd cycle awaiting checked
+      'RESPONSE_AWAITING_APPROVED': 'RA', //2nd cycle awaiting approval
+      'CLOSED': 'CL',
+
       // Post-Process
       'RELEASE': 'RL',
-      'HOLD': 'HO',
-      'CANCEL': 'CA',
       'CANCELLED': 'CA',
-      'CLOSED': 'CL'
   };
   const upperStatus = (status || '').toUpperCase();
   const mapped = map[upperStatus];

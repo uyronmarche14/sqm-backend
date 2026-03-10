@@ -7,8 +7,7 @@ import { successResponse, createResponse } from '../../../shared/utils/api-respo
 import { BadRequestError, ForbiddenError } from '../../../shared/errors/AppError.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const UPLOAD_DIR = path.join(__dirname, '../../../../uploads/sqmp');
+import { attachmentService } from '../../../shared/services/attachment.service.js';
 
 export class MainSqmpController {
   async getAll(req: Request, res: Response, next: NextFunction) {
@@ -284,41 +283,10 @@ export class MainSqmpController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = req.params;
-
-      if (!attachmentId) throw new Error('Attachment ID is required');
-
-      // Attempt to look for it from db pool
-      // @ts-ignore
-      const { db } = await import('../../../shared/infrastructure/db.js');
+      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('sqmp-main', attachmentId as string);
       
-      console.debug(`[SQMP-DOWNLOAD] Searching for attachmentId: ${attachmentId}`);
-      let match = await db.selectFrom('SQMP_DOCUMENT').select('file_name').where('sqmp_document_id', '=', attachmentId).executeTakeFirst();
-      if (match) console.debug(`[SQMP-DOWNLOAD] Found in SQMP_DOCUMENT: ${match.file_name}`);
-      
-      if (!match) {
-        match = await db.selectFrom('SQMP_APPENDIX').select('file_name').where('sqmp_appendix_id', '=', attachmentId).executeTakeFirst();
-        if (match) console.debug(`[SQMP-DOWNLOAD] Found in SQMP_APPENDIX: ${match.file_name}`);
-      }
-      if (!match) {
-        match = await db.selectFrom('SQMP_RESPONSE_DOCUMENT').select('file_name').where('sqmp_response_document_id', '=', attachmentId).executeTakeFirst();
-        if (match) console.debug(`[SQMP-DOWNLOAD] Found in SQMP_RESPONSE_DOCUMENT: ${match.file_name}`);
-      }
-      if (!match) {
-        match = await db.selectFrom('SQMP_RESPONSE_APPENDIX').select('file_name').where('sqmp_response_appendix_id', '=', attachmentId).executeTakeFirst();
-        if (match) console.debug(`[SQMP-DOWNLOAD] Found in SQMP_RESPONSE_APPENDIX: ${match.file_name}`);
-      }
-      if (!match) {
-        match = await db.selectFrom('SQMP_RESPONSE_CLOSURE').select('file_name').where('sqmp_response_closure_id', '=', attachmentId).executeTakeFirst();
-        if (match) console.debug(`[SQMP-DOWNLOAD] Found in SQMP_RESPONSE_CLOSURE: ${match.file_name}`);
-      }
-      
-      if (!match) {
-          console.warn(`[SQMP-DOWNLOAD] Attachment ID ${attachmentId} not found in any table.`);
-          return res.status(404).json({ error: 'Attachment not found' });
-      }
-
-      const filePath = path.join(UPLOAD_DIR, match.file_name);
-      
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       return res.download(filePath);
     } catch (error) {
       console.error('[SQMP-MAIN] DOWNLOAD error:', error);

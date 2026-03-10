@@ -1,5 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
+import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import * as ctrl from './master-data.controller.js';
 
 const router = express.Router();
@@ -10,213 +11,212 @@ router.use(requireAuth);
 // Core Lookups
 // ============================================================================
 router.get('/sites', ctrl.sitesCtrl.getAll);
-router.post('/sites', ctrl.sitesCtrl.create);
-router.put('/sites/:id', ctrl.sitesCtrl.update);
-router.delete('/sites/:id', ctrl.sitesCtrl.delete);
+router.post('/sites', requirePermission('MAINTENANCE', 'add'), ctrl.sitesCtrl.create);
+router.put('/sites/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.sitesCtrl.update);
+router.delete('/sites/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.sitesCtrl.delete);
 
 router.get('/suppliers', ctrl.suppliersCtrl.getAll);
-router.post('/suppliers', ctrl.suppliersCtrl.create);
-router.put('/suppliers/:id', ctrl.suppliersCtrl.update);
-router.delete('/suppliers/:id', ctrl.suppliersCtrl.delete);
+router.post('/suppliers', requirePermission('MAINTENANCE', 'add'), ctrl.suppliersCtrl.create);
+router.put('/suppliers/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.suppliersCtrl.update);
+router.delete('/suppliers/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.suppliersCtrl.delete);
 
 router.get('/roles', ctrl.rolesCtrl.getAll);
-router.post('/roles', ctrl.rolesCtrl.create);
-router.put('/roles/:id', ctrl.rolesCtrl.update);
-router.delete('/roles/:id', ctrl.rolesCtrl.delete);
+router.post('/roles', requirePermission('MAINTENANCE', 'add'), ctrl.rolesCtrl.create);
+router.put('/roles/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.rolesCtrl.update);
+router.delete('/roles/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.rolesCtrl.delete);
 
 router.get('/models', ctrl.modelsCtrl.getAll);
-router.post('/models', ctrl.modelsCtrl.create);
-router.put('/models/:id', ctrl.modelsCtrl.update);
-router.delete('/models/:id', ctrl.modelsCtrl.delete);
+router.post('/models', requirePermission('MAINTENANCE', 'add'), ctrl.modelsCtrl.create);
+router.put('/models/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.modelsCtrl.update);
+router.delete('/models/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.modelsCtrl.delete);
 
 router.get('/products', ctrl.productsCtrl.getAll);
-router.post('/products', ctrl.productsCtrl.create);
-router.put('/products/:id', ctrl.productsCtrl.update);
-router.delete('/products/:id', ctrl.productsCtrl.delete);
+router.post('/products', requirePermission('MAINTENANCE', 'add'), ctrl.productsCtrl.create);
+router.put('/products/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.productsCtrl.update);
+router.delete('/products/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.productsCtrl.delete);
 
 router.get('/mfg-areas', ctrl.mfgAreasCtrl.getAll);
-router.post('/mfg-areas', ctrl.mfgAreasCtrl.create);
-// mfgAreas lacked update/delete in legacy, but the factory easily supports them! We'll expose them since they are safe:
-router.put('/mfg-areas/:id', ctrl.mfgAreasCtrl.update); 
-router.delete('/mfg-areas/:id', ctrl.mfgAreasCtrl.delete);
+router.post('/mfg-areas', requirePermission('MAINTENANCE', 'add'), ctrl.mfgAreasCtrl.create);
+router.put('/mfg-areas/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.mfgAreasCtrl.update); 
+router.delete('/mfg-areas/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.mfgAreasCtrl.delete);
 
 // ============================================================================
 // Defects & Dispositions
 // ============================================================================
 router.get('/defect-categories', ctrl.defectCatsCtrl.getAll);
-router.post('/defect-categories', ctrl.defectCatsCtrl.create);
-router.put('/defect-categories/:id', ctrl.defectCatsCtrl.update);
-router.delete('/defect-categories/:id', ctrl.defectCatsCtrl.delete);
+router.post('/defect-categories', requirePermission('MAINTENANCE', 'add'), ctrl.defectCatsCtrl.create);
+router.put('/defect-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.defectCatsCtrl.update);
+router.delete('/defect-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.defectCatsCtrl.delete);
 
 router.get('/defects', ctrl.defectsCtrl.getAll);
-router.post('/defects', ctrl.defectsCtrl.create);
-router.put('/defects/:id', ctrl.defectsCtrl.update);
-router.delete('/defects/:id', ctrl.defectsCtrl.delete);
+router.post('/defects', requirePermission('MAINTENANCE', 'add'), ctrl.defectsCtrl.create);
+router.put('/defects/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.defectsCtrl.update);
+router.delete('/defects/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.defectsCtrl.delete);
 
 router.get('/defect-classes', ctrl.defectClassesCtrl.getAll);
-router.post('/defect-classes', ctrl.defectClassesCtrl.create);
-router.put('/defect-classes/:id', ctrl.defectClassesCtrl.update);
-router.delete('/defect-classes/:id', ctrl.defectClassesCtrl.delete);
+router.post('/defect-classes', requirePermission('MAINTENANCE', 'add'), ctrl.defectClassesCtrl.create);
+router.put('/defect-classes/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.defectClassesCtrl.update);
+router.delete('/defect-classes/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.defectClassesCtrl.delete);
 
 router.get('/dispositions', ctrl.dispositionsCtrl.getAll);
-router.post('/dispositions', ctrl.dispositionsCtrl.create);
-router.put('/dispositions/:id', ctrl.dispositionsCtrl.update);
-router.delete('/dispositions/:id', ctrl.dispositionsCtrl.delete);
+router.post('/dispositions', requirePermission('MAINTENANCE', 'add'), ctrl.dispositionsCtrl.create);
+router.put('/dispositions/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.dispositionsCtrl.update);
+router.delete('/dispositions/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.dispositionsCtrl.delete);
 
 router.get('/severity', ctrl.severityCtrl.getAll);
-router.post('/severity', ctrl.severityCtrl.create);
-router.put('/severity/:id', ctrl.severityCtrl.update);
-router.delete('/severity/:id', ctrl.severityCtrl.delete);
+router.post('/severity', requirePermission('MAINTENANCE', 'add'), ctrl.severityCtrl.create);
+router.put('/severity/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.severityCtrl.update);
+router.delete('/severity/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.severityCtrl.delete);
 
 router.get('/aql', ctrl.aqlCtrl.getAll);
-router.post('/aql', ctrl.aqlCtrl.create);
-router.put('/aql/:id', ctrl.aqlCtrl.update);
-router.delete('/aql/:id', ctrl.aqlCtrl.delete);
+router.post('/aql', requirePermission('MAINTENANCE', 'add'), ctrl.aqlCtrl.create);
+router.put('/aql/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.aqlCtrl.update);
+router.delete('/aql/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.aqlCtrl.delete);
 
 // ============================================================================
 // Inspections & General
 // ============================================================================
 router.get('/inspection-categories', ctrl.inspCatsCtrl.getAll);
-router.post('/inspection-categories', ctrl.inspCatsCtrl.create);
-router.put('/inspection-categories/:id', ctrl.inspCatsCtrl.update);
-router.delete('/inspection-categories/:id', ctrl.inspCatsCtrl.delete);
+router.post('/inspection-categories', requirePermission('MAINTENANCE', 'add'), ctrl.inspCatsCtrl.create);
+router.put('/inspection-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.inspCatsCtrl.update);
+router.delete('/inspection-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.inspCatsCtrl.delete);
 
 router.get('/inspection-methods', ctrl.inspMethodsCtrl.getAll);
-router.post('/inspection-methods', ctrl.inspMethodsCtrl.create);
-router.put('/inspection-methods/:id', ctrl.inspMethodsCtrl.update);
-router.delete('/inspection-methods/:id', ctrl.inspMethodsCtrl.delete);
+router.post('/inspection-methods', requirePermission('MAINTENANCE', 'add'), ctrl.inspMethodsCtrl.create);
+router.put('/inspection-methods/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.inspMethodsCtrl.update);
+router.delete('/inspection-methods/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.inspMethodsCtrl.delete);
 
 router.get('/inspectors', ctrl.inspectorsCtrl.getAll);
-router.post('/inspectors', ctrl.inspectorsCtrl.create);
-router.put('/inspectors/:id', ctrl.inspectorsCtrl.update);
-router.delete('/inspectors/:id', ctrl.inspectorsCtrl.delete);
+router.post('/inspectors', requirePermission('MAINTENANCE', 'add'), ctrl.inspectorsCtrl.create);
+router.put('/inspectors/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.inspectorsCtrl.update);
+router.delete('/inspectors/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.inspectorsCtrl.delete);
 
 // MNR Types maps to both '/mnr-types' and '/general' in legacy
 router.get('/mnr-types', ctrl.generalMasterCtrl.getAll);
-router.post('/mnr-types', ctrl.generalMasterCtrl.create);
-router.put('/mnr-types/:id', ctrl.generalMasterCtrl.update);
-router.delete('/mnr-types/:id', ctrl.generalMasterCtrl.delete);
+router.post('/mnr-types', requirePermission('MAINTENANCE', 'add'), ctrl.generalMasterCtrl.create);
+router.put('/mnr-types/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.generalMasterCtrl.update);
+router.delete('/mnr-types/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.generalMasterCtrl.delete);
 
 router.get('/general', ctrl.generalMasterCtrl.getAll);
-router.post('/general', ctrl.generalMasterCtrl.create);
-router.put('/general/:id', ctrl.generalMasterCtrl.update);
-router.delete('/general/:id', ctrl.generalMasterCtrl.delete);
+router.post('/general', requirePermission('MAINTENANCE', 'add'), ctrl.generalMasterCtrl.create);
+router.put('/general/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.generalMasterCtrl.update);
+router.delete('/general/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.generalMasterCtrl.delete);
 
 // ============================================================================
 // Parts Catalog
 // ============================================================================
 router.get('/parts', ctrl.partClassCtrl.getAll);
-router.post('/parts', ctrl.partClassCtrl.create);
-router.put('/parts/:id', ctrl.partClassCtrl.update);
-router.delete('/parts/:id', ctrl.partClassCtrl.delete);
+router.post('/parts', requirePermission('MAINTENANCE', 'add'), ctrl.partClassCtrl.create);
+router.put('/parts/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.partClassCtrl.update);
+router.delete('/parts/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.partClassCtrl.delete);
 
 router.get('/part-types', ctrl.partTypesCtrl.getAll);
-router.post('/part-types', ctrl.partTypesCtrl.create);
-router.put('/part-types/:id', ctrl.partTypesCtrl.update);
-router.delete('/part-types/:id', ctrl.partTypesCtrl.delete);
+router.post('/part-types', requirePermission('MAINTENANCE', 'add'), ctrl.partTypesCtrl.create);
+router.put('/part-types/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.partTypesCtrl.update);
+router.delete('/part-types/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.partTypesCtrl.delete);
 
 router.get('/part-data-categories', ctrl.partDataCatsCtrl.getAll);
-router.post('/part-data-categories', ctrl.partDataCatsCtrl.create);
-router.put('/part-data-categories/:id', ctrl.partDataCatsCtrl.update);
-router.delete('/part-data-categories/:id', ctrl.partDataCatsCtrl.delete);
+router.post('/part-data-categories', requirePermission('MAINTENANCE', 'add'), ctrl.partDataCatsCtrl.create);
+router.put('/part-data-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.partDataCatsCtrl.update);
+router.delete('/part-data-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.partDataCatsCtrl.delete);
 
 router.get('/part-dim-categories', ctrl.partDimCatsCtrl.getAll);
-router.post('/part-dim-categories', ctrl.partDimCatsCtrl.create);
-router.put('/part-dim-categories/:id', ctrl.partDimCatsCtrl.update);
-router.delete('/part-dim-categories/:id', ctrl.partDimCatsCtrl.delete);
+router.post('/part-dim-categories', requirePermission('MAINTENANCE', 'add'), ctrl.partDimCatsCtrl.create);
+router.put('/part-dim-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.partDimCatsCtrl.update);
+router.delete('/part-dim-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.partDimCatsCtrl.delete);
 
 router.get('/part-noise-categories', ctrl.partNoiseCatsCtrl.getAll);
-router.post('/part-noise-categories', ctrl.partNoiseCatsCtrl.create);
-router.put('/part-noise-categories/:id', ctrl.partNoiseCatsCtrl.update);
-router.delete('/part-noise-categories/:id', ctrl.partNoiseCatsCtrl.delete);
+router.post('/part-noise-categories', requirePermission('MAINTENANCE', 'add'), ctrl.partNoiseCatsCtrl.create);
+router.put('/part-noise-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.partNoiseCatsCtrl.update);
+router.delete('/part-noise-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.partNoiseCatsCtrl.delete);
 
 // Legacy route: parts-catalog corresponds to the PartsMaster schemas and tables
 router.get('/parts-catalog', ctrl.partsCatalogCtrl.getAll);
-router.post('/parts-catalog', ctrl.partsCatalogCtrl.create);
-router.put('/parts-catalog/:id', ctrl.partsCatalogCtrl.update);
-router.delete('/parts-catalog/:id', ctrl.partsCatalogCtrl.delete);
+router.post('/parts-catalog', requirePermission('MAINTENANCE', 'add'), ctrl.partsCatalogCtrl.create);
+router.put('/parts-catalog/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.partsCatalogCtrl.update);
+router.delete('/parts-catalog/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.partsCatalogCtrl.delete);
 
 // ============================================================================
 // Forms & Security
 // ============================================================================
 router.get('/forms', ctrl.formsCtrl.getAll);
-router.post('/forms', ctrl.formsCtrl.create);
-router.put('/forms/:id', ctrl.formsCtrl.update);
-router.delete('/forms/:id', ctrl.formsCtrl.delete);
+router.post('/forms', requirePermission('MAINTENANCE', 'add'), ctrl.formsCtrl.create);
+router.put('/forms/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.formsCtrl.update);
+router.delete('/forms/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.formsCtrl.delete);
 
 router.get('/role-access', ctrl.roleAccessCtrl.getAll);
-router.post('/role-access', ctrl.roleAccessCtrl.create);
-router.put('/role-access/:id', ctrl.roleAccessCtrl.update);
-router.delete('/role-access/:id', ctrl.roleAccessCtrl.delete);
+router.post('/role-access', requirePermission('MAINTENANCE', 'add'), ctrl.roleAccessCtrl.create);
+router.put('/role-access/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.roleAccessCtrl.update);
+router.delete('/role-access/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.roleAccessCtrl.delete);
 
 // ============================================================================
 // Suppliers Ex
 // ============================================================================
 router.get('/supplier-incharges', ctrl.supplierInchargesCtrl.getAll);
-router.post('/supplier-incharges', ctrl.supplierInchargesCtrl.create);
-router.put('/supplier-incharges/:id', ctrl.supplierInchargesCtrl.update);
-router.delete('/supplier-incharges/:id', ctrl.supplierInchargesCtrl.delete);
+router.post('/supplier-incharges', requirePermission('MAINTENANCE', 'add'), ctrl.supplierInchargesCtrl.create);
+router.put('/supplier-incharges/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.supplierInchargesCtrl.update);
+router.delete('/supplier-incharges/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.supplierInchargesCtrl.delete);
 
 router.get('/supplier-information', ctrl.supplierInfoCtrl.getAll);
 router.get('/supplier-information/by-supplier/:supplierId', ctrl.getSupplierInfoBySupplier);
-router.post('/supplier-information', ctrl.supplierInfoCtrl.create);
-router.put('/supplier-information/:id', ctrl.supplierInfoCtrl.update);
-router.delete('/supplier-information/:id', ctrl.supplierInfoCtrl.delete);
+router.post('/supplier-information', requirePermission('MAINTENANCE', 'add'), ctrl.supplierInfoCtrl.create);
+router.put('/supplier-information/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.supplierInfoCtrl.update);
+router.delete('/supplier-information/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.supplierInfoCtrl.delete);
 
 // ============================================================================
 // Audit & QMS
 // ============================================================================
 router.get('/audit-categories', ctrl.auditCatsCtrl.getAll);
-router.post('/audit-categories', ctrl.auditCatsCtrl.create);
-router.put('/audit-categories/:id', ctrl.auditCatsCtrl.update);
-router.delete('/audit-categories/:id', ctrl.auditCatsCtrl.delete);
+router.post('/audit-categories', requirePermission('MAINTENANCE', 'add'), ctrl.auditCatsCtrl.create);
+router.put('/audit-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.auditCatsCtrl.update);
+router.delete('/audit-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.auditCatsCtrl.delete);
 
 router.get('/audit-types', ctrl.auditTypesCtrl.getAll);
-router.post('/audit-types', ctrl.auditTypesCtrl.create);
-router.put('/audit-types/:id', ctrl.auditTypesCtrl.update);
-router.delete('/audit-types/:id', ctrl.auditTypesCtrl.delete);
+router.post('/audit-types', requirePermission('MAINTENANCE', 'add'), ctrl.auditTypesCtrl.create);
+router.put('/audit-types/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.auditTypesCtrl.update);
+router.delete('/audit-types/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.auditTypesCtrl.delete);
 
 router.get('/criterias', ctrl.criteriaCtrl.getAll);
-router.post('/criterias', ctrl.criteriaCtrl.create);
-router.put('/criterias/:id', ctrl.criteriaCtrl.update);
-router.delete('/criterias/:id', ctrl.criteriaCtrl.delete);
+router.post('/criterias', requirePermission('MAINTENANCE', 'add'), ctrl.criteriaCtrl.create);
+router.put('/criterias/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.criteriaCtrl.update);
+router.delete('/criterias/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.criteriaCtrl.delete);
 
 router.get('/five-m1e-categories', ctrl.fiveM1ECatsCtrl.getAll);
-router.post('/five-m1e-categories', ctrl.fiveM1ECatsCtrl.create);
-router.put('/five-m1e-categories/:id', ctrl.fiveM1ECatsCtrl.update);
-router.delete('/five-m1e-categories/:id', ctrl.fiveM1ECatsCtrl.delete);
+router.post('/five-m1e-categories', requirePermission('MAINTENANCE', 'add'), ctrl.fiveM1ECatsCtrl.create);
+router.put('/five-m1e-categories/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.fiveM1ECatsCtrl.update);
+router.delete('/five-m1e-categories/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.fiveM1ECatsCtrl.delete);
 
 router.get('/registrations', ctrl.registrationsCtrl.getAll);
-router.post('/registrations', ctrl.registrationsCtrl.create);
-router.put('/registrations/:id', ctrl.registrationsCtrl.update);
-router.delete('/registrations/:id', ctrl.registrationsCtrl.delete);
+router.post('/registrations', requirePermission('MAINTENANCE', 'add'), ctrl.registrationsCtrl.create);
+router.put('/registrations/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.registrationsCtrl.update);
+router.delete('/registrations/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.registrationsCtrl.delete);
 
 // ============================================================================
 // Missing Admin Tables (Groups, FAQ, Certifications, Training Programs, Messages)
 // ============================================================================
 router.get('/faq', ctrl.faqItemsCtrl.getAll);
-router.post('/faq', ctrl.faqItemsCtrl.create);
-router.put('/faq/:id', ctrl.faqItemsCtrl.update);
-router.delete('/faq/:id', ctrl.faqItemsCtrl.delete);
+router.post('/faq', requirePermission('MAINTENANCE', 'add'), ctrl.faqItemsCtrl.create);
+router.put('/faq/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.faqItemsCtrl.update);
+router.delete('/faq/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.faqItemsCtrl.delete);
 
 router.get('/groups', ctrl.groupsCtrl.getAll);
-router.post('/groups', ctrl.groupsCtrl.create);
-router.put('/groups/:id', ctrl.groupsCtrl.update);
-router.delete('/groups/:id', ctrl.groupsCtrl.delete);
+router.post('/groups', requirePermission('MAINTENANCE', 'add'), ctrl.groupsCtrl.create);
+router.put('/groups/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.groupsCtrl.update);
+router.delete('/groups/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.groupsCtrl.delete);
 
 router.get('/certifications', ctrl.certificationsCtrl.getAll);
-router.post('/certifications', ctrl.certificationsCtrl.create);
-router.put('/certifications/:id', ctrl.certificationsCtrl.update);
-router.delete('/certifications/:id', ctrl.certificationsCtrl.delete);
+router.post('/certifications', requirePermission('MAINTENANCE', 'add'), ctrl.certificationsCtrl.create);
+router.put('/certifications/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.certificationsCtrl.update);
+router.delete('/certifications/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.certificationsCtrl.delete);
 
 router.get('/training-programs', ctrl.trainingProgramsCtrl.getAll);
-router.post('/training-programs', ctrl.trainingProgramsCtrl.create);
-router.put('/training-programs/:id', ctrl.trainingProgramsCtrl.update);
-router.delete('/training-programs/:id', ctrl.trainingProgramsCtrl.delete);
+router.post('/training-programs', requirePermission('MAINTENANCE', 'add'), ctrl.trainingProgramsCtrl.create);
+router.put('/training-programs/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.trainingProgramsCtrl.update);
+router.delete('/training-programs/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.trainingProgramsCtrl.delete);
 
 router.get('/messages', ctrl.messageInfoCtrl.getAll);
-router.post('/messages', ctrl.messageInfoCtrl.create);
-router.put('/messages/:id', ctrl.messageInfoCtrl.update);
-router.delete('/messages/:id', ctrl.messageInfoCtrl.delete);
+router.post('/messages', requirePermission('MAINTENANCE', 'add'), ctrl.messageInfoCtrl.create);
+router.put('/messages/:id', requirePermission('MAINTENANCE', 'edit'), ctrl.messageInfoCtrl.update);
+router.delete('/messages/:id', requirePermission('MAINTENANCE', 'delete'), ctrl.messageInfoCtrl.delete);
 
 export default router;

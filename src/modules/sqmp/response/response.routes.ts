@@ -4,7 +4,7 @@ import { sqmpResponseController } from './response.controller.js';
 import { createModuleUpload, logUploads, handleUploadError } from '../../../middleware/upload.middleware.js';
 
 const router = Router();
-const upload = createModuleUpload('sqmp');
+const upload = createModuleUpload('sqmp', { attachmentType: 'sqmp-response' });
 
 // Target latest or specific response for an SQMP record
 router.post('/:id', upload.any(), logUploads, handleUploadError, sqmpResponseController.upsert);
@@ -13,6 +13,9 @@ router.post('/:id', upload.any(), logUploads, handleUploadError, sqmpResponseCon
 router.post('/:id/check', sqmpResponseController.check);
 router.post('/:id/approve', sqmpResponseController.approve);
 router.post('/:id/reject', sqmpResponseController.reject);
+
+// Document Downloader
+router.get('/download/:attachmentId', sqmpResponseController.downloadAttachment);
 
 export default router;
     

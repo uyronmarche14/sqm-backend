@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { sqprService } from './sqpr.service.js';
 import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema, SqprAttachmentParamSchema } from './sqpr.schema.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 
 export class SqprController {
   async getAll(_req: Request, res: Response, next: NextFunction) {
@@ -241,18 +242,10 @@ export class SqprController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = SqprAttachmentParamSchema.parse({ params: req.params }).params;
-      if (!attachmentId) throw new Error('Attachment ID is required');
-
-      const attachment = await sqprService.getAttachment(attachmentId);
+      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('sqpr-main', attachmentId as string);
       
-      const fs = await import('fs');
-      const path = await import('path');
-      const filePath = path.join(process.cwd(), 'uploads/sqpr', attachment.file_name);
-      
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'File not found on disk' });
-      }
-
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       return res.download(filePath);
     } catch (error) {
       console.error('[SQPR] DOWNLOAD error:', error);

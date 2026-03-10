@@ -1,22 +1,19 @@
 // @ts-nocheck
 /**
- * Universal File Upload Middleware Factory
- * =========================================
+ * Universal File Upload Middleware Factory (Enhanced)
+ * ==================================================
  * A dynamic, module-aware multer middleware for the SQM platform.
+ * Supports hierarchical folder organization via attachmentType.
  *
- * Why this exists:
- *   Each module (MNR, 5M1E, SQPR, OGI, SQMP, QMQA, NPI) may need to receive
- *   file attachments via multipart/form-data.  This factory produces configured
- *   multer instances that:
- *     1. Route files into per-module subdirectories  (uploads/<module>/)
- *     2. Generate collision-free filenames            (timestamp-uuid.ext)
- *     3. Enforce size and MIME-type constraints
- *     4. Log upload telemetry in DEV mode
- *     5. Return Express-friendly error responses
+ * Features:
+ *   1. Hierarchical or flat storage routing
+ *   2. Collision-free filenames (timestamp-uuid.ext)
+ *   3. Enforces size and MIME-type constraints
+ *   4. Detailed development logging
+ *   5. Backward compatible with old flat folder calls
  *
- * Usage in a route file:
- *   import { createModuleUpload } from '../middleware/upload.middleware.js';
- *   const upload = createModuleUpload('mnr');
+ * Usage:
+ *   const upload = createModuleUpload('mnr', { attachmentType: 'mnr-main' });
  *   router.post('/', upload.any(), controller.createRecord);
  */
 
@@ -45,24 +42,17 @@ const MAX_FILES_PER_REQUEST = 10;
 
 /** Allowed MIME types — covers standard business documents */
 const ALLOWED_MIME_TYPES = new Set([
-  // Documents
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  // Spreadsheets
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  // Images
   'image/jpeg',
   'image/png',
   'image/gif',
   'image/webp',
-  // Presentations
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // Archives (optional — uncomment if needed)
-  // 'application/zip',
-  // 'application/x-rar-compressed',
 ]);
 
 /** Allowed file extensions (must match MIME types above) */
@@ -73,6 +63,35 @@ const ALLOWED_EXTENSIONS = new Set([
   '.ppt', '.pptx',
 ]);
 
+/** 
+ * NEW: Attachment Type to Subfolder Mapping
+ * This allows logical grouping within module directories
+ */
+const ATTACHMENT_TYPE_FOLDERS: Record<string, string> = {
+  // QMQA Module
+  'qmqa-plan': 'schedules',
+  'qmqa-record': 'records',
+  'qmqa-response-initial': 'response-initial',
+  'qmqa-response-final': 'response-final',
+  'qmqa-response-verification': 'response-verification',
+  
+  // SQMP Module
+  'sqmp-document': 'documents',
+  'sqmp-appendix': 'appendix',
+  'sqmp-response-document': 'response-documents',
+  'sqmp-response-appendix': 'response-appendix',
+  'sqmp-response-closure': 'response-closure',
+  
+  // MNR Module
+  'mnr-main': 'main',
+  'mnr-response': 'response',
+  
+  // Simple modules
+  'npi': 'attachments',
+  'sqpr': 'attachments',
+  'ogi': 'attachments',
+};
+
 // ---------------------------------------------------------------------------
 // Storage Factory
 // ---------------------------------------------------------------------------
@@ -80,14 +99,23 @@ const ALLOWED_EXTENSIONS = new Set([
 /**
  * Creates a multer diskStorage engine scoped to a module directory.
  * @param {string} moduleName - e.g. 'mnr', 'sqpr', '5m1e'
+ * @param {string} [attachmentType] - Optional subfolder trigger
  */
-function createStorage(moduleName) {
-  const moduleDir = path.join(ROOT_UPLOAD_DIR, moduleName);
+function createStorage(moduleName, attachmentType) {
+  let moduleDir = path.join(ROOT_UPLOAD_DIR, moduleName);
+
+  // If attachmentType is provided and has a mapping, append subfolder
+  if (attachmentType && ATTACHMENT_TYPE_FOLDERS[attachmentType]) {
+    moduleDir = path.join(moduleDir, ATTACHMENT_TYPE_FOLDERS[attachmentType]);
+    console.log(`📁 [Upload] Using hierarchical structure: uploads/${moduleName}/${ATTACHMENT_TYPE_FOLDERS[attachmentType]}/`);
+  } else {
+    console.log(`📁 [Upload] Using flat structure: uploads/${moduleName}/`);
+  }
 
   // Ensure the directory tree exists at startup, not per-request
   if (!fs.existsSync(moduleDir)) {
     fs.mkdirSync(moduleDir, { recursive: true });
-    console.log(`📁 [Upload] Created directory: uploads/${moduleName}/`);
+    console.log(`📁 [Upload] Created directory: ${moduleDir.replace(ROOT_UPLOAD_DIR, 'uploads')}/`);
   }
 
   return multer.diskStorage({
@@ -104,10 +132,6 @@ function createStorage(moduleName) {
 // File Filter
 // ---------------------------------------------------------------------------
 
-/**
- * Validates incoming files against whitelisted MIME types and extensions.
- * Rejects with a descriptive MulterError on failure.
- */
 function fileFilter(_req, file, cb) {
   const ext  = path.extname(file.originalname).toLowerCase();
   const mime = file.mimetype;
@@ -116,7 +140,6 @@ function fileFilter(_req, file, cb) {
     return cb(null, true);
   }
 
-  // Reject with a clear message
   const error = new multer.MulterError('LIMIT_UNEXPECTED_FILE');
   error.message = `File type not allowed: "${file.originalname}" (${mime}). ` +
                   `Allowed: ${[...ALLOWED_EXTENSIONS].join(', ')}`;
@@ -132,26 +155,20 @@ function fileFilter(_req, file, cb) {
  *
  * @param {string} moduleName  Identifier used for the upload subdirectory.
  * @param {object} [options]   Optional overrides.
+ * @param {string} [options.attachmentType]  Attachment type for subfolder routing.
  * @param {number} [options.maxFileSize]  Override max size in bytes.
  * @param {number} [options.maxFiles]     Override max files per request.
  * @returns {multer.Multer}
- *
- * @example
- *   const upload = createModuleUpload('mnr');
- *   router.post('/', upload.any(), controller.create);
- *
- * @example
- *   const upload = createModuleUpload('qmqa', { maxFileSize: 20 * 1024 * 1024 });
- *   router.post('/attachments', upload.single('file'), controller.attach);
  */
 export function createModuleUpload(moduleName, options = {}) {
   const {
+    attachmentType,
     maxFileSize = MAX_FILE_SIZE,
     maxFiles    = MAX_FILES_PER_REQUEST,
   } = options;
 
   return multer({
-    storage:    createStorage(moduleName),
+    storage:    createStorage(moduleName, attachmentType),
     fileFilter,
     limits: {
       fileSize: maxFileSize,
@@ -164,21 +181,6 @@ export function createModuleUpload(moduleName, options = {}) {
 // Error Handler Middleware
 // ---------------------------------------------------------------------------
 
-/**
- * Express error-handling middleware that catches Multer errors and returns
- * structured JSON responses instead of crashing the request pipeline.
- *
- * Usage:
- *   import { handleUploadError } from '../middleware/upload.middleware.js';
- *   app.use(handleUploadError);  // Place AFTER routes
- *
- * Or per-route:
- *   router.post('/',
- *     upload.any(),
- *     handleUploadError,
- *     controller.createRecord
- *   );
- */
 export function handleUploadError(err, req, res, next) {
   if (err instanceof multer.MulterError) {
     const statusMap = {
@@ -202,7 +204,6 @@ export function handleUploadError(err, req, res, next) {
     });
   }
 
-  // Non-multer error — pass downstream
   return next(err);
 }
 
@@ -210,13 +211,6 @@ export function handleUploadError(err, req, res, next) {
 // Request Logger
 // ---------------------------------------------------------------------------
 
-/**
- * Middleware that logs uploaded file details for every request.
- * Provides clear console output showing what files were received.
- *
- * Usage:
- *   router.post('/', upload.any(), logUploads, controller.create);
- */
 export function logUploads(req, _res, next) {
   const files = req.files || (req.file ? [req.file] : []);
   const route = `${req.method} ${req.originalUrl || req.url}`;
@@ -239,36 +233,42 @@ export function logUploads(req, _res, next) {
 }
 
 // ---------------------------------------------------------------------------
-// Utility: Delete uploaded file (for rollback on service error)
+// Utility Patterns
 // ---------------------------------------------------------------------------
 
 /**
- * Safely deletes an uploaded file by its full path or module-relative filename.
- *
- * @param {string} moduleName  Module identifier for path resolution.
- * @param {string} filename    Filename within the module upload dir.
- * @returns {boolean}          True if deleted, false if not found.
+ * Returns the absolute path for a file in a module's upload directory.
+ * Includes subfolder if attachmentType is provided.
  */
-export function deleteUploadedFile(moduleName, filename) {
-  const filePath = path.join(ROOT_UPLOAD_DIR, moduleName, filename);
+export function getUploadPath(moduleName, filename, attachmentType) {
+  if (attachmentType && ATTACHMENT_TYPE_FOLDERS[attachmentType]) {
+    return path.join(ROOT_UPLOAD_DIR, moduleName, ATTACHMENT_TYPE_FOLDERS[attachmentType], filename);
+  }
+  return path.join(ROOT_UPLOAD_DIR, moduleName, filename);
+}
 
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-    console.log(`🗑️  [Upload] Deleted: ${moduleName}/${filename}`);
+/**
+ * Safely deletes an uploaded file. Checks both hierarchical and flat paths.
+ */
+export function deleteUploadedFile(moduleName, filename, attachmentType) {
+  // Try new structure first if attachment type specified
+  if (attachmentType) {
+    const newPath = getUploadPath(moduleName, filename, attachmentType);
+    if (fs.existsSync(newPath)) {
+      fs.unlinkSync(newPath);
+      console.log(`🗑️  [Upload] Deleted: ${newPath.replace(ROOT_UPLOAD_DIR, 'uploads')}`);
+      return true;
+    }
+  }
+
+  // Fallback to flat structure
+  const oldPath = path.join(ROOT_UPLOAD_DIR, moduleName, filename);
+  if (fs.existsSync(oldPath)) {
+    fs.unlinkSync(oldPath);
+    console.log(`🗑️  [Upload] Deleted (fallback): ${oldPath.replace(ROOT_UPLOAD_DIR, 'uploads')}`);
     return true;
   }
 
   console.warn(`⚠️  [Upload] Not found for deletion: ${moduleName}/${filename}`);
   return false;
-}
-
-/**
- * Returns the absolute path for a file in a module's upload directory.
- *
- * @param {string} moduleName
- * @param {string} filename
- * @returns {string}
- */
-export function getUploadPath(moduleName, filename) {
-  return path.join(ROOT_UPLOAD_DIR, moduleName, filename);
 }

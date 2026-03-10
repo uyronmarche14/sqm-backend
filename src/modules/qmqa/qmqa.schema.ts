@@ -177,6 +177,13 @@ export const QmqaIdParamSchema = z.object({
   })
 });
 
+export const QmqaAttachmentParamSchema = z.object({
+  params: z.object({
+    moduleType: z.string().min(1, 'Module type is required'),
+    attachmentId: z.string().uuid('Invalid Attachment ID format')
+  })
+});
+
 export type QMQAScheduleCreationInput = z.infer<typeof QmqaScheduleCreateSchema>['body'];
 export type QMQAScheduleUpdateInput = z.infer<typeof QmqaScheduleUpdateSchema>['body'];
 export type QMQARecordCreationInput = z.infer<typeof QmqaRecordCreateSchema>['body'];

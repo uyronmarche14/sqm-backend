@@ -241,9 +241,11 @@ export const UpdateFiveM1ESchema = z.object({
   body: CreateFiveM1ESchema.shape.body.partial(),
 });
 
-// ============================================================================
-// Exported Types
-// ============================================================================
+export const FiveM1EAttachmentParamSchema = z.object({
+  params: z.object({
+    attachmentId: z.string().min(1, 'Attachment ID is required')
+  })
+});
 
 export type CreateFiveM1EInput = z.infer<typeof CreateFiveM1ESchema>['body'];
 export type UpdateFiveM1EInput = z.infer<typeof UpdateFiveM1ESchema>['body'];
