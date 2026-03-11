@@ -8,6 +8,7 @@ import { BadRequestError, ForbiddenError } from '../../../shared/errors/AppError
 
 const __filename = fileURLToPath(import.meta.url);
 import { attachmentService } from '../../../shared/services/attachment.service.js';
+import { sqmpValidationService } from '../sqmp.validation.service.js';
 
 export class MainSqmpController {
   async getAll(req: Request, res: Response, next: NextFunction) {
@@ -108,9 +109,9 @@ export class MainSqmpController {
       if (statusStr !== 'SUBMITTED') {
         throw new BadRequestError('Invalid Transition: Plan is not submitted');
       }
-      if (record?.checker_id && record.checker_id !== userId) {
-        throw new ForbiddenError('Only the assigned checker can verify this plan');
-      }
+      
+      // Strict Validation (prevents null-bypass)
+      await sqmpValidationService.validateCycle1Check(record, userId, roleId);
 
       const updatePayload = { 
         request_status: 'CHECKED', 
@@ -149,9 +150,9 @@ export class MainSqmpController {
       if (statusStr !== 'AWAITING_APPROVAL' && statusStr !== 'CHECKED' && statusStr !== 'SUBMITTED') {
         throw new BadRequestError('Invalid Transition: Plan is not awaiting approval');
       }
-      if (record?.approver_id && record.approver_id !== userId) {
-         throw new ForbiddenError('Only the assigned approver can approve this plan');
-      }
+
+      // Strict Validation (prevents null-bypass)
+      await sqmpValidationService.validateCycle1Approve(record, userId, roleId);
 
       const updatePayload = { 
         request_status: 'APPROVED', 
@@ -190,11 +191,9 @@ export class MainSqmpController {
       if (statusStr !== 'SUBMITTED' && statusStr !== 'CHECKED' && statusStr !== 'AWAITING_APPROVAL') {
         throw new BadRequestError('Invalid Transition: Plan cannot be rejected at this stage');
       }
-      if (record?.checker_id === userId || record?.approver_id === userId) {
-         // authorized
-      } else if (record?.checker_id || record?.approver_id) {
-         throw new ForbiddenError('Only assigned checkers or approvers can reject this plan');
-      }
+      
+      // Strict Validation (prevents null-bypass)
+      await sqmpValidationService.validateCycle1Reject(record, userId, roleId);
 
       const updatePayload = { 
         request_status: 'REJECTED', 
