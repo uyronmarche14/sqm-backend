@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { mnrRepository } from './mnr.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusToDB, mapStatusFromDB } from '../../shared/utils/status-mapper.js';
+import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 export class MnrService {
     /**
      * Helper: Generate Control No
@@ -23,8 +24,25 @@ export class MnrService {
         const d = new Date(dateStr);
         return isNaN(d.getTime()) ? null : d;
     }
+    toNumber(value) {
+        if (value === null || value === undefined || value === '')
+            return null;
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+    }
+    getAutoCloseWhen8DNotRequired() {
+        return String(process.env.MNR_AUTO_CLOSE_WHEN_8D_NOT_REQUIRED || 'false').toLowerCase() === 'true';
+    }
     async getAllRecords(statusFilter) {
-        const dbFilter = statusFilter ? mapStatusToDB(statusFilter) : undefined;
+        let dbFilter;
+        if (statusFilter) {
+            if (statusFilter.includes(',')) {
+                dbFilter = statusFilter.split(',').map(s => mapStatusToDB(s.trim()));
+            }
+            else {
+                dbFilter = mapStatusToDB(statusFilter.trim());
+            }
+        }
         const records = await mnrRepository.findAllDetailed(dbFilter);
         // Map DB flat rows back to expected DTO shape
         return records.map(r => ({
@@ -121,7 +139,7 @@ export class MnrService {
                 ...data.response,
                 attachments: data.responseAttachments
             } : null,
-            verification: data.verification,
+            verificationEntries: data.verificationEntries || [],
             disposition: {
                 rtv: { selected: main.rtv, qty: main.rtv_total_qty, remarks: main.rtv_remarks },
                 sort: { selected: main.sort, sorted: main.sort_sorted, rejected: main.sort_rejected, rate: main.sort_reject_rate, rework: main.sort_rework, remarks: main.sort_remarks },
@@ -312,13 +330,61 @@ export class MnrService {
                     last_update: now, updateby: userId
                 }).execute();
             }
-            // 3. Insert Empty Response (if needed to exist)
+            // 3. Insert Response row (empty by default, hydrated when payload contains response data)
+            const responsePayload = payload.response8D || {};
             await trx.insertInto('MNR_RESPONSE').values({
                 mnr_response_id: uuidv4(),
                 mnr_id: mnrId,
+                d1: responsePayload.d1_teamApproach || responsePayload.teamApproach || null,
+                d2: responsePayload.d2_problemDescription || responsePayload.problemDescription || null,
+                d3: responsePayload.d3_containmentPlan || responsePayload.containmentPlan || null,
+                d4: responsePayload.d4_rootCause || responsePayload.rootCause || null,
+                d5: responsePayload.d5_correctiveAction || responsePayload.correctiveAction || null,
+                d6: responsePayload.d6_verificationEffectiveness || responsePayload.verificationEffectiveness || null,
+                d7: responsePayload.d7_preventRecurrence || responsePayload.preventRecurrence || null,
+                d8: responsePayload.d8_completionApproval || responsePayload.ultimateVerification || null,
+                invoice_no: responsePayload.invoiceDrNo || responsePayload.invoiceNo || null,
+                lot_size: this.toNumber(responsePayload.lotSize),
+                lot_no: responsePayload.lotNo || null,
+                eta: responsePayload.eta || null,
+                marking: responsePayload.ifSortedMarkingIdentification || responsePayload.marking || null,
+                rtv_received: this.toNumber(responsePayload.actualRtvReceived ?? responsePayload.rtvReceived),
+                replacement_date: this.formatDate(responsePayload.targetReplacementDate || responsePayload.replacementDate),
+                replacement_qty: this.toNumber(responsePayload.replacementQty),
+                ncv_invoice_no: responsePayload.ncvInvoiceNo || null,
+                label: responsePayload.boxLabelIdentification || responsePayload.label || null,
+                remarks: responsePayload.correctedPartsNotice || responsePayload.remarks || null,
+                attention_date: this.formatDate(responsePayload.attentionDate),
+                accept_date: this.formatDate(responsePayload.acceptDate),
+                checker_id: responsePayload.cycle2CheckerId || responsePayload.checker || null,
+                checker_remarks: responsePayload.cycle2CheckerRemarks || responsePayload.checkerRemarks || null,
+                checker_date: this.formatDate(responsePayload.cycle2CheckerDate || responsePayload.checkerDate),
+                approver_id: responsePayload.cycle2ApproverId || responsePayload.approver || null,
+                approver_remarks: responsePayload.cycle2ApproverRemarks || responsePayload.approverRemarks || null,
+                approver_date: this.formatDate(responsePayload.cycle2ApproverDate || responsePayload.approverDate),
+                issuer_remarks: responsePayload.cycle2IssuerRemarks || responsePayload.issuerRemarks || null,
+                issuer_date: this.formatDate(responsePayload.cycle2IssuerDate || responsePayload.issuerDate),
                 last_update: now,
                 updateby: userId
             }).execute();
+            // 3b. Verification history rows (multi-row)
+            const verificationEntries = Array.isArray(responsePayload.verificationEntries)
+                ? responsePayload.verificationEntries
+                : [];
+            for (const entry of verificationEntries) {
+                if (!entry?.receivedDate || !entry?.invoiceNo || !entry?.judgment)
+                    continue;
+                await trx.insertInto('MNR_VERIFICATION').values({
+                    mnr_verification_id: uuidv4(),
+                    mnr_id: mnrId,
+                    received_date: this.formatDate(entry.receivedDate) || now,
+                    invoice_no: String(entry.invoiceNo),
+                    judgment: String(entry.judgment),
+                    remarks: entry.remarks ? String(entry.remarks) : null,
+                    last_update: now,
+                    updateby: userId,
+                }).execute();
+            }
             // 4. Copied Users CC Data (accept both 'copiedUsers' and 'ccList')
             const ccUsers = [];
             if (payload.copiedUsers && Array.isArray(payload.copiedUsers)) {
@@ -354,12 +420,17 @@ export class MnrService {
                     // Match with Multer files if it's a new upload
                     const uploadedFile = files.find(f => f.originalname === originalName);
                     const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
+                    const originalLabel = uploadedFile?.originalname || originalName;
+                    const remarkBase = (att.remarks || '').trim();
+                    const withOriginalMarker = remarkBase.includes('(Original:')
+                        ? remarkBase
+                        : `${remarkBase}${remarkBase ? ' ' : ''}(Original: ${originalLabel})`;
                     await trx.insertInto('MNR_ATTACHMENT').values({
                         mnr_attachment_id: att.id || uuidv4(),
                         mnr_id: mnrId,
                         file_name: diskFileName,
                         file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
-                        remarks: att.remarks || null,
+                        remarks: withOriginalMarker || null,
                         last_update: now,
                         updateby: userId
                     }).execute();
@@ -383,6 +454,7 @@ export class MnrService {
                 .executeTakeFirst();
             if (!currentRecord)
                 throw new NotFoundError('MNR Record not found');
+            const realId = currentRecord.mnr_id;
             const currentStatus = mapStatusFromDB(currentRecord.request_status);
             console.log(`[MNR Workflow] Current status: ${currentStatus}, Requested status: ${updates.status}`);
             const dbUpdates = {
@@ -413,20 +485,6 @@ export class MnrService {
                     else if (currentStatus === 'DRAFT') {
                         targetStatus = 'SUBMITTED';
                         console.log(`[MNR Workflow] Transition: DRAFT → SUBMITTED (Initial submission)`);
-                    }
-                }
-                // Handle ISSUED status - check if 8D is required to bypass to IR
-                if (upperTarget === 'ISSUED') {
-                    let is8DRequired = false;
-                    if (updates.reportIssuance8D !== undefined) {
-                        is8DRequired = !!updates.reportIssuance8D;
-                    }
-                    else {
-                        is8DRequired = currentRecord?.report_issuance_8d === 1 || currentRecord?.report_issuance_8d === true;
-                    }
-                    if (is8DRequired) {
-                        targetStatus = 'IR';
-                        console.log(`[MNR Workflow] Record ${id} requires 8D, bypassing ISSUED directly to IR`);
                     }
                 }
                 // Handle RESPONSE_RECEIVED → automatically move to RESPONSE_AWAIT_APPROVAL
@@ -574,23 +632,114 @@ export class MnrService {
                         dbUpdates.other_remarks = u.otherRemarks;
                 }
             }
-            // 4. Attachments (Update)
+            // 4. Response 8D + Verification (Update/Upsert)
+            const responsePayload = updates.response8D;
+            if (responsePayload && typeof responsePayload === 'object') {
+                const existingResponse = await trx.selectFrom('MNR_RESPONSE')
+                    .select('mnr_response_id')
+                    .where('mnr_id', '=', realId)
+                    .executeTakeFirst();
+                const responseUpdatePayload = {
+                    d1: responsePayload.d1_teamApproach || responsePayload.teamApproach || null,
+                    d2: responsePayload.d2_problemDescription || responsePayload.problemDescription || null,
+                    d3: responsePayload.d3_containmentPlan || responsePayload.containmentPlan || null,
+                    d4: responsePayload.d4_rootCause || responsePayload.rootCause || null,
+                    d5: responsePayload.d5_correctiveAction || responsePayload.correctiveAction || null,
+                    d6: responsePayload.d6_verificationEffectiveness || responsePayload.verificationEffectiveness || null,
+                    d7: responsePayload.d7_preventRecurrence || responsePayload.preventRecurrence || null,
+                    d8: responsePayload.d8_completionApproval || responsePayload.ultimateVerification || null,
+                    invoice_no: responsePayload.invoiceDrNo || responsePayload.invoiceNo || null,
+                    lot_size: this.toNumber(responsePayload.lotSize),
+                    lot_no: responsePayload.lotNo || null,
+                    eta: responsePayload.eta || null,
+                    marking: responsePayload.ifSortedMarkingIdentification || responsePayload.marking || null,
+                    rtv_received: this.toNumber(responsePayload.actualRtvReceived ?? responsePayload.rtvReceived),
+                    replacement_date: this.formatDate(responsePayload.targetReplacementDate || responsePayload.replacementDate),
+                    replacement_qty: this.toNumber(responsePayload.replacementQty),
+                    ncv_invoice_no: responsePayload.ncvInvoiceNo || null,
+                    label: responsePayload.boxLabelIdentification || responsePayload.label || null,
+                    remarks: responsePayload.correctedPartsNotice || responsePayload.remarks || null,
+                    attention_date: this.formatDate(responsePayload.attentionDate),
+                    accept_date: this.formatDate(responsePayload.acceptDate),
+                    checker_id: responsePayload.cycle2CheckerId || responsePayload.checker || null,
+                    checker_remarks: responsePayload.cycle2CheckerRemarks || responsePayload.checkerRemarks || null,
+                    checker_date: this.formatDate(responsePayload.cycle2CheckerDate || responsePayload.checkerDate),
+                    approver_id: responsePayload.cycle2ApproverId || responsePayload.approver || null,
+                    approver_remarks: responsePayload.cycle2ApproverRemarks || responsePayload.approverRemarks || null,
+                    approver_date: this.formatDate(responsePayload.cycle2ApproverDate || responsePayload.approverDate),
+                    issuer_remarks: responsePayload.cycle2IssuerRemarks || responsePayload.issuerRemarks || null,
+                    issuer_date: this.formatDate(responsePayload.cycle2IssuerDate || responsePayload.issuerDate),
+                    last_update: now,
+                    updateby: userId
+                };
+                if (existingResponse?.mnr_response_id) {
+                    await trx.updateTable('MNR_RESPONSE')
+                        .set(responseUpdatePayload)
+                        .where('mnr_id', '=', realId)
+                        .execute();
+                }
+                else {
+                    await trx.insertInto('MNR_RESPONSE')
+                        .values({
+                        mnr_response_id: uuidv4(),
+                        mnr_id: realId,
+                        ...responseUpdatePayload
+                    })
+                        .execute();
+                }
+                const verificationEntries = Array.isArray(responsePayload.verificationEntries)
+                    ? responsePayload.verificationEntries
+                    : [];
+                if (Array.isArray(responsePayload.verificationEntries)) {
+                    await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', realId).execute();
+                    for (const entry of verificationEntries) {
+                        if (!entry?.receivedDate || !entry?.invoiceNo || !entry?.judgment)
+                            continue;
+                        await trx.insertInto('MNR_VERIFICATION').values({
+                            mnr_verification_id: uuidv4(),
+                            mnr_id: realId,
+                            received_date: this.formatDate(entry.receivedDate) || now,
+                            invoice_no: String(entry.invoiceNo),
+                            judgment: String(entry.judgment),
+                            remarks: entry.remarks ? String(entry.remarks) : null,
+                            last_update: now,
+                            updateby: userId
+                        }).execute();
+                    }
+                }
+            }
+            // 5. Attachments (Update)
             const updateAtts = updates.attachments;
             if (updateAtts !== undefined && Array.isArray(updateAtts)) {
                 console.log(`[MNR Update] Syncing ${updateAtts.length} attachments for record ${id}`);
-                await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', id).execute();
+                const existingAttachments = await trx.selectFrom('MNR_ATTACHMENT')
+                    .select(['mnr_attachment_id', 'file_name', 'remarks'])
+                    .where('mnr_id', '=', realId)
+                    .execute();
+                const existingById = new Map(existingAttachments.map((a) => [a.mnr_attachment_id, a]));
+                await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', realId).execute();
                 for (const att of updateAtts) {
                     const originalName = att.file_name || att.name;
-                    if (!originalName)
+                    const existing = att.id ? existingById.get(att.id) : undefined;
+                    if (!originalName && !existing?.file_name)
                         continue;
-                    const uploadedFile = files.find(f => f.originalname === originalName);
-                    const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
+                    const uploadedFile = originalName
+                        ? files.find(f => f.originalname === originalName)
+                        : undefined;
+                    const diskFileName = uploadedFile
+                        ? uploadedFile.filename
+                        : (existing?.file_name || originalName);
+                    const originalLabel = uploadedFile?.originalname || originalName || existing?.file_name || '';
+                    const remarkBase = (att.remarks || existing?.remarks || '').replace(/\s*\(Original:\s.*?\)\s*$/, '').trim();
+                    const withOriginalMarker = originalLabel
+                        ? `${remarkBase}${remarkBase ? ' ' : ''}(Original: ${originalLabel})`
+                        : remarkBase;
                     await trx.insertInto('MNR_ATTACHMENT').values({
                         mnr_attachment_id: att.id || uuidv4(),
-                        mnr_id: id,
+                        mnr_id: realId,
                         file_name: diskFileName,
                         file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
-                        remarks: att.remarks || null,
+                        remarks: withOriginalMarker || null,
                         last_update: now,
                         updateby: userId
                     }).execute();
@@ -610,6 +759,39 @@ export class MnrService {
             // ... (Omitted full syncing logic for time and clarity, but structure is here)
             return { success: true, message: 'Record updated successfully' };
         });
+    }
+    async issueRecord(id, userId, remarks) {
+        const autoCloseWhen8DNotRequired = this.getAutoCloseWhen8DNotRequired();
+        const current = await mnrRepository.executeTransaction(async (trx) => {
+            return await trx.selectFrom('MNR_LOTS')
+                .select(['mnr_id', 'report_issuance_8d'])
+                .where((eb) => eb.or([
+                eb('mnr_id', '=', id),
+                eb('control_no', '=', id)
+            ]))
+                .executeTakeFirst();
+        });
+        if (!current)
+            throw new NotFoundError('MNR Record not found');
+        const is8DRequired = current.report_issuance_8d === 1 || current.report_issuance_8d === true;
+        await this.updateRecord(id, { updates: { status: WorkflowStatusEnum.ISSUED, remarks } }, userId);
+        let autoClosed = false;
+        if (!is8DRequired && autoCloseWhen8DNotRequired) {
+            await this.updateRecord(id, { updates: { status: WorkflowStatusEnum.CLOSED, remarks: remarks || 'Auto-closed: 8D response not required' } }, userId);
+            autoClosed = true;
+        }
+        return {
+            success: true,
+            message: autoClosed
+                ? 'Record issued and auto-closed (8D not required)'
+                : 'Record issued successfully',
+            status: autoClosed ? WorkflowStatusEnum.CLOSED : WorkflowStatusEnum.ISSUED,
+            is8DRequired,
+            autoClosed,
+            workflowFlags: {
+                autoCloseWhen8DNotRequired,
+            },
+        };
     }
     async deleteRecord(id) {
         return await mnrRepository.executeTransaction(async (trx) => {

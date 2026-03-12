@@ -1,9 +1,7 @@
 import { mnrService } from './mnr.service.js';
 import { MnrCreateSchema, MnrUpdateSchema, MnrIdParamSchema, MnrAttachmentParamSchema } from './mnr.schema.js';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
-import { db } from '../../shared/infrastructure/db.js';
-import path from 'path';
-import fs from 'fs';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 export class MnrController {
     async getAll(req, res, next) {
         try {
@@ -90,7 +88,7 @@ export class MnrController {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
             const { remarks } = req.body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { status: 'CHECKED', remarks }, userId);
+            const result = await mnrService.updateRecord(id, { updates: { status: 'CHECKED', remarks } }, userId);
             res.json(result);
         }
         catch (error) {
@@ -103,7 +101,7 @@ export class MnrController {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
             const { remarks } = req.body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { status: WorkflowStatusEnum.APPROVED, remarks }, userId);
+            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.APPROVED, remarks } }, userId);
             res.json(result);
         }
         catch (error) {
@@ -116,7 +114,7 @@ export class MnrController {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
             const { remarks } = req.body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { status: WorkflowStatusEnum.REJECTED, remarks }, userId);
+            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.REJECTED, remarks } }, userId);
             res.json(result);
         }
         catch (error) {
@@ -129,7 +127,7 @@ export class MnrController {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
             const { remarks } = req.body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { status: WorkflowStatusEnum.ISSUED, remarks }, userId);
+            const result = await mnrService.issueRecord(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -142,7 +140,7 @@ export class MnrController {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
             const { remarks } = req.body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { status: WorkflowStatusEnum.CLOSED, remarks }, userId);
+            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.CLOSED, remarks } }, userId);
             res.json(result);
         }
         catch (error) {
@@ -166,16 +164,9 @@ export class MnrController {
     async downloadAttachment(req, res, next) {
         try {
             const { attachmentId } = MnrAttachmentParamSchema.parse({ params: req.params }).params;
-            const match = await db.selectFrom('MNR_ATTACHMENT')
-                .select('file_name')
-                .where('mnr_attachment_id', '=', attachmentId)
-                .executeTakeFirst();
-            if (!match)
-                return res.status(404).json({ error: 'Attachment not found' });
-            const filePath = path.join(process.cwd(), 'uploads/mnr', match.file_name);
-            if (!fs.existsSync(filePath)) {
-                return res.status(404).json({ error: 'File not found on disk' });
-            }
+            const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('mnr-main', attachmentId);
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             return res.download(filePath);
         }
         catch (error) {

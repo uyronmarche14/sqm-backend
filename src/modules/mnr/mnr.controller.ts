@@ -134,7 +134,7 @@ export class MnrController {
       const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
       const { remarks } = req.body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
-      const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.ISSUED, remarks } }, userId);
+      const result = await mnrService.issueRecord(id, userId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] ISSUE error:', error);

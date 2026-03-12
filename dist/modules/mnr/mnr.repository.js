@@ -52,19 +52,37 @@ export class MnrRepository extends BaseRepository {
             'app.full_name as approver_name'
         ]);
         if (statusFilter) {
-            // Include CHECKED (CK) records alongside SUBMITTED (SU) for Awaiting Approval
-            // so checked records remain visible on the page until approved
-            if (statusFilter === 'SU') {
-                query = query.where('l.request_status', 'in', ['SU', 'CK']);
-            }
-            else if (statusFilter === 'RA') {
-                query = query.where('l.request_status', 'in', ['RA', 'RC']);
-            }
-            else if (statusFilter === 'RP') {
-                query = query.where('l.request_status', 'in', ['IS', 'CL']);
+            if (Array.isArray(statusFilter)) {
+                // Expand the filter to include supplementary statuses
+                const expandedFilter = new Set();
+                for (const status of statusFilter) {
+                    expandedFilter.add(status);
+                    if (status === 'SU')
+                        expandedFilter.add('CK');
+                    if (status === 'RA')
+                        expandedFilter.add('RC');
+                    if (status === 'RP') {
+                        expandedFilter.add('IS');
+                        expandedFilter.add('CL');
+                    }
+                }
+                query = query.where('l.request_status', 'in', Array.from(expandedFilter));
             }
             else {
-                query = query.where('l.request_status', '=', statusFilter);
+                // Include CHECKED (CK) records alongside SUBMITTED (SU) for Awaiting Approval
+                // so checked records remain visible on the page until approved
+                if (statusFilter === 'SU') {
+                    query = query.where('l.request_status', 'in', ['SU', 'CK']);
+                }
+                else if (statusFilter === 'RA') {
+                    query = query.where('l.request_status', 'in', ['RA', 'RC']);
+                }
+                else if (statusFilter === 'RP') {
+                    query = query.where('l.request_status', 'in', ['IS', 'CL']);
+                }
+                else {
+                    query = query.where('l.request_status', '=', statusFilter);
+                }
             }
         }
         return await query.orderBy('l.date_created', 'desc').execute();
@@ -117,11 +135,12 @@ export class MnrRepository extends BaseRepository {
             .select(['u.full_name as responded_by_name'])
             .where('r.mnr_id', '=', record.mnr_id)
             .executeTakeFirst();
-        // Fetch Verification
-        const verification = await db.selectFrom('MNR_VERIFICATION as v')
+        // Fetch Verification (multi-row history)
+        const verificationEntries = await db.selectFrom('MNR_VERIFICATION as v')
             .selectAll('v')
             .where('v.mnr_id', '=', record.mnr_id)
-            .executeTakeFirst();
+            .orderBy('v.received_date', 'asc')
+            .execute();
         // Fetch CC List
         const ccList = await db.selectFrom('MNR_CC as c')
             .leftJoin('USERS as u', 'c.user_id', 'u.user_id')
@@ -142,7 +161,7 @@ export class MnrRepository extends BaseRepository {
             record,
             details,
             response,
-            verification,
+            verificationEntries,
             ccList,
             attachments,
             responseAttachments

@@ -156,3 +156,8 @@ export const NpiIdParamSchema = z.object({
         attachmentId: z.string().uuid('Invalid Attachment ID format').optional()
     })
 });
+export const NpiAttachmentParamSchema = z.object({
+    params: z.object({
+        attachmentId: z.string().uuid('Invalid Attachment ID format')
+    })
+});

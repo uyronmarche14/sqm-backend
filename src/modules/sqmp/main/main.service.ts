@@ -3,8 +3,9 @@ import { sqmpRepository } from '../sqmp.repository.js';
 import { userRepository } from '../../users/user.repository.js';
 import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
 import { NotFoundError, ForbiddenError } from '../../../shared/errors/AppError.js';
-import { mapStatusFromDB, mapStatusToDB } from '../../../shared/utils/status-mapper.js';
 import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
+import { SQMP_STAGE_CODE } from '../workflow/workflow.constants.js';
+import { buildSqmpWorkflowMetadata } from '../workflow/workflow.utils.js';
 
 export class MainSqmpService {
   private async getRoleName(roleId?: string): Promise<string> {
@@ -32,10 +33,7 @@ export class MainSqmpService {
     const isSameSite = record.site_id === userSiteId;
 
     if (isSupplier) {
-      if (record.supplier_id !== userId) {
-        throw new ForbiddenError('Access Denied: Record does not belong to your company.');
-      }
-      return;
+      throw new ForbiddenError('Suppliers are not permitted to edit SQM Plan issuance content.');
     }
 
     if (!isOwner && !isChecker && !isApprover && !isIssuer && !isSameSite) {
@@ -71,27 +69,80 @@ export class MainSqmpService {
       return val;
   }
 
+  private async resolveAttentionId(
+    trx: any,
+    attentionId?: string | null,
+  ): Promise<string> {
+    const normalizedAttentionId = attentionId?.trim() || '';
+    if (!normalizedAttentionId) return '';
+
+    const supplierUser = await trx.selectFrom('SUPPLIERSUSER')
+      .select('user_id')
+      .where('Id', '=', normalizedAttentionId)
+      .executeTakeFirst();
+
+    return supplierUser?.user_id || normalizedAttentionId;
+  }
+
   async getAllRecords(status?: string, userId?: string, roleId?: string) {
     const roleName = await this.getRoleName(roleId);
+    const userObj = userId ? await userRepository.findById(userId) : null;
+    const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
+      ? await sqmpRepository.findSupplierIdsByUserId(userId)
+      : [];
     const records = await sqmpRepository.findAllDetailed(status, userId, roleName);
-    return records.map((r: any) => ({
-      ...r,
-      status: mapStatusFromDB(r.request_status),
-      semester: this.fromDBSemester(r.semester),
-      created_at: r.registration_date,
-    }));
+    const latestResponses = records.length > 0
+      ? await sqmpRepository.findLatestResponsesBySqmpIds(records.map((record: any) => record.sqmp_id))
+      : [];
+    const latestResponseBySqmpId = new Map(
+      latestResponses.map((response: any) => [response.sqmp_id, response]),
+    );
+
+    return records.map((r: any) => {
+      const latestResponse = latestResponseBySqmpId.get(r.sqmp_id);
+      const metadata = buildSqmpWorkflowMetadata({
+        record: r,
+        latestResponse,
+        userId,
+        roleName,
+        userSiteId: userObj?.site_id || null,
+        supplierIds,
+      });
+
+      return {
+        ...r,
+        ...metadata,
+        status: metadata.status,
+        semester: this.fromDBSemester(r.semester),
+        created_at: r.registration_date,
+      };
+    });
   }
 
   async getRecordById(id: string, userId?: string, roleId?: string) {
     const roleName = await this.getRoleName(roleId);
+    const userObj = userId ? await userRepository.findById(userId) : null;
+    const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
+      ? await sqmpRepository.findSupplierIdsByUserId(userId)
+      : [];
     const data = await sqmpRepository.findByIdDetailed(id, userId, roleName);
     if (!data) throw new NotFoundError('SQMP Record not found');
 
     const { record, mainDocuments, appendixDocuments, ccList, responses, statusRemarks } = data;
+    const latestResponse = responses?.[responses.length - 1];
+    const metadata = buildSqmpWorkflowMetadata({
+      record,
+      latestResponse,
+      userId,
+      roleName,
+      userSiteId: userObj?.site_id || null,
+      supplierIds,
+    });
 
     return {
       ...record,
-      status: mapStatusFromDB(record.request_status),
+      ...metadata,
+      status: metadata.status,
       semester: this.fromDBSemester(record.semester),
       documents: mainDocuments || [],
       appendixes: appendixDocuments || [],
@@ -106,34 +157,36 @@ export class MainSqmpService {
     const now = new Date();
     const controlNo = await this.generateControlNo(payload.fiscal_year, payload.semester);
 
-    const dbPayload = {
-      sqmp_id: sqmpId,
-      control_no: controlNo,
-      registration_date: this.parseDate(payload.registration_date) || now,
-      site_id: payload.site_id,
-      supplier_id: payload.supplier_id || '',
-      attention_id: payload.attention_id || '',
-      fiscal_year: payload.fiscal_year || now.getFullYear(),
-      semester: this.toDBSemester(payload.semester),
-      issued_date: this.parseDate(payload.issued_date) || null,
-      due_date: this.parseDate(payload.due_date) || now,
-      model_id: payload.model_id || '',
-      revision: payload.revision || 0,
-      remarks: payload.remarks || null,
-      main_document_remarks: payload.main_document_remarks || null,
-      appendix_sheet_remarks: payload.appendix_sheet_remarks || null,
-      encoder_id: userId,
-      encoder_date: now,
-      issuer_id: userId,
-      issuer_remarks: null,
-      checker_id: payload.checker_id || null,
-      approver_id: payload.approver_id || null,
-      request_status: mapStatusToDB(payload.request_status || 'DRAFT'),
-      last_update: now,
-      updateby: userId
-    };
-
     return await sqmpRepository.executeTransaction(async (trx) => {
+      const resolvedAttentionId = await this.resolveAttentionId(trx, payload.attention_id);
+
+      const dbPayload = {
+        sqmp_id: sqmpId,
+        control_no: controlNo,
+        registration_date: this.parseDate(payload.registration_date) || now,
+        site_id: payload.site_id,
+        supplier_id: payload.supplier_id || '',
+        attention_id: resolvedAttentionId,
+        fiscal_year: payload.fiscal_year || now.getFullYear(),
+        semester: this.toDBSemester(payload.semester),
+        issued_date: this.parseDate(payload.issued_date) || null,
+        due_date: this.parseDate(payload.due_date) || now,
+        model_id: payload.model_id || '',
+        revision: payload.revision || 0,
+        remarks: payload.remarks || null,
+        main_document_remarks: payload.main_document_remarks || null,
+        appendix_sheet_remarks: payload.appendix_sheet_remarks || null,
+        encoder_id: userId,
+        encoder_date: now,
+        issuer_id: userId,
+        issuer_remarks: null,
+        checker_id: payload.checker_id || null,
+        approver_id: payload.approver_id || null,
+        request_status: SQMP_STAGE_CODE.DRAFT,
+        last_update: now,
+        updateby: userId
+      };
+
       await trx.insertInto('SQMP').values(dbPayload).execute();
 
       if (payload.main_documents?.length) {
@@ -205,7 +258,6 @@ export class MainSqmpService {
     if (payload.registration_date) dbUpdates.registration_date = this.parseDate(payload.registration_date);
     if (payload.site_id) dbUpdates.site_id = payload.site_id;
     if (payload.supplier_id !== undefined) dbUpdates.supplier_id = this.sanitizeUuid(payload.supplier_id);
-    if (payload.attention_id !== undefined) dbUpdates.attention_id = this.sanitizeUuid(payload.attention_id);
     if (payload.fiscal_year) dbUpdates.fiscal_year = payload.fiscal_year;
     if (payload.semester) dbUpdates.semester = this.toDBSemester(payload.semester);
     if (payload.issued_date !== undefined) dbUpdates.issued_date = this.parseDate(payload.issued_date);
@@ -217,9 +269,6 @@ export class MainSqmpService {
     if (payload.main_document_remarks !== undefined) dbUpdates.main_document_remarks = payload.main_document_remarks;
     if (payload.appendix_sheet_remarks !== undefined) dbUpdates.appendix_sheet_remarks = payload.appendix_sheet_remarks;
     
-    const statusVal = payload.status || payload.request_status;
-    if (statusVal) dbUpdates.request_status = mapStatusToDB(statusVal);
-
     if (payload.issuer_id !== undefined) dbUpdates.issuer_id = this.sanitizeUuid(payload.issuer_id);
     if (payload.issuer_remarks !== undefined) dbUpdates.issuer_remarks = payload.issuer_remarks;
     if (payload.issuer_date !== undefined) dbUpdates.issuer_date = this.parseDate(payload.issuer_date);
@@ -234,6 +283,10 @@ export class MainSqmpService {
 
     return await sqmpRepository.executeTransaction(async (trx) => {
       const recordId = record.sqmp_id;
+      if (payload.attention_id !== undefined) {
+        dbUpdates.attention_id = await this.resolveAttentionId(trx, payload.attention_id);
+      }
+
       if (Object.keys(dbUpdates).length > 2) {
         await trx.updateTable('SQMP').set(dbUpdates).where('sqmp_id', '=', recordId).execute();
       }
@@ -320,7 +373,7 @@ export class MainSqmpService {
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: mapStatusToDB('ISSUED'),
+          request_status: SQMP_STAGE_CODE.SUPPLIER,
           issuer_id: userId,
           issuer_remarks: remarks || null,
           last_update: now,
@@ -334,7 +387,7 @@ export class MainSqmpService {
             sqmp_status_remarks_id: uuidv4(),
             sqmp_id: existing.record.sqmp_id,
             remarks: remarks,
-            request_status: mapStatusToDB('ISSUED'),
+            request_status: SQMP_STAGE_CODE.SUPPLIER,
             remarks_by_id: userId,
             remarks_date: now
          }).execute();
@@ -355,7 +408,7 @@ export class MainSqmpService {
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: mapStatusToDB('RESPONSE_AWAITING'),
+          request_status: SQMP_STAGE_CODE.SUPPLIER,
           issuer_remarks: remarks || existing.record.issuer_remarks,
           last_update: now,
           updateby: userId
@@ -368,7 +421,7 @@ export class MainSqmpService {
             sqmp_status_remarks_id: uuidv4(),
             sqmp_id: existing.record.sqmp_id,
             remarks: remarks,
-            request_status: mapStatusToDB('RESPONSE_AWAITING'),
+            request_status: SQMP_STAGE_CODE.SUPPLIER,
             remarks_by_id: userId,
             remarks_date: now
          }).execute();
@@ -389,7 +442,7 @@ export class MainSqmpService {
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: mapStatusToDB('CANCELLED'),
+          request_status: SQMP_STAGE_CODE.CANCELLED,
           issuer_remarks: remarks || existing.record.issuer_remarks,
           last_update: now,
           updateby: userId
@@ -402,7 +455,7 @@ export class MainSqmpService {
           sqmp_status_remarks_id: uuidv4(),
           sqmp_id: existing.record.sqmp_id,
           remarks: remarks,
-          request_status: mapStatusToDB('CANCELLED'),
+          request_status: SQMP_STAGE_CODE.CANCELLED,
           remarks_by_id: userId,
           remarks_date: now
         }).execute();
@@ -423,13 +476,23 @@ export class MainSqmpService {
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP')
         .set({
-          request_status: 'CL',
-          status_remarks: remarks || null,
+          request_status: SQMP_STAGE_CODE.CLOSED,
           last_update: now,
           updateby: userId
         })
         .where('sqmp_id', '=', existing.record.sqmp_id)
         .execute();
+
+      if (remarks) {
+        await trx.insertInto('SQMP_STATUS_REMARKS').values({
+          sqmp_status_remarks_id: uuidv4(),
+          sqmp_id: existing.record.sqmp_id,
+          remarks,
+          request_status: SQMP_STAGE_CODE.CLOSED,
+          remarks_by_id: userId,
+          remarks_date: now,
+        }).execute();
+      }
 
       return { success: true, data: { id }, message: 'Record closed successfully' };
     });

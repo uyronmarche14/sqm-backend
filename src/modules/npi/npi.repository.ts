@@ -1,6 +1,7 @@
-// @ts-ignore
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
+import type { Transaction } from 'kysely';
+import type { Database } from '../../shared/infrastructure/db.types.js';
 
 export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
   constructor() {
@@ -83,7 +84,7 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
         'checker.inspector_name as checker_name',
         'approver.inspector_name as approver_name'
       ])
-      .where((eb: any) => eb.or([
+      .where((eb) => eb.or([
         eb('n.npi_lot_id', '=', idOrControlNo),
         eb('n.control_no', '=', idOrControlNo)
       ]))
@@ -145,9 +146,9 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
   }
 
   async executeTransaction<T>(
-    callback: (trx: typeof db) => Promise<T>
+    callback: (trx: Transaction<Database>) => Promise<T>
   ): Promise<T> {
-    return await db.transaction().execute(async (trx: any) => {
+    return await db.transaction().execute(async (trx: Transaction<Database>) => {
       return await callback(trx);
     });
   }

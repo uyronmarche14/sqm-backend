@@ -66,6 +66,19 @@ export class AuthController {
     }
   }
 
+  async me(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.userId) {
+        return res.status(401).json({ success: false, message: 'Unauthorized' });
+      }
+
+      const result = await authService.getCurrentUserContext(req.user.userId);
+      return res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /**
    * Handles logging out by clearing the HttpOnly cookie
    */

@@ -1,5 +1,6 @@
 import { fiveM1EService } from './fiveM1E.service.js';
 import { successResponse } from '../../shared/utils/api-response.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 export class FiveM1EController {
     /**
      * Submit a new 5M1E Application
@@ -145,6 +146,19 @@ export class FiveM1EController {
             res.status(200).json(successResponse(result.data, result.message));
         }
         catch (error) {
+            next(error);
+        }
+    }
+    async downloadAttachment(req, res, next) {
+        try {
+            const { attachmentId } = req.params;
+            const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('5m1e-main', attachmentId);
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+            return res.download(filePath);
+        }
+        catch (error) {
+            console.error('[5M1E] DOWNLOAD error:', error);
             next(error);
         }
     }

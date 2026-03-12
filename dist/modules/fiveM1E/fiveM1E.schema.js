@@ -214,3 +214,8 @@ export const UpdateFiveM1ESchema = z.object({
     }),
     body: CreateFiveM1ESchema.shape.body.partial(),
 });
+export const FiveM1EAttachmentParamSchema = z.object({
+    params: z.object({
+        attachmentId: z.string().min(1, 'Attachment ID is required')
+    })
+});

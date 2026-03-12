@@ -1,6 +1,7 @@
 import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
 import { successResponse } from '../../shared/utils/api-response.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 export class OgiController {
     async getAll(_req, res, next) {
         try {
@@ -65,19 +66,9 @@ export class OgiController {
     async downloadAttachment(req, res, next) {
         try {
             const { attachmentId } = OgiAttachmentParamSchema.parse({ params: req.params }).params;
-            if (!attachmentId)
-                throw new Error('Attachment ID is required');
-            // @ts-ignore
-            const { db } = await import('../../shared/infrastructure/db.js');
-            const match = await db.selectFrom('OGI_ATTACHMENT').select('file_name').where('ogi_attachment_id', '=', attachmentId).executeTakeFirst();
-            if (!match)
-                return res.status(404).json({ error: 'Attachment not found' });
-            const fs = await import('fs');
-            const path = await import('path');
-            const filePath = path.join(process.cwd(), 'uploads/ogi', match.file_name);
-            if (!fs.existsSync(filePath)) {
-                return res.status(404).json({ error: 'File not found on disk' });
-            }
+            const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('ogi-main', attachmentId);
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             return res.download(filePath);
         }
         catch (error) {

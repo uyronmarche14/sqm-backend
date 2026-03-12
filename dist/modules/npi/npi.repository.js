@@ -1,4 +1,3 @@
-// @ts-ignore
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 export class NpiRepository extends BaseRepository {

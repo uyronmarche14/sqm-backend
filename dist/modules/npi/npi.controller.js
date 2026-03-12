@@ -1,12 +1,8 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { npiService } from './npi.service.js';
-import { NpiCreateSchema, NpiUpdateSchema, NpiIdParamSchema, NpiActionSchema } from './npi.schema.js';
+import { NpiCreateSchema, NpiUpdateSchema, NpiIdParamSchema, NpiActionSchema, NpiAttachmentParamSchema } from './npi.schema.js';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const UPLOAD_DIR = path.join(__dirname, '../../../uploads/npi');
+import { attachmentService } from '../../shared/services/attachment.service.js';
 export class NpiController {
     async getAll(_req, res, next) {
         try {
@@ -86,20 +82,10 @@ export class NpiController {
     }
     async downloadAttachment(req, res, next) {
         try {
-            const { attachmentId } = NpiIdParamSchema.parse({ params: req.params }).params;
-            if (!attachmentId)
-                throw new Error('Attachment ID is required');
-            // Attempt to look for it from db pool
-            // @ts-ignore
-            const { db } = await import('../../shared/infrastructure/db.js');
-            const match = await db.selectFrom('NPI_ATTACHMENT').select('file_name').where('npi_attachment_id', '=', attachmentId).executeTakeFirst();
-            if (!match)
-                return res.status(404).json({ error: 'Attachment not found' });
-            const fs = await import('fs');
-            const filePath = path.join(UPLOAD_DIR, match.file_name);
-            if (!fs.existsSync(filePath)) {
-                return res.status(404).json({ error: 'File not found on disk' });
-            }
+            const { attachmentId } = NpiAttachmentParamSchema.parse({ params: req.params }).params;
+            const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('npi-main', attachmentId);
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             return res.download(filePath);
         }
         catch (error) {
@@ -145,7 +131,7 @@ export class NpiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const result = await npiService.updateRecord(id, {
                 request_status: 'APPROVED',
-                status: WorkflowStatusEnum.FAPPROVED,
+                status: WorkflowStatusEnum.APPROVED,
                 approverRemarks: req.body?.remarks || undefined
             }, userId, []);
             res.json(successResponse(result.data || result, result.message));
@@ -161,7 +147,7 @@ export class NpiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const result = await npiService.updateRecord(params.id, {
                 request_status: 'REJECTED',
-                status: WorkflowStatusEnum.RREJECTED,
+                status: WorkflowStatusEnum.REJECTED,
                 approverRemarks: body?.remarks
             }, userId, []);
             res.json(successResponse(result.data || result, result.message));

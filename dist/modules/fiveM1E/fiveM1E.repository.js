@@ -176,17 +176,17 @@ export class FiveM1ERepository extends BaseRepository {
             'evalPicUser.full_name as mpd_pic_name',
         ]);
         if (statusFilter && statusFilter !== 'all') {
-            const upper = statusFilter.toUpperCase();
+            const statuses = statusFilter.split(',').map(s => s.trim().toUpperCase());
             // Include CHECKED records alongside SUBMITTED/FAPPROVED for Awaiting Approval pages
             // so checked records remain visible until approved
-            if (upper === 'SUBMITTED') {
+            if (statuses.length === 1 && statuses[0] === 'SUBMITTED') {
                 query = query.where('approval.Status', 'in', ['SUBMITTED', 'CHECKED']);
             }
-            else if (upper === 'FAPPROVED') {
+            else if (statuses.length === 1 && statuses[0] === 'FAPPROVED') {
                 query = query.where('approval.Status', 'in', ['FAPPROVED', 'CHECKED']);
             }
             else {
-                query = query.where('approval.Status', '=', upper);
+                query = query.where('approval.Status', 'in', statuses);
             }
         }
         return await query.orderBy('app.CreateDate', 'desc').execute();

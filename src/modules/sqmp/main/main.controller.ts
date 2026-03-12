@@ -1,14 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { mainSqmpService } from './main.service.js';
 import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema } from './main.schema.js';
 import { successResponse, createResponse } from '../../../shared/utils/api-response.js';
-import { BadRequestError, ForbiddenError } from '../../../shared/errors/AppError.js';
-
-const __filename = fileURLToPath(import.meta.url);
 import { attachmentService } from '../../../shared/services/attachment.service.js';
-import { sqmpValidationService } from '../sqmp.validation.service.js';
+import { sqmpWorkflowService } from '../workflow/workflow.service.js';
 
 export class MainSqmpController {
   async getAll(req: Request, res: Response, next: NextFunction) {
@@ -68,19 +63,12 @@ export class MainSqmpController {
 
   async submit(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-
-      const record = await mainSqmpService.getRecordById(id, userId, roleId);
-      const statusStr = (record?.status || '').toUpperCase();
-      if (!['DRAFT', 'REJECTED', 'NEW'].includes(statusStr)) {
-         throw new BadRequestError('Invalid Transition: Record is not in DRAFT or REJECTED state');
-      }
-      
-      const result = await mainSqmpService.updateRecord(id, { request_status: 'SUBMITTED' }, userId, roleId, []);
-      return res.json(result);
+      const result = await sqmpWorkflowService.submitMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] SUBMIT error:', error);
       return next(error);
@@ -89,39 +77,13 @@ export class MainSqmpController {
 
   async check(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;
-      const remarks = req.body?.remarks;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-      
-      const record = await mainSqmpService.getRecordById(id, userId, roleId);
-      const statusStr = (record?.status || '').toUpperCase();
 
-      // Cycle 2 logic: Awaiting Checked (RESPONSE_SUBMITTED) -> Awaiting Approval (RESPONSE_AWAITING_APPROVAL)
-      if (statusStr === 'RESPONSE_SUBMITTED') {
-        const { sqmpResponseService } = await import('../response/response.service.js');
-        const result = await sqmpResponseService.checkResponse(id, remarks || '', userId, roleId);
-        return res.json(successResponse(result));
-      }
-
-      // Cycle 1 Logic
-      if (statusStr !== 'SUBMITTED') {
-        throw new BadRequestError('Invalid Transition: Plan is not submitted');
-      }
-      
-      // Strict Validation (prevents null-bypass)
-      await sqmpValidationService.validateCycle1Check(record, userId, roleId);
-
-      const updatePayload = { 
-        request_status: 'CHECKED', 
-        checker_id: userId,
-        checker_date: new Date(),
-        checker_remarks: remarks
-      };
-      
-      const result = await mainSqmpService.updateRecord(id, updatePayload, userId, roleId, []);
-      return res.json(result);
+      const result = await sqmpWorkflowService.checkMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] CHECK error:', error);
       return next(error);
@@ -130,39 +92,13 @@ export class MainSqmpController {
 
   async approve(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;
-      const remarks = req.body?.remarks;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-      
-      const record = await mainSqmpService.getRecordById(id, userId, roleId);
-      const statusStr = (record?.status || '').toUpperCase();
 
-      // Cycle 2 logic: Awaiting Approval (RESPONSE_AWAITING_APPROVAL) -> CLOSED
-      if (statusStr === 'RESPONSE_AWAITING_APPROVAL') {
-        const { sqmpResponseService } = await import('../response/response.service.js');
-        const result = await sqmpResponseService.approveResponse(id, remarks || '', userId, roleId);
-        return res.json(successResponse(result));
-      }
-
-      // Cycle 1 Logic
-      if (statusStr !== 'AWAITING_APPROVAL' && statusStr !== 'CHECKED' && statusStr !== 'SUBMITTED') {
-        throw new BadRequestError('Invalid Transition: Plan is not awaiting approval');
-      }
-
-      // Strict Validation (prevents null-bypass)
-      await sqmpValidationService.validateCycle1Approve(record, userId, roleId);
-
-      const updatePayload = { 
-        request_status: 'APPROVED', 
-        approver_id: userId,
-        approver_date: new Date(),
-        approver_remarks: remarks
-      };
-      
-      const result = await mainSqmpService.updateRecord(id, updatePayload, userId, roleId, []);
-      return res.json(result);
+      const result = await sqmpWorkflowService.approveMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] APPROVE error:', error);
       return next(error);
@@ -171,38 +107,13 @@ export class MainSqmpController {
 
   async reject(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpActionSchema.parse({ params: req.params, body: req.body }).params;
-      const remarks = req.body?.remarks;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-      
-      const record = await mainSqmpService.getRecordById(id, userId, roleId);
-      const statusStr = (record?.status || '').toUpperCase();
 
-      // Cycle 2 logic: Response Rejected
-      if (statusStr === 'RESPONSE_SUBMITTED' || statusStr === 'RESPONSE_AWAITING_APPROVAL') {
-        const { sqmpResponseService } = await import('../response/response.service.js');
-        const result = await sqmpResponseService.rejectResponse(id, remarks || '', userId, roleId);
-        return res.json(successResponse(result));
-      }
-
-      // Cycle 1 Logic
-      if (statusStr !== 'SUBMITTED' && statusStr !== 'CHECKED' && statusStr !== 'AWAITING_APPROVAL') {
-        throw new BadRequestError('Invalid Transition: Plan cannot be rejected at this stage');
-      }
-      
-      // Strict Validation (prevents null-bypass)
-      await sqmpValidationService.validateCycle1Reject(record, userId, roleId);
-
-      const updatePayload = { 
-        request_status: 'REJECTED', 
-        approver_remarks: remarks,
-        approver_date: new Date()
-      };
-      
-      const result = await mainSqmpService.updateRecord(id, updatePayload, userId, roleId, []);
-      return res.json(result);
+      const result = await sqmpWorkflowService.rejectMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] REJECT error:', error);
       return next(error);
@@ -225,12 +136,12 @@ export class MainSqmpController {
 
   async issue(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-      const result = await mainSqmpService.issueRecord(id, userId, roleId, req.body?.remarks);
-      res.json(result);
+      const result = await sqmpWorkflowService.issueMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] ISSUE error:', error);
       next(error);
@@ -239,12 +150,17 @@ export class MainSqmpController {
 
   async requestResponse(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-      const result = await mainSqmpService.requestResponse(id, userId, roleId, req.body?.remarks);
-      res.json(result);
+      const record = await mainSqmpService.getRecordById(parsed.params.id, userId, roleId);
+      if (record.workflowStageCode === '11') {
+        return res.json(successResponse({ id: parsed.params.id }, 'Supplier response already requested'));
+      }
+
+      const result = await sqmpWorkflowService.issueMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] REQUEST RESPONSE error:', error);
       next(error);
@@ -253,12 +169,12 @@ export class MainSqmpController {
 
   async cancel(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
+      const parsed = SqmpActionSchema.parse({ params: req.params, body: req.body });
       const user = (req as any).user;
       const userId = user?.userId || user?.id || 'SYSTEM';
       const roleId = user?.roleId || '';
-      const result = await mainSqmpService.cancelRecord(id, userId, roleId, req.body?.remarks);
-      res.json(result);
+      const result = await sqmpWorkflowService.cancelMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] CANCEL error:', error);
       next(error);

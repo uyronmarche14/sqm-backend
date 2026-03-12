@@ -1,4 +1,5 @@
 import { db } from '../infrastructure/db.js';
+import { authRepository } from '../../modules/auth/auth.repository.js';
 
 /**
  * Backend Permission Service
@@ -23,6 +24,52 @@ export type PermissionAction =
   | 'release';
 
 export class PermissionService {
+  private async resolveFormTargets(formId: string): Promise<string[]> {
+    const targets = new Set<string>([formId]);
+
+    const mappedForm = await db.selectFrom('FORMS')
+      .select('form_id')
+      .where('form_name', '=', formId)
+      .executeTakeFirst();
+
+    if (mappedForm?.form_id) {
+      targets.add(mappedForm.form_id);
+    }
+
+    return Array.from(targets);
+  }
+
+  private async hasAssignedSqmpFormAccess(
+    userId: string,
+    formId: string,
+    action: PermissionAction,
+  ): Promise<boolean> {
+    const assignedForms = await authRepository.findAssignedSqmpAccessibleForms(userId);
+
+    if (
+      formId === 'SQMP-09-05' &&
+      action === 'issue' &&
+      assignedForms.includes('SQMP-09-04')
+    ) {
+      return true;
+    }
+
+    if (!assignedForms.includes(formId)) {
+      return false;
+    }
+
+    const assignedActionMap: Partial<Record<string, PermissionAction[]>> = {
+      'SQMP-09-03': ['view', 'viewlist', 'check', 'approve', 'reject'],
+      'SQMP-09-04': ['view', 'viewlist'],
+      'SQMP-09-06': ['view', 'viewlist', 'edit', 'submit'],
+      'SQMP-09-07': ['view', 'viewlist', 'check', 'approve', 'reject'],
+      'SQMP-09-08': ['view', 'viewlist', 'edit', 'submit'],
+      'SQMP-09-09': ['view', 'viewlist', 'edit'],
+    };
+
+    return assignedActionMap[formId]?.includes(action) ?? false;
+  }
+
   /**
    * Check if a user has a specific permission for a form/module
    */
@@ -44,13 +91,22 @@ export class PermissionService {
 
     // 3. Query ROLE_ACCESS table
     // Maps standard database permission flags to internal logical actions
-    const permission = await db.selectFrom('ROLE_ACCESS')
-      .where('role_id', '=', user.role_id)
-      .where('form_id', '=', formId)
+    const formTargets = await this.resolveFormTargets(formId);
+
+    const permissionQuery = db.selectFrom('ROLE_ACCESS')
+      .where('role_id', '=', user.role_id);
+
+    const permission = await (
+      formTargets.length === 1
+        ? permissionQuery.where('form_id', '=', formTargets[0])
+        : permissionQuery.where('form_id', 'in', formTargets)
+    )
       .selectAll()
       .executeTakeFirst();
 
-    if (!permission) return false;
+    if (!permission) {
+      return this.hasAssignedSqmpFormAccess(userId, formId, action);
+    }
 
     // Map PermissionAction to database column
     const columnMap: Record<PermissionAction, keyof typeof permission> = {
@@ -85,7 +141,11 @@ export class PermissionService {
       }
     }
 
-    return value === true || value === 1;
+    if (value === true || value === 1) {
+      return true;
+    }
+
+    return this.hasAssignedSqmpFormAccess(userId, formId, action);
   }
 }
 

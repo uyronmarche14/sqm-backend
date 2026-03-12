@@ -5,6 +5,39 @@ import { verifyPassword } from '../../shared/utils/hash.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 
 export class AuthService {
+  private buildAuthContextResponse(user: any, accessibleForms: string[]) {
+    const userMenu = accessibleForms.length > 0
+      ? ['Supplier Quality Management Plan']
+      : [];
+
+    const normalizedRoleName = user.role_name?.toLowerCase() || '';
+    const isAdmin = normalizedRoleName.includes('admin') ? 1 : 0;
+    const isSupplier = normalizedRoleName.includes('supplier');
+
+    return {
+      isSupplier,
+      userData: {
+        USER_ID: user.user_id,
+        FULL_NAME: user.full_name,
+        EMAIL: user.email,
+        ROLE_ID: user.role_id || '',
+        SITE_ID: user.site_id || '',
+        ROLE_NAME: user.role_name || 'User',
+        SITE_NAME: '',
+        CREATION_DATE: user.creation_date,
+        ACTIVE_FLAG: user.active_flag ? true : false,
+        LAST_PASWORD_CHANGE: user.last_pasword_change,
+        LOCAL_USER: user.local_user ? true : false,
+        LOGIN_FLAG: user.login_flag ? true : false,
+        LAST_UPDATE: user.last_update,
+        UPDATEBY: user.updateby,
+        isAdmin: isAdmin
+      },
+      userMenu,
+      accessibleForms,
+    };
+  }
+
   async refreshTokens(refreshToken: string) {
     const decoded = verifyRefreshToken(refreshToken);
     
@@ -48,38 +81,41 @@ export class AuthService {
 
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
-
-    // 4. Return Data (Without sensitive info)
-    const isAdmin = user.role_name?.toLowerCase().includes('admin') ? 1 : 0;
+    const accessibleForms = await authRepository.findAssignedSqmpAccessibleForms(user.user_id);
+    const authContext = this.buildAuthContextResponse(user, accessibleForms);
     
     return {
       success: true,
       message: 'Welcome back!',
-      isSupplier: false, // Supplier association comes from SUPPLIERSUSER in legacy
-      userData: {
-        USER_ID: user.user_id,
-        FULL_NAME: user.full_name,
-        EMAIL: user.email,
-        ROLE_ID: user.role_id || '',
-        SITE_ID: user.site_id || '', 
-        ROLE_NAME: user.role_name || 'User',
-        SITE_NAME: '', 
-        CREATION_DATE: user.creation_date,
-        ACTIVE_FLAG: user.active_flag ? true : false,
-        LAST_PASWORD_CHANGE: user.last_pasword_change,
-        LOCAL_USER: user.local_user ? true : false,
-        LOGIN_FLAG: user.login_flag ? true : false,
-        LAST_UPDATE: user.last_update,
-        UPDATEBY: user.updateby,
-        isAdmin: isAdmin
-      },
+      isSupplier: authContext.isSupplier,
+      userData: authContext.userData,
       tokens: {
         accessToken,
         refreshToken,
       },
       mustChangePassword: user.change_pw ? true : false, 
-      userMenu: [], 
-      accessibleForms: [] 
+      userMenu: authContext.userMenu,
+      accessibleForms: authContext.accessibleForms,
+    };
+  }
+
+  async getCurrentUserContext(userId: string) {
+    const user = await authRepository.findById(userId);
+
+    if (!user) {
+      throw new UnauthorizedError('Invalid session');
+    }
+
+    const accessibleForms = await authRepository.findAssignedSqmpAccessibleForms(user.user_id);
+    const authContext = this.buildAuthContextResponse(user, accessibleForms);
+
+    return {
+      success: true,
+      message: 'User context refreshed',
+      isSupplier: authContext.isSupplier,
+      userData: authContext.userData,
+      userMenu: authContext.userMenu,
+      accessibleForms: authContext.accessibleForms,
     };
   }
 }

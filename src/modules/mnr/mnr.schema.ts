@@ -188,6 +188,15 @@ export const MnrUpdateSchema = z.object({
       actualInitialReport: z.string().optional(),
       actualFinalReport: z.string().optional(),
       remarks: z.string().optional(),
+      site_id: z.string().optional(),
+      supplier_id: z.string().optional(),
+      product_id: z.string().optional(),
+      model_id: z.string().optional(),
+      mfg_area_id: z.string().optional(),
+      defectcategory_id: z.string().optional(),
+      attention_id: z.string().optional(),
+      reportIssuance8D: z.preprocess((v) => v === 'true' || v === true, z.boolean()).optional(),
+      recurrenceRef: z.string().optional(),
       
       defects: JsonParsedArray(MnrDefectSchema.extend({ id: z.string().optional() })),
       
@@ -204,6 +213,24 @@ export const MnrUpdateSchema = z.object({
     nonConformity: JsonParsed(MnrNonConformitySchema).optional(),
     response8D: JsonParsed(z.record(z.string(), z.unknown())).optional(),
     approval: JsonParsed(z.record(z.string(), z.unknown())).optional()
+    ,
+    site_id: z.string().optional(),
+    supplier_id: z.string().optional(),
+    product_id: z.string().optional(),
+    model_id: z.string().optional(),
+    mfg_area_id: z.string().optional(),
+    defectcategory_id: z.string().optional(),
+    attention_id: z.string().optional(),
+    mnrType: z.string().optional(),
+    reportIssuance8D: z.preprocess((v) => v === 'true' || v === true, z.boolean()).optional(),
+    recurrenceRef: z.string().optional(),
+    issueDate: z.string().optional(),
+    initialReport: z.string().optional(),
+    dueDate: z.string().optional(),
+    actualInitialReport: z.string().optional(),
+    actualFinalReport: z.string().optional(),
+    remarks: z.string().optional(),
+    reference: z.string().optional()
   })
 });
 

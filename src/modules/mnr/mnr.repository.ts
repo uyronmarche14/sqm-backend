@@ -134,11 +134,12 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
       .where('r.mnr_id', '=', record.mnr_id)
       .executeTakeFirst();
 
-    // Fetch Verification
-    const verification = await db.selectFrom('MNR_VERIFICATION as v')
+    // Fetch Verification (multi-row history)
+    const verificationEntries = await db.selectFrom('MNR_VERIFICATION as v')
       .selectAll('v')
       .where('v.mnr_id', '=', record.mnr_id)
-      .executeTakeFirst();
+      .orderBy('v.received_date', 'asc')
+      .execute();
 
     // Fetch CC List
     const ccList = await db.selectFrom('MNR_CC as c')
@@ -163,7 +164,7 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
       record,
       details,
       response,
-      verification,
+      verificationEntries,
       ccList,
       attachments,
       responseAttachments
