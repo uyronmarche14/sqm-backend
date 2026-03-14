@@ -7,6 +7,8 @@ import { CreateFiveM1ESchema, UpdateFiveM1ESchema } from './fiveM1E.schema.js';
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
+import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
+import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
 
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
@@ -51,7 +53,7 @@ router.get(
  */
 router.post(
   '/', 
-  requirePermission('5M1E', 'add'),
+  requirePermission('5M1EMAIN-11-01', 'add'),
   upload.any(),
   logUploads,
   handleUploadError,
@@ -75,7 +77,7 @@ router.get(
  */
 router.put(
   '/:id', 
-  requirePermission('5M1E', 'edit'),
+  requireFiveM1EEditAccess,
   upload.any(),
   logUploads,
   handleUploadError,
@@ -97,11 +99,11 @@ router.delete(
 /**
  * Workflow Action Subroutes
  */
-router.post('/:id/submit', requirePermission('5M1E', 'submit'), fiveM1EController.submitApplication);
-router.post('/:id/check', requirePermission('5M1E', 'check'), fiveM1EController.checkApplication);
-router.post('/:id/approve', requirePermission('5M1E', 'approve'), fiveM1EController.approveApplication);
-router.post('/:id/reject', requirePermission('5M1E', 'reject'), fiveM1EController.rejectApplication);
-router.post('/:id/release', requirePermission('5M1E', 'release'), fiveM1EController.releaseApplication);
+router.post('/:id/submit', requireFiveM1EWorkflowAccess('submit'), fiveM1EController.submitApplication);
+router.post('/:id/check', requireFiveM1EWorkflowAccess('check'), fiveM1EController.checkApplication);
+router.post('/:id/approve', requireFiveM1EWorkflowAccess('approve'), fiveM1EController.approveApplication);
+router.post('/:id/reject', requireFiveM1EWorkflowAccess('reject'), fiveM1EController.rejectApplication);
+router.post('/:id/release', requireFiveM1EWorkflowAccess('release'), fiveM1EController.releaseApplication);
 
 /**
  * Attachment Downloader

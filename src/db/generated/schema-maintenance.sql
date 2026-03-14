@@ -330,7 +330,6 @@ CREATE TABLE [dbo].[MODELS] (
     [model_no] nvarchar(100) NOT NULL,
     [model_name] nvarchar(100) NOT NULL,
     [site_id] nvarchar(72) NOT NULL,
-    [site_id] nvarchar(72) NOT NULL,
     [product_id] nvarchar(72) NOT NULL,
     [model_desc] nvarchar(400) NULL,
     [active_flag] bit NOT NULL,
@@ -510,7 +509,6 @@ IF OBJECT_ID('[dbo].[PRODUCTS]', 'U') IS NOT NULL DROP TABLE [dbo].[PRODUCTS];
 CREATE TABLE [dbo].[PRODUCTS] (
     [product_id] nvarchar(72) NOT NULL PRIMARY KEY,
     [product_name] nvarchar(100) NOT NULL,
-    [site_id] nvarchar(72) NOT NULL,
     [site_id] nvarchar(72) NOT NULL,
     [product_desc] nvarchar(200) NULL,
     [product_code] nvarchar(100) NULL,

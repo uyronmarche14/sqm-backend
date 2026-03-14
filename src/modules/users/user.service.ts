@@ -1,8 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { userRepository } from './user.repository.js';
-import { CreateUserPayload, UpdateUserPayload, ChangePasswordPayload } from './user.schema.js';
+import {
+  CreateUserPayload,
+  UpdateUserPayload,
+  ChangePasswordPayload,
+  AssignmentCoverageRequestPayload,
+} from './user.schema.js';
 import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
+import { permissionService } from '../../shared/services/permission.service.js';
 
 export class UserService {
   async getAllUsers() {
@@ -117,6 +123,13 @@ export class UserService {
     const user = await userRepository.findById(id);
     if (!user) throw new NotFoundError('User not found');
     await userRepository.deleteById('user_id', id);
+  }
+
+  async getAssignmentCoverage(id: string, payload: AssignmentCoverageRequestPayload) {
+    const user = await userRepository.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    return await permissionService.getAssignmentCoverage(id, payload.assignments);
   }
 }
 

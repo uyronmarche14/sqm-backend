@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { userRepository } from './user.repository.js';
 import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
+import { permissionService } from '../../shared/services/permission.service.js';
 export class UserService {
     async getAllUsers() {
         return await userRepository.findAll();
@@ -104,6 +105,12 @@ export class UserService {
         if (!user)
             throw new NotFoundError('User not found');
         await userRepository.deleteById('user_id', id);
+    }
+    async getAssignmentCoverage(id, payload) {
+        const user = await userRepository.findById(id);
+        if (!user)
+            throw new NotFoundError('User not found');
+        return await permissionService.getAssignmentCoverage(id, payload.assignments);
     }
 }
 export const userService = new UserService();

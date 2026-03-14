@@ -657,9 +657,10 @@ export class AuthRepository extends BaseRepository {
                     accessibleForms.add('5M1EJudgementSec-06-17');
                     break;
                 case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
-                    accessibleForms.add('5M1EApprovalSecSQE-06-17');
-                    break;
                 case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
+                    accessibleForms.add('5M1EApprovalSecSQE-06-17');
+                    accessibleForms.add('5M1EJudgementSec-06-17');
+                    break;
                 case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
                     accessibleForms.add('5M1EJudgementSec-06-17');
                     break;

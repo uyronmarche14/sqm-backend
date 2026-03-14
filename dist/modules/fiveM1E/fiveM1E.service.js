@@ -4,8 +4,8 @@ import { sql } from 'kysely';
 import { SmartMapper } from '../../shared/infrastructure/SmartMapper.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
-import { buildFiveM1EWorkflowMetadata } from './workflow/fiveM1E-workflow.utils.js';
 import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
+import { FIVE_M1E_WORKFLOW_STAGE } from './workflow/fiveM1E-workflow.constants.js';
 /**
  * 5M1E Domain Service
  * Encapsulates core business logic and mapping.
@@ -207,20 +207,22 @@ export class FiveM1EService {
      */
     async getAllApplications(status, actorUserId) {
         const records = await fiveM1ERepository.findAllWithApproval(status);
-        return records.map((record) => {
+        return Promise.all(records.map(async (record) => {
             const dto = SmartMapper.toDTO(record, applicationSchema);
-            const workflow = buildFiveM1EWorkflowMetadata(record, { actorUserId });
+            const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actorUserId);
+            const normalizedStatus = workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
             return {
                 ...dto,
                 id: record.ID,
                 control_no: record.ControlNo,
-                status: record.approval_status,
+                status: normalizedStatus,
                 workflowStage: workflow.workflowStage,
                 workflowStageCode: workflow.workflowStageCode,
                 workflowStageLabel: workflow.workflowStageLabel,
                 availableActions: workflow.availableActions,
                 nextApproverId: workflow.nextApproverId,
                 nextApproverName: workflow.nextApproverName,
+                ownerMode: workflow.ownerMode,
                 mpd_pic: record.mpd_pic,
                 mpd_approver: record.mpd_approver,
                 created_at: record.CreateDate,
@@ -232,7 +234,7 @@ export class FiveM1EService {
                 attribute_03_name: record.attribute_03_name,
                 mpd_pic_name: record.mpd_pic_name,
             };
-        });
+        }));
     }
     /**
      * Retrieves a 5M1E Application with its full Approval + Child Tables
@@ -262,18 +264,20 @@ export class FiveM1EService {
       WHERE cc.ControlNo = ${cn}
     `.execute(db);
         const ccList = ccResult.rows;
-        const workflow = buildFiveM1EWorkflowMetadata(record, { actorUserId });
+        const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actorUserId);
+        const normalizedStatus = workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
         return {
             ...dto,
             id: record.ID,
             control_no: record.ControlNo,
-            status: record.approval_status,
+            status: normalizedStatus,
             workflowStage: workflow.workflowStage,
             workflowStageCode: workflow.workflowStageCode,
             workflowStageLabel: workflow.workflowStageLabel,
             availableActions: workflow.availableActions,
             nextApproverId: workflow.nextApproverId,
             nextApproverName: workflow.nextApproverName,
+            ownerMode: workflow.ownerMode,
             workflow,
             // Human-readable display names resolved via USERS table JOIN
             created_by_name: record.created_by_name,

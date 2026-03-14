@@ -1,10 +1,15 @@
 import { db } from '../infrastructure/db.js';
-import { authRepository } from '../../modules/auth/auth.repository.js';
 import {
   getAssignmentActions,
+  getAssignmentRoleActions,
   getCompatibleFormCodes,
   getLegacyFormMapping,
+  type AssignmentRole,
 } from '@sqm/permissions-contract';
+import {
+  getAssignedWorkflowFormFetcher,
+} from '../../modules/auth/assigned-form-access.js';
+import type { AssignedFormFetcher } from '../../modules/auth/assigned-form-access.js';
 
 /**
  * Backend Permission Service
@@ -28,29 +33,54 @@ export type PermissionAction =
   | 'issue'
   | 'release';
 
-type AssignedFormFetcher = (userId: string) => Promise<string[]>;
+export interface AssignmentCoverageRequest {
+  formId: string;
+  assignmentRole: AssignmentRole;
+}
+
+export interface AssignmentCoverageResult {
+  userId: string;
+  formId: string;
+  module?: string;
+  assignmentRole: AssignmentRole;
+  target?: {
+    module?: string;
+    subForm?: string;
+    section?: string;
+  };
+  derivedActions: PermissionAction[];
+  baselineActions: PermissionAction[];
+  missingBaselineActions: PermissionAction[];
+  hasBaselineVisibility: boolean;
+  reliesOnAssignment: boolean;
+}
+
+export interface PermissionEligibleUser {
+  userId: string;
+  fullName: string | null;
+}
+
+const PERMISSION_ACTION_SET: ReadonlySet<PermissionAction> = new Set([
+  'view',
+  'add',
+  'edit',
+  'delete',
+  'approve',
+  'check',
+  'print',
+  'export',
+  'viewlist',
+  'attach',
+  'submit',
+  'reject',
+  'issue',
+  'release',
+]);
 
 export class PermissionService {
   private getAssignedFormFetcher(formId: string): AssignedFormFetcher | null {
     const legacyForm = getLegacyFormMapping(formId);
-    const moduleName = legacyForm?.module;
-
-    switch (moduleName) {
-      case 'SQM_PLAN':
-        return (userId: string) => authRepository.findAssignedSqmpAccessibleForms(userId);
-      case 'NEWPARTS':
-        return (userId: string) => authRepository.findAssignedNpiAccessibleForms(userId);
-      case 'MNR':
-        return (userId: string) => authRepository.findAssignedMnrAccessibleForms(userId);
-      case 'QMQA':
-        return (userId: string) => authRepository.findAssignedQmqaAccessibleForms(userId);
-      case 'SQPR':
-        return (userId: string) => authRepository.findAssignedSqprAccessibleForms(userId);
-      case '5M1E':
-        return (userId: string) => authRepository.findAssignedFiveM1EAccessibleForms(userId);
-      default:
-        return null;
-    }
+    return getAssignedWorkflowFormFetcher(legacyForm?.module);
   }
 
   private getAssignedAccessChecker(formId: string) {
@@ -88,6 +118,88 @@ export class PermissionService {
     return Array.from(targets);
   }
 
+  private getActionsFromPermissionRecord(permission: Record<string, unknown>): PermissionAction[] {
+    const actions = new Set<PermissionAction>();
+    const has = (value: unknown) => value === true || value === 1;
+
+    if (has(permission.can_view) || has(permission.can_viewlist)) {
+      actions.add('view');
+      actions.add('viewlist');
+    }
+
+    if (has(permission.can_add)) {
+      actions.add('add');
+    }
+
+    if (has(permission.can_edit)) {
+      actions.add('edit');
+      actions.add('submit');
+      actions.add('issue');
+    }
+
+    if (has(permission.can_delete)) {
+      actions.add('delete');
+    }
+
+    if (has(permission.can_approve)) {
+      actions.add('approve');
+      actions.add('reject');
+      actions.add('check');
+      actions.add('release');
+    }
+
+    if (has(permission.can_check)) {
+      actions.add('check');
+    }
+
+    if (has(permission.can_export)) {
+      actions.add('export');
+    }
+
+    if (has(permission.can_attach)) {
+      actions.add('attach');
+    }
+
+    return Array.from(actions);
+  }
+
+  private normalizePermissionActions(actions: readonly string[]): PermissionAction[] {
+    return actions.filter((action): action is PermissionAction =>
+      PERMISSION_ACTION_SET.has(action as PermissionAction),
+    );
+  }
+
+  private async resolveUserRole(userId: string) {
+    return await db.selectFrom('USERS as u')
+      .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
+      .select(['u.role_id', 'r.role_name'])
+      .where('u.user_id', '=', userId)
+      .executeTakeFirst();
+  }
+
+  private async getRolePermissionRecords(userId: string, formId: string) {
+    const user = await this.resolveUserRole(userId);
+    if (!user?.role_id) {
+      return [];
+    }
+
+    const formTargets = await this.resolveFormTargets(formId);
+    if (formTargets.length === 0) {
+      return [];
+    }
+
+    const query = db.selectFrom('ROLE_ACCESS')
+      .where('role_id', '=', user.role_id);
+
+    return await (
+      formTargets.length === 1
+        ? query.where('form_id', '=', formTargets[0])
+        : query.where('form_id', 'in', formTargets)
+    )
+      .selectAll()
+      .execute();
+  }
+
   private async hasAssignedWorkflowFormAccess(
     userId: string,
     formId: string,
@@ -110,50 +222,11 @@ export class PermissionService {
       return false;
     }
 
-    return getAssignmentActions(grantedFormId).includes(action);
+    return this.normalizePermissionActions(getAssignmentActions(grantedFormId)).includes(action);
   }
 
-  /**
-   * Check if a user has a specific permission for a form/module
-   */
-  async checkPermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
-    // 1. Get user details with role name
-    const user = await db.selectFrom('USERS as u')
-      .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
-      .select(['u.role_id', 'r.role_name'])
-      .where('u.user_id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) return false;
-
-    // 2. Admin Bypass (Universal Authority)
-    const roleName = user.role_name.toUpperCase();
-    if (roleName.includes('ADMIN')) {
-      return true;
-    }
-
-    // 3. Query ROLE_ACCESS table
-    // Maps standard database permission flags to internal logical actions
-    const formTargets = await this.resolveFormTargets(formId);
-
-    const permissionQuery = db.selectFrom('ROLE_ACCESS')
-      .where('role_id', '=', user.role_id);
-
-    const permission = await (
-      formTargets.length === 1
-        ? permissionQuery.where('form_id', '=', formTargets[0])
-        : permissionQuery.where('form_id', 'in', formTargets)
-    )
-      .selectAll()
-      .executeTakeFirst();
-    const hasAssignedAccess = this.getAssignedAccessChecker(formId);
-
-    if (!permission) {
-      return hasAssignedAccess(userId, action);
-    }
-
-    // Map PermissionAction to database column
-    const columnMap: Record<PermissionAction, keyof typeof permission> = {
+  private getPermissionColumn(action: PermissionAction) {
+    const columnMap: Record<PermissionAction, string> = {
       view: 'can_view',
       add: 'can_add',
       edit: 'can_edit',
@@ -167,29 +240,154 @@ export class PermissionService {
       submit: 'can_add',
       reject: 'can_approve',
       issue: 'can_edit',
-      release: 'can_approve'
+      release: 'can_approve',
     };
 
-    const column = columnMap[action];
-    
-    // Safely retrieve value (handle bit/boolean/number)
-    let value = (permission as any)[column];
+    return columnMap[action];
+  }
 
-    // Authority Aliasing / Workflow Authority
-    // If user has 'approve' permission, they are granted 'check', 'reject', 'issue', 'release' and 'submit' 
-    // authority as they share the same authority level in the workflow.
+  private async hasRolePermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
+    const user = await this.resolveUserRole(userId);
+
+    if (!user) return false;
+
+    const roleName = user.role_name.toUpperCase();
+    if (roleName.includes('ADMIN')) {
+      return true;
+    }
+
+    const formTargets = await this.resolveFormTargets(formId);
+    const permissionQuery = db.selectFrom('ROLE_ACCESS')
+      .where('role_id', '=', user.role_id);
+
+    const permission = await (
+      formTargets.length === 1
+        ? permissionQuery.where('form_id', '=', formTargets[0])
+        : permissionQuery.where('form_id', 'in', formTargets)
+    )
+      .selectAll()
+      .executeTakeFirst();
+
+    if (!permission) {
+      return false;
+    }
+
+    const column = this.getPermissionColumn(action) as keyof typeof permission;
+    let value = (permission as Record<string, unknown>)[column];
+
     if (!value && ['check', 'reject', 'issue', 'submit', 'approve', 'release'].includes(action)) {
-      const canApprove = (permission as any).can_approve;
+      const canApprove = (permission as Record<string, unknown>).can_approve;
       if (canApprove === true || canApprove === 1) {
         value = true;
       }
     }
 
-    if (value === true || value === 1) {
+    return value === true || value === 1;
+  }
+
+  /**
+   * Check if a user has a specific permission for a form/module
+   */
+  async checkPermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
+    const hasRoleAccess = await this.hasRolePermission(userId, formId, action);
+    if (hasRoleAccess) {
       return true;
     }
 
+    const hasAssignedAccess = this.getAssignedAccessChecker(formId);
     return hasAssignedAccess(userId, action);
+  }
+
+  async checkRolePermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
+    return this.hasRolePermission(userId, formId, action);
+  }
+
+  async findUsersWithRolePermission(formId: string, action: PermissionAction): Promise<PermissionEligibleUser[]> {
+    const formTargets = await this.resolveFormTargets(formId);
+    if (formTargets.length === 0) {
+      return [];
+    }
+
+    const column = this.getPermissionColumn(action);
+    const roleAccessUsers = await db
+      .selectFrom('USERS as u')
+      .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
+      .innerJoin('ROLE_ACCESS as ra', 'ra.role_id', 'r.role_id')
+      .select(['u.user_id as userId', 'u.full_name as fullName'])
+      .where('ra.form_id', 'in', formTargets)
+      .where((eb) =>
+        eb.or([
+          eb(column as any, '=', 1),
+          ...(['check', 'reject', 'approve', 'release', 'submit'].includes(action)
+            ? [eb('ra.can_approve', '=', 1)]
+            : []),
+        ]),
+      )
+      .execute();
+
+    const adminUsers = await db
+      .selectFrom('USERS as u')
+      .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
+      .select(['u.user_id as userId', 'u.full_name as fullName'])
+      .where('r.role_name', 'like', '%ADMIN%')
+      .execute();
+
+    const users = [...roleAccessUsers, ...adminUsers];
+
+    const seen = new Set<string>();
+    return users.filter((user) => {
+      if (!user.userId || seen.has(user.userId)) {
+        return false;
+      }
+      seen.add(user.userId);
+      return true;
+    });
+  }
+
+  async getAssignmentCoverage(
+    userId: string,
+    assignments: AssignmentCoverageRequest[],
+  ): Promise<AssignmentCoverageResult[]> {
+    const results: AssignmentCoverageResult[] = [];
+
+    for (const assignment of assignments) {
+      const target = getLegacyFormMapping(assignment.formId);
+      const derivedActions = this.normalizePermissionActions(
+        getAssignmentRoleActions(
+          assignment.formId,
+          assignment.assignmentRole,
+        ),
+      );
+      const permissionRecords = await this.getRolePermissionRecords(userId, assignment.formId);
+      const baselineActions = Array.from(
+        new Set(permissionRecords.flatMap((record) => this.getActionsFromPermissionRecord(record as Record<string, unknown>))),
+      );
+      const baselineActionSet = new Set(baselineActions);
+      const missingBaselineActions = derivedActions.filter((action) => !baselineActionSet.has(action));
+
+      results.push({
+        userId,
+        formId: assignment.formId,
+        module: target?.module,
+        assignmentRole: assignment.assignmentRole,
+        target: target
+          ? {
+              module: target.module,
+              subForm: target.subForm,
+              section: target.section,
+            }
+          : undefined,
+        derivedActions,
+        baselineActions,
+        missingBaselineActions,
+        hasBaselineVisibility:
+          baselineActionSet.has('view') || baselineActionSet.has('viewlist'),
+        reliesOnAssignment:
+          derivedActions.length > 0 && missingBaselineActions.length > 0,
+      });
+    }
+
+    return results;
   }
 }
 

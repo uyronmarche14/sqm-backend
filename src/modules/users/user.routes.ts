@@ -10,6 +10,7 @@ router.use(requireAuth);
 
 router.get('/', userController.getAllUsers);
 router.get('/:id', userController.getUserById);
+router.post('/:id/assignment-coverage', userController.getAssignmentCoverage);
 router.post('/', requirePermission('MAINTENANCE', 'add'), userController.createUser);
 router.put('/:id', requirePermission('MAINTENANCE', 'edit'), userController.updateUser);
 router.delete('/:id', requirePermission('MAINTENANCE', 'delete'), userController.deleteUser);

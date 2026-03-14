@@ -95,7 +95,6 @@ GO
 IF OBJECT_ID('[dbo].[SFR_RESPONSE_APPENDIX]', 'U') IS NOT NULL DROP TABLE [dbo].[SFR_RESPONSE_APPENDIX];
 CREATE TABLE [dbo].[SFR_RESPONSE_APPENDIX] (
     [sfr_response_appendix_id] nvarchar(72) NOT NULL PRIMARY KEY,
-    [sfr_response_appendix_id] nvarchar(72) NOT NULL,
     [sfr_response_id] nvarchar(72) NOT NULL,
     [file_name] nvarchar(220) NOT NULL,
     [file_extension] nvarchar(20) NOT NULL,
@@ -139,4 +138,3 @@ CREATE TABLE [dbo].[SFR_STATUS_REMARKS] (
     [remarks_date] datetime NOT NULL
 );
 GO
-

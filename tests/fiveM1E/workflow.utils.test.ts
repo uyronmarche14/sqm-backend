@@ -9,7 +9,7 @@ import {
 } from '../../src/modules/fiveM1E/workflow/fiveM1E-workflow.constants.js';
 
 describe('5M1E workflow utils', () => {
-  it('maps submitted approval sequence 1 to the MPD checker stage', () => {
+  it('maps submitted approval sequence 1 to the submitted MPD stage', () => {
     const stage = normalizeFiveM1EWorkflowStage({
       approval_status: 'SUBMITTED',
       approval_seq: 1,
@@ -18,22 +18,22 @@ describe('5M1E workflow utils', () => {
     expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER);
   });
 
-  it('maps legacy reviewer sequence 500 to the reviewer stage', () => {
+  it('maps for-approval sequence 4 to the evaluation editor stage', () => {
     const stage = normalizeFiveM1EWorkflowStage({
       approval_status: 'FOR APPROVAL',
-      approval_seq: 500,
+      approval_seq: 4,
     });
 
     expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.REVIEWER);
   });
 
-  it('maps evaluation IC sequence 501 to the evaluation IC stage', () => {
+  it('maps for-approval sequence 5 to the checker stage', () => {
     const stage = normalizeFiveM1EWorkflowStage({
       approval_status: 'FOR APPROVAL',
-      approval_seq: 501,
+      approval_seq: 5,
     });
 
-    expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC);
+    expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER);
   });
 
   it('maps approved-with-condition aliases to the approved with condition stage', () => {
@@ -45,59 +45,22 @@ describe('5M1E workflow utils', () => {
     expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION);
   });
 
-  it('maps for-release sequence 8 to the release gate', () => {
+  it('maps approved sequence 7 to the approved release stage', () => {
     const stage = normalizeFiveM1EWorkflowStage({
-      approval_status: 'FOR RELEASE',
-      approval_seq: 8,
+      approval_status: 'APPROVED',
+      approval_seq: 7,
     });
 
-    expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE);
+    expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.APPROVED);
   });
 
-  it('builds design approver actions for the assigned actor', () => {
-    const metadata = buildFiveM1EWorkflowMetadata(
-      {
-        approval_status: 'FOR APPROVAL',
-        approval_seq: 10,
-        design_approver_id: 'design-1',
-        design_approver_id_name: 'Design One',
-      },
-      { actorUserId: 'design-1' },
-    );
+  it('maps release sequence 15 into the released stage', () => {
+    const stage = normalizeFiveM1EWorkflowStage({
+      approval_status: 'RELEASE',
+      approval_seq: 15,
+    });
 
-    expect(metadata).toEqual(expect.objectContaining({
-      workflowStage: FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER,
-      workflowStageCode: '10',
-      availableActions: [
-        FIVE_M1E_WORKFLOW_ACTION.APPROVE,
-        FIVE_M1E_WORKFLOW_ACTION.REJECT,
-      ],
-      nextApproverId: 'design-1',
-      nextApproverName: 'Design One',
-    }));
-  });
-
-  it('builds QA checker actions for the assigned actor', () => {
-    const metadata = buildFiveM1EWorkflowMetadata(
-      {
-        approval_status: 'FOR APPROVAL',
-        approval_seq: 13,
-        qa_checker_id: 'qa-1',
-        qa_checker_full_name: 'QA One',
-      },
-      { actorUserId: 'qa-1' },
-    );
-
-    expect(metadata).toEqual(expect.objectContaining({
-      workflowStage: FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER,
-      workflowStageCode: '13',
-      availableActions: [
-        FIVE_M1E_WORKFLOW_ACTION.CHECK,
-        FIVE_M1E_WORKFLOW_ACTION.REJECT,
-      ],
-      nextApproverId: 'qa-1',
-      nextApproverName: 'QA One',
-    }));
+    expect(stage).toBe(FIVE_M1E_WORKFLOW_STAGE.RELEASED);
   });
 
   it('gives the draft creator the submit action', () => {
@@ -113,6 +76,88 @@ describe('5M1E workflow utils', () => {
       workflowStage: FIVE_M1E_WORKFLOW_STAGE.DRAFT,
       workflowStageCode: 'DRAFT',
       availableActions: [FIVE_M1E_WORKFLOW_ACTION.SUBMIT],
+    }));
+  });
+
+  it('gives the assigned MPD actor submit in submitted', () => {
+    const metadata = buildFiveM1EWorkflowMetadata(
+      {
+        approval_status: 'SUBMITTED',
+        approval_seq: 1,
+        mpd_checker: 'mpd-1',
+        mpd_checker_name: 'MPD One',
+      },
+      { actorUserId: 'mpd-1' },
+    );
+
+    expect(metadata).toEqual(expect.objectContaining({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER,
+      workflowStageCode: '1',
+      availableActions: [FIVE_M1E_WORKFLOW_ACTION.SUBMIT],
+      nextApproverId: 'mpd-1',
+      nextApproverName: 'MPD One',
+    }));
+  });
+
+  it('gives editor-queue submit in for approval when the actor has stage access without explicit owner match', () => {
+    const metadata = buildFiveM1EWorkflowMetadata(
+      {
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 4,
+        reviewer: 'different-reviewer',
+        reviewer_name: 'Different Reviewer',
+      },
+      {
+        actorUserId: 'role-editor-1',
+        actorHasStageAccess: true,
+      },
+    );
+
+    expect(metadata).toEqual(expect.objectContaining({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.REVIEWER,
+      workflowStageCode: '4',
+      availableActions: [FIVE_M1E_WORKFLOW_ACTION.SUBMIT],
+    }));
+  });
+
+  it('gives the assigned checker check and reject in for approval', () => {
+    const metadata = buildFiveM1EWorkflowMetadata(
+      {
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 5,
+        checker: 'checker-1',
+        checker_name: 'Checker One',
+      },
+      { actorUserId: 'checker-1' },
+    );
+
+    expect(metadata).toEqual(expect.objectContaining({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER,
+      workflowStageCode: '5',
+      availableActions: [
+        FIVE_M1E_WORKFLOW_ACTION.CHECK,
+        FIVE_M1E_WORKFLOW_ACTION.REJECT,
+      ],
+    }));
+  });
+
+  it('gives the assigned final owner release on approved records', () => {
+    const metadata = buildFiveM1EWorkflowMetadata(
+      {
+        approval_status: 'APPROVED',
+        approval_seq: 7,
+        final_approver: 'final-1',
+        fa_name: 'Final One',
+      },
+      { actorUserId: 'final-1' },
+    );
+
+    expect(metadata).toEqual(expect.objectContaining({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.APPROVED,
+      workflowStageCode: '15',
+      availableActions: [FIVE_M1E_WORKFLOW_ACTION.RELEASE],
+      nextApproverId: 'final-1',
+      nextApproverName: 'Final One',
     }));
   });
 });

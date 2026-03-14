@@ -345,6 +345,37 @@ describe('PermissionService SQMP assigned-form fallback', () => {
     expect(authRepositoryMock.findAssignedFiveM1EAccessibleForms).toHaveBeenCalledWith('mpd-checker-1');
   });
 
+  it('allows 5M1E create when ROLE_ACCESS stores the new-form UUID instead of the legacy form code', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-creator',
+      role_name: 'TIP_APPROVER_5M1E',
+    });
+    const formsQuery = createQuery([
+      { form_id: 'form-uuid-5m1e-new', form_name: '5M1EMAIN-11-01' },
+    ]);
+    const permissionQuery = createQuery({
+      can_add: 1,
+      can_approve: 0,
+    });
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const result = await service.checkPermission('creator-1', '5M1EMAIN-11-01', 'add');
+
+    expect(result).toBe(true);
+    expect(formsQuery.where).toHaveBeenCalledWith(
+      'form_name',
+      'in',
+      expect.arrayContaining(['5M1EMAIN-11-01']),
+    );
+  });
+
   it('allows assigned 5M1E supplier access for 5M1ESupplier_Submition edit without ROLE_ACCESS', async () => {
     const userQuery = createQuery({
       role_id: 'role-supplier',
@@ -412,5 +443,68 @@ describe('PermissionService SQMP assigned-form fallback', () => {
     const result = await service.checkPermission('release-owner-1', '5M1EJudgementSec-06-17', 'release');
 
     expect(result).toBe(true);
+  });
+
+  it('reports missing baseline actions when a checker assignment relies on scoped runtime access', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-checker',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery(undefined);
+    const permissionQuery = createQuery([]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const [coverage] = await service.getAssignmentCoverage('checker-1', [
+      { formId: 'SQMP-09-03', assignmentRole: 'checker' },
+    ]);
+
+    expect(coverage.assignmentRole).toBe('checker');
+    expect(coverage.derivedActions).toEqual(expect.arrayContaining(['view', 'viewlist', 'check', 'reject']));
+    expect(coverage.missingBaselineActions).toEqual(expect.arrayContaining(['check', 'reject']));
+    expect(coverage.reliesOnAssignment).toBe(true);
+  });
+
+  it('reports baseline coverage when role access already grants the assigned approver actions', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-approver',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery(undefined);
+    const permissionQuery = createQuery([
+      {
+        can_view: 1,
+        can_viewlist: 1,
+        can_approve: 1,
+        can_check: 0,
+        can_edit: 1,
+        can_add: 0,
+        can_delete: 0,
+        can_export: 1,
+        can_attach: 0,
+      },
+    ]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const [coverage] = await service.getAssignmentCoverage('approver-1', [
+      { formId: 'SQPR-03-02', assignmentRole: 'approver' },
+    ]);
+
+    expect(coverage.baselineActions).toEqual(expect.arrayContaining(['view', 'viewlist', 'approve', 'reject', 'check']));
+    expect(coverage.missingBaselineActions).toEqual([]);
+    expect(coverage.reliesOnAssignment).toBe(false);
   });
 });

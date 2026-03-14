@@ -47,6 +47,15 @@ export const ChangePasswordSchema = z.object({
   newPassword: z.string().min(6, 'Password must be at least 6 characters')
 });
 
+export const AssignmentCoverageItemSchema = z.object({
+  formId: z.string().min(1, 'Form ID is required'),
+  assignmentRole: z.enum(['owner', 'issuer', 'checker', 'approver', 'supplier']),
+});
+
+export const AssignmentCoverageRequestSchema = z.object({
+  assignments: z.array(AssignmentCoverageItemSchema).min(1).max(10),
+});
+
 // ==========================================
 // 3. Extracted Types
 // ==========================================
@@ -54,3 +63,4 @@ export type UserDto = z.infer<typeof UserSchema>;
 export type CreateUserPayload = z.infer<typeof CreateUserSchema>;
 export type UpdateUserPayload = z.infer<typeof UpdateUserSchema>;
 export type ChangePasswordPayload = z.infer<typeof ChangePasswordSchema>;
+export type AssignmentCoverageRequestPayload = z.infer<typeof AssignmentCoverageRequestSchema>;

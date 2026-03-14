@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { userService } from './user.service.js';
-import { CreateUserSchema, UpdateUserSchema, ChangePasswordSchema } from './user.schema.js';
+import {
+  CreateUserSchema,
+  UpdateUserSchema,
+  ChangePasswordSchema,
+  AssignmentCoverageRequestSchema,
+} from './user.schema.js';
 
 // Internal mapper matching original output shape exactly
 // Note: DB column is `last_pasword_change` (legacy typo in DB — single 's')
@@ -63,6 +68,19 @@ export const userController = {
       const payload = ChangePasswordSchema.parse(req.body);
       await userService.changePassword(req.params.id as string, payload);
       res.json({ message: 'Password changed successfully' });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  getAssignmentCoverage: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = AssignmentCoverageRequestSchema.parse(req.body);
+      const coverage = await userService.getAssignmentCoverage(req.params.id as string, payload);
+      res.json({
+        userId: req.params.id,
+        assignments: coverage,
+      });
     } catch (error) {
       next(error);
     }

@@ -6,13 +6,16 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
+    "dev:local": "tsx watch --env-file=.env.local src/server.ts",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "migrate": "tsx src/db/migrate.ts"
+    "migrate": "tsx src/db/migrate.ts",
+    "init:db": "tsx src/db/init.ts",
+    "init:db:local": "tsx --env-file=.env.local src/db/init.ts"
   },
   "keywords": [],
   "author": "",

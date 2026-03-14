@@ -1,21 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FiveM1EWorkflowService } from '../../src/modules/fiveM1E/workflow/fiveM1E-workflow.service.js';
 
-const CIP_SITE_ID = '9E8EDBF4-A226-48F7-A780-A8B82CD13A50';
-const CLASS_C_ID = '10C66925-75F6-41C6-AEBC-8D6DE526800A';
-
 function createRecord(overrides: Record<string, unknown> = {}) {
   return {
     ControlNo: '5M-001',
     CreatedBy: 'creator-1',
     approval_status: 'DRAFT',
     approval_seq: 0,
-    mpd_pic: 'mpd-pic-1',
-    mpd_pic_name: 'MPD PIC',
     mpd_checker: 'mpd-checker-1',
     mpd_checker_name: 'MPD Checker',
-    mpd_approver: 'mpd-approver-1',
-    mpd_approver_name: 'MPD Approver',
     reviewer: 'reviewer-1',
     reviewer_full_name: 'Reviewer One',
     evaluation_ic: 'eval-1',
@@ -26,16 +19,6 @@ function createRecord(overrides: Record<string, unknown> = {}) {
     approver_full_name: 'SQE Approver',
     final_approver: 'final-1',
     fa_full_name: 'Final Approver',
-    design_approver_id: 'design-1',
-    design_approver_id_name: 'Design Approver',
-    envi_approver_id: 'envi-1',
-    envi_approver_full_name: 'Environment Approver',
-    qa_checker_id: 'qa-1',
-    qa_checker_full_name: 'QA Checker',
-    site_id: 'SITE-1',
-    class_id: 'CLASS-A',
-    ds_checker_necessary: 'NO',
-    envi_checker_necessary: 'NO',
     ...overrides,
   };
 }
@@ -46,17 +29,72 @@ describe('FiveM1EWorkflowService', () => {
     updateApprovalStatus: vi.fn(),
     insertStatusRemark: vi.fn(),
   };
+  const permissions = {
+    checkRolePermission: vi.fn(),
+    findUsersWithRolePermission: vi.fn(),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
     repository.updateApprovalStatus.mockResolvedValue(undefined);
     repository.insertStatusRemark.mockResolvedValue(undefined);
+    permissions.checkRolePermission.mockImplementation(async (userId: string, formId: string, action: string) => {
+      if (userId === 'creator-1') {
+        return formId === '5M1EMAIN-11-01' && action === 'submit';
+      }
+
+      if (userId === 'mpd-checker-1') {
+        return formId === '5M1EApprovalSecDes-06-17' && (action === 'submit' || action === 'edit');
+      }
+
+      if (userId === 'reviewer-1') {
+        return (
+          (formId === '5M1EApprovalSecEnvi-06-17' || formId === '5M1EApprovalSecQA-06-17') &&
+          (action === 'submit' || action === 'edit')
+        );
+      }
+
+      if (userId === 'sqe-checker-1') {
+        return (
+          (formId === '5M1EApprovalSecEnvi-06-17' || formId === '5M1EApprovalSecQA-06-17') &&
+          action === 'check'
+        );
+      }
+
+      if (userId === 'sqe-approver-1') {
+        return (
+          (formId === '5M1EApprovalSecEnvi-06-17' || formId === '5M1EApprovalSecQA-06-17') &&
+          action === 'approve'
+        );
+      }
+
+      if (userId === 'final-1') {
+        return (
+          (formId === '5M1EApprovalSecSQE-06-17' || formId === '5M1EJudgementSec-06-17') &&
+          (action === 'release' || action === 'edit')
+        );
+      }
+
+      if (userId === 'role-editor-1') {
+        return formId === '5M1EApprovalSecDes-06-17' && action === 'edit';
+      }
+
+      if (userId === 'release-role-1') {
+        return (
+          (formId === '5M1EApprovalSecSQE-06-17' || formId === '5M1EJudgementSec-06-17') &&
+          action === 'release'
+        );
+      }
+
+      return false;
+    });
+    permissions.findUsersWithRolePermission.mockResolvedValue([]);
   });
 
-  it('submits draft applications into MPD checker stage', async () => {
+  it('submits draft applications into the submitted stage', async () => {
     repository.findWithApproval.mockResolvedValue(createRecord());
 
-    const service = new FiveM1EWorkflowService(repository as any);
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
     const result = await service.submitApplication('5M-001', 'creator-1', 'submit');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
@@ -67,14 +105,6 @@ describe('FiveM1EWorkflowService', () => {
         ModifiedDate: expect.any(Date),
       }),
     );
-    expect(repository.insertStatusRemark).toHaveBeenCalledWith(
-      '5M-001',
-      expect.objectContaining({
-        remarks: 'submit',
-        remark_by: 'creator-1',
-        status: 'SUBMITTED',
-      }),
-    );
     expect(result.data).toEqual(expect.objectContaining({
       controlNo: '5M-001',
       status: 'SUBMITTED',
@@ -82,99 +112,135 @@ describe('FiveM1EWorkflowService', () => {
     }));
   });
 
-  it('moves MPD checker applications to MPD approver stage', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'SUBMITTED',
-      approval_seq: 1,
-    }));
+  it('submits draft applications by numeric row id using the canonical control number', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        ID: 66,
+        ControlNo: '5M-001',
+      }),
+    );
 
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.checkApplication('5M-001', 'mpd-checker-1', 'checked');
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    await service.submitApplication('66', 'creator-1', 'submit');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
-      'CHECKED',
+      'SUBMITTED',
       expect.objectContaining({
-        ApprovalSeq: 2,
-        MPDCheckerStatus: 1,
-        MPDChkrDtAprd: expect.any(Date),
-        ModifiedDate: expect.any(Date),
+        ApprovalSeq: 1,
       }),
     );
-    expect(result.data).toEqual(expect.objectContaining({
-      controlNo: '5M-001',
-      status: 'CHECKED',
-      workflowStageCode: '2',
-    }));
   });
 
-  it('moves MPD approver applications to reviewer stage', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'CHECKED',
-      approval_seq: 2,
-    }));
+  it('allows the creator to submit a draft when they only have 5M1E new-form access', async () => {
+    repository.findWithApproval.mockResolvedValue(createRecord());
 
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'mpd-approver-1', 'approved');
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const canSubmit = await service.canUserPerformAction('5M-001', 'creator-1', 'submit');
+
+    expect(canSubmit).toBe(true);
+    expect(permissions.checkRolePermission).toHaveBeenCalledWith('creator-1', '5M1EMAIN-11-01', 'submit');
+  });
+
+  it('lets the assigned MPD user save submitted records in place', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'SUBMITTED',
+        approval_seq: 1,
+      }),
+    );
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const canEdit = await service.canUserUpdateRecord('5M-001', 'mpd-checker-1');
+
+    expect(canEdit).toBe(true);
+    expect(permissions.checkRolePermission).toHaveBeenCalledWith('mpd-checker-1', '5M1EApprovalSecDes-06-17', 'edit');
+  });
+
+  it('allows submitted-stage editing through role access even when the explicit owner is someone else', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'SUBMITTED',
+        approval_seq: 1,
+        mpd_checker: 'different-owner-1',
+      }),
+    );
+    permissions.findUsersWithRolePermission.mockImplementation(async (formId: string, action: string) => {
+      if (formId === '5M1EApprovalSecDes-06-17' && action === 'edit') {
+        return [{ userId: 'role-editor-1', fullName: 'Role Editor' }];
+      }
+      return [];
+    });
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const canEdit = await service.canUserUpdateRecord('5M-001', 'role-editor-1');
+
+    expect(canEdit).toBe(true);
+  });
+
+  it('moves submitted MPD records into for approval on submit', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'SUBMITTED',
+        approval_seq: 1,
+      }),
+    );
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.submitApplication('5M-001', 'mpd-checker-1', 'procurement complete');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
       'FOR APPROVAL',
       expect.objectContaining({
-        ApprovalSeq: 3,
-        MPDApproverStatus: 1,
-        MPDAprDtAprd: expect.any(Date),
+        ApprovalSeq: 4,
         ModifiedDate: expect.any(Date),
       }),
     );
     expect(result.data).toEqual(expect.objectContaining({
-      controlNo: '5M-001',
       status: 'FOR APPROVAL',
       workflowStageCode: '4',
     }));
   });
 
-  it('moves reviewer sequence 500 applications to evaluation IC stage', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'FOR APPROVAL',
-      approval_seq: 500,
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'reviewer-1', 'reviewed');
-
-    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
-      '5M-001',
-      'FOR APPROVAL',
-      expect.objectContaining({
-        ApprovalSeq: 501,
-        ReviewerStatus: 1,
-        IssueDate: expect.any(Date),
-        ModifiedDate: expect.any(Date),
+  it('moves submitted MPD records into for approval by numeric row id using the canonical control number', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        ID: 77,
+        ControlNo: '5M-777',
+        approval_status: 'SUBMITTED',
+        approval_seq: 1,
       }),
     );
-    expect(result.data).toEqual(expect.objectContaining({
-      status: 'FOR APPROVAL',
-      workflowStageCode: '501',
-    }));
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    await service.submitApplication('77', 'mpd-checker-1', 'procurement complete');
+
+    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
+      '5M-777',
+      'FOR APPROVAL',
+      expect.objectContaining({
+        ApprovalSeq: 4,
+      }),
+    );
   });
 
-  it('moves evaluation IC applications to SQE checker stage', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'FOR APPROVAL',
-      approval_seq: 501,
-    }));
+  it('moves the evaluation editor into the checker stage on submit', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 4,
+      }),
+    );
 
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'eval-1', 'ic-approved');
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.submitApplication('5M-001', 'reviewer-1', 'assigned checker/approver');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
       'FOR APPROVAL',
       expect.objectContaining({
         ApprovalSeq: 5,
-        EvaluationICStatus: 1,
-        EvaluationICDtAprd: expect.any(Date),
         ModifiedDate: expect.any(Date),
       }),
     );
@@ -184,160 +250,93 @@ describe('FiveM1EWorkflowService', () => {
     }));
   });
 
-  it('lets a same-person SQE checker jump directly into the design branch', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'FOR APPROVAL',
-      approval_seq: 5,
-      checker: 'sqe-both-1',
-      approver: 'sqe-both-1',
-      ds_checker_necessary: 'YES',
-    }));
+  it('allows a for-approval editor with role access to save and submit without explicit owner match', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 4,
+        reviewer: 'different-reviewer',
+      }),
+    );
 
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.checkApplication('5M-001', 'sqe-both-1', 'sqe checked');
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+
+    await expect(service.canUserUpdateRecord('5M-001', 'reviewer-1')).resolves.toBe(true);
+    await expect(service.canUserPerformAction('5M-001', 'reviewer-1', 'submit')).resolves.toBe(true);
+  });
+
+  it('keeps checked records in for approval for the approver', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 5,
+      }),
+    );
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.checkApplication('5M-001', 'sqe-checker-1', 'checked');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
       'FOR APPROVAL',
       expect.objectContaining({
-        ApprovalSeq: 10,
+        ApprovalSeq: 6,
         ChkrStatus: '1',
-        AprStatus: '1',
         ChkrDtAprd: expect.any(Date),
-        ApproverDtAprd: expect.any(Date),
         ModifiedDate: expect.any(Date),
       }),
     );
     expect(result.data).toEqual(expect.objectContaining({
       status: 'FOR APPROVAL',
-      workflowStageCode: '10',
+      workflowStageCode: '6',
     }));
   });
 
-  it('moves SQE approver applications into the QA checker branch when no other branch applies', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'CHECKED',
-      approval_seq: 6,
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'sqe-approver-1', 'sqe approved');
-
-    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
-      '5M-001',
-      'FOR APPROVAL',
-      expect.objectContaining({
-        ApprovalSeq: 13,
-        AprStatus: '1',
-        ApproverDtAprd: expect.any(Date),
-        ModifiedDate: expect.any(Date),
+  it('moves the assigned approver to approved on approve', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 6,
       }),
     );
-    expect(result.data).toEqual(expect.objectContaining({
-      status: 'FOR APPROVAL',
-      workflowStageCode: '13',
-    }));
-  });
 
-  it('moves design approver applications into the environment branch when required', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'FOR APPROVAL',
-      approval_seq: 10,
-      envi_checker_necessary: 'YES',
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'design-1', 'design approved');
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.approveApplication('5M-001', 'sqe-approver-1', 'approved');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
-      'FOR APPROVAL',
-      expect.objectContaining({
-        ApprovalSeq: 12,
-        DesignApproverStatus: 1,
-        DesignApproverDtAprd: expect.any(Date),
-        ModifiedDate: expect.any(Date),
-      }),
-    );
-    expect(result.data).toEqual(expect.objectContaining({
-      status: 'FOR APPROVAL',
-      workflowStageCode: '12',
-    }));
-  });
-
-  it('moves environment approver applications into final approval for CIP class C', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'FOR APPROVAL',
-      approval_seq: 12,
-      site_id: CIP_SITE_ID,
-      class_id: CLASS_C_ID,
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'envi-1', 'environment approved');
-
-    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
-      '5M-001',
-      'FOR APPROVAL',
+      'APPROVED',
       expect.objectContaining({
         ApprovalSeq: 7,
-        EnviApproveStatus: 1,
-        EnviApproveDtAprd: expect.any(Date),
+        AprStatus: 'approved',
+        ApproverDtAprd: expect.any(Date),
         ModifiedDate: expect.any(Date),
       }),
     );
     expect(result.data).toEqual(expect.objectContaining({
-      status: 'FOR APPROVAL',
-      workflowStageCode: '7',
+      status: 'APPROVED',
+      workflowStageCode: '15',
     }));
   });
 
-  it('moves final approval into the release gate by default', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'CHECKED',
-      approval_seq: 7,
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication('5M-001', 'final-1', 'final approved');
-
-    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
-      '5M-001',
-      'FOR RELEASE',
-      expect.objectContaining({
-        ApprovalSeq: 8,
-        FAStatus: 'approved',
-        FADtAprd: expect.any(Date),
-        ModifiedDate: expect.any(Date),
+  it('moves the assigned approver to approved with condition when requested', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 6,
       }),
     );
-    expect(result.data).toEqual(expect.objectContaining({
-      status: 'FOR RELEASE',
-      workflowStageCode: '8',
-    }));
-  });
 
-  it('keeps approved-with-condition as its own branch', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'CHECKED',
-      approval_seq: 7,
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.approveApplication(
-      '5M-001',
-      'final-1',
-      'conditioned',
-      'APPROVED WITH CONDITION',
-    );
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.approveApplication('5M-001', 'sqe-approver-1', 'conditional', 'APRDWCOND');
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
       'APRDWCOND',
       expect.objectContaining({
         ApprovalSeq: 14,
-        FAStatus: 'aprdwcond',
-        FADtAprd: expect.any(Date),
+        AprStatus: 'aprdwcond',
+        ApproverDtAprd: expect.any(Date),
         ModifiedDate: expect.any(Date),
       }),
     );
@@ -347,51 +346,55 @@ describe('FiveM1EWorkflowService', () => {
     }));
   });
 
-  it('returns SQE approver rejection to the reviewer loop with revised sequence 6', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'CHECKED',
-      approval_seq: 6,
-    }));
-
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.rejectApplication('5M-001', 'sqe-approver-1', 'reject');
-
-    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
-      '5M-001',
-      'FOR APPROVAL',
-      expect.objectContaining({
-        ApprovalSeq: 4,
-        RevisedSequence: 6,
-        AprStatus: null,
-        ModifiedDate: expect.any(Date),
+  it('lets the assigned final owner release approved-with-condition records', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'APRDWCOND',
+        approval_seq: 14,
+        final_approver: 'final-1',
       }),
     );
-    expect(result.data).toEqual(expect.objectContaining({
-      status: 'FOR APPROVAL',
-      workflowStageCode: '4',
-    }));
-  });
 
-  it('releases the record into the legacy approved state', async () => {
-    repository.findWithApproval.mockResolvedValue(createRecord({
-      approval_status: 'FOR RELEASE',
-      approval_seq: 8,
-    }));
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const canEdit = await service.canUserUpdateRecord('5M-001', 'final-1');
+    const result = await service.releaseApplication('5M-001', 'final-1');
 
-    const service = new FiveM1EWorkflowService(repository as any);
-    const result = await service.releaseApplication('5M-001', 'mpd-pic-1');
-
+    expect(canEdit).toBe(true);
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
-      'APPROVED',
+      'RELEASE',
       expect.objectContaining({
         ApprovalSeq: 15,
         ModifiedDate: expect.any(Date),
       }),
     );
     expect(result.data).toEqual(expect.objectContaining({
-      status: 'APPROVED',
-      workflowStageCode: '15',
+      status: 'RELEASE',
+      workflowStageCode: 'RELEASE',
     }));
+  });
+
+  it('falls back to role access for final release when no explicit final owner is assigned', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'APPROVED',
+        approval_seq: 7,
+        final_approver: null,
+      }),
+    );
+    permissions.findUsersWithRolePermission.mockImplementation(async (formId: string, action: string) => {
+      if (
+        action === 'release' &&
+        (formId === '5M1EApprovalSecSQE-06-17' || formId === '5M1EJudgementSec-06-17')
+      ) {
+        return [{ userId: 'release-role-1', fullName: 'Release Role User' }];
+      }
+      return [];
+    });
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const canRelease = await service.canUserPerformAction('5M-001', 'release-role-1', 'release');
+
+    expect(canRelease).toBe(true);
   });
 });

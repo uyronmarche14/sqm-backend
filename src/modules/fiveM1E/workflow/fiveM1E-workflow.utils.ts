@@ -11,6 +11,13 @@ type RecordLike = Record<string, unknown>;
 
 type ActorContext = {
   actorUserId?: string;
+  owner?: {
+    id: string | null;
+    name: string | null;
+  };
+  ownerMode?: FiveM1EWorkflowOwnerMode;
+  eligibleActorUserIds?: string[];
+  actorHasStageAccess?: boolean;
 };
 
 const CIP_SITE_ID = '9E8EDBF4-A226-48F7-A780-A8B82CD13A50';
@@ -23,7 +30,14 @@ export type FiveM1EWorkflowMetadata = {
   availableActions: FiveM1EWorkflowAction[];
   nextApproverId: string | null;
   nextApproverName: string | null;
+  ownerMode: FiveM1EWorkflowOwnerMode;
 };
+
+export type FiveM1EWorkflowOwnerMode =
+  | 'assigned'
+  | 'role-fallback'
+  | 'shared-queue'
+  | 'unresolved';
 
 function getValue(record: RecordLike, ...keys: string[]) {
   for (const key of keys) {
@@ -132,7 +146,7 @@ export function normalizeFiveM1EWorkflowStage(recordOrStatus: RecordLike | strin
     case 'APPROVED W/ CONDITION':
       return FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION;
     case 'APPROVED':
-      return FIVE_M1E_WORKFLOW_STAGE.APPROVED;
+      return approvalSeq === 15 ? FIVE_M1E_WORKFLOW_STAGE.RELEASED : FIVE_M1E_WORKFLOW_STAGE.APPROVED;
     case 'FOR RELEASE':
       return approvalSeq === 8 ? FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE : FIVE_M1E_WORKFLOW_STAGE.UNKNOWN;
     case 'RELEASE':
@@ -169,7 +183,7 @@ export function normalizeFiveM1EWorkflowStage(recordOrStatus: RecordLike | strin
   }
 }
 
-function resolveStageOwner(record: RecordLike, stage: FiveM1EWorkflowStage) {
+export function resolveFiveM1EWorkflowStageOwner(record: RecordLike, stage: FiveM1EWorkflowStage) {
   switch (stage) {
     case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
       return {
@@ -221,12 +235,16 @@ function resolveStageOwner(record: RecordLike, stage: FiveM1EWorkflowStage) {
         id: getString(record, 'qa_checker_id', 'QACheckerID') ?? null,
         name: getString(record, 'qa_checker_full_name', 'qa_checker_name', 'QACheckerName') ?? null,
       };
-    case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
       return {
-        id: getString(record, 'mpd_pic', 'MPDPIC', 'mpd_approver', 'MPDApprover') ?? null,
-        name: getString(record, 'mpd_pic_name', 'MPDPICName', 'mpd_approver_name', 'MPDApproverName') ?? null,
+        id: getString(record, 'final_approver', 'FinalApprover') ?? null,
+        name: getString(record, 'fa_full_name', 'fa_name', 'FAName') ?? null,
+      };
+    case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
+      return {
+        id: getString(record, 'final_approver', 'FinalApprover') ?? null,
+        name: getString(record, 'fa_full_name', 'fa_name', 'FAName') ?? null,
       };
     default:
       return {
@@ -236,8 +254,79 @@ function resolveStageOwner(record: RecordLike, stage: FiveM1EWorkflowStage) {
   }
 }
 
+export function getFiveM1EWorkflowStageFormIds(stage: FiveM1EWorkflowStage) {
+  switch (stage) {
+    case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
+      return ['5M1EMAIN-11-01', '5M1ESupplier_Submition'];
+    case FIVE_M1E_WORKFLOW_STAGE.RAR:
+    case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
+      return ['5M1ESupplier_Submition'];
+    case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
+    case FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER:
+      return ['5M1EApprovalSecDes-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.REVIEWER:
+    case FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC:
+    case FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER:
+    case FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER:
+    case FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER:
+    case FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER:
+    case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
+    case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
+      return ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
+      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
+      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
+      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
+      return ['5M1EJudgementSec-06-17'];
+    default:
+      return [];
+  }
+}
+
+export function getFiveM1EWorkflowActionForStage(stage: FiveM1EWorkflowStage): FiveM1EWorkflowAction | null {
+  switch (stage) {
+    case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
+    case FIVE_M1E_WORKFLOW_STAGE.RAR:
+    case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
+    case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
+    case FIVE_M1E_WORKFLOW_STAGE.REVIEWER:
+    case FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC:
+      return FIVE_M1E_WORKFLOW_ACTION.SUBMIT;
+    case FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER:
+      return FIVE_M1E_WORKFLOW_ACTION.CHECK;
+    case FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER:
+      return FIVE_M1E_WORKFLOW_ACTION.APPROVE;
+    case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
+    case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
+    case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
+      return FIVE_M1E_WORKFLOW_ACTION.RELEASE;
+    default:
+      return null;
+  }
+}
+
 function isAssignedActor(ownerId: string | null, actorUserId?: string) {
   return Boolean(ownerId && actorUserId && ownerId === actorUserId);
+}
+
+function isEligibleWorkflowActor(
+  ownerId: string | null,
+  ownerMode: FiveM1EWorkflowOwnerMode,
+  actorUserId?: string,
+  eligibleActorUserIds: string[] = [],
+) {
+  if (!actorUserId) {
+    return false;
+  }
+
+  if (ownerMode === 'shared-queue') {
+    return eligibleActorUserIds.includes(actorUserId);
+  }
+
+  return isAssignedActor(ownerId, actorUserId);
 }
 
 export function buildFiveM1EWorkflowMetadata(record: RecordLike, context: ActorContext = {}): FiveM1EWorkflowMetadata {
@@ -245,41 +334,51 @@ export function buildFiveM1EWorkflowMetadata(record: RecordLike, context: ActorC
   const actorUserId = context.actorUserId;
   const availableActions: FiveM1EWorkflowAction[] = [];
   const createdBy = getString(record, 'CreatedBy', 'created_by');
-  const owner = resolveStageOwner(record, workflowStage);
+  const owner = context.owner ?? resolveFiveM1EWorkflowStageOwner(record, workflowStage);
+  const ownerMode =
+    context.ownerMode ?? (owner.id ? 'assigned' : 'unresolved');
+  const actorHasStageAccess = context.actorHasStageAccess ?? true;
+  const isActionableActor =
+    actorHasStageAccess &&
+    isEligibleWorkflowActor(owner.id, ownerMode, actorUserId, context.eligibleActorUserIds);
+  const isEditorQueueStage =
+    workflowStage === FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER ||
+    workflowStage === FIVE_M1E_WORKFLOW_STAGE.REVIEWER ||
+    workflowStage === FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC;
 
   if (
-    (workflowStage === FIVE_M1E_WORKFLOW_STAGE.DRAFT || workflowStage === FIVE_M1E_WORKFLOW_STAGE.RAR) &&
+    (workflowStage === FIVE_M1E_WORKFLOW_STAGE.DRAFT ||
+      workflowStage === FIVE_M1E_WORKFLOW_STAGE.RAR ||
+      workflowStage === FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE) &&
     actorUserId &&
-    createdBy === actorUserId
+    createdBy === actorUserId &&
+    actorHasStageAccess
   ) {
     availableActions.push(FIVE_M1E_WORKFLOW_ACTION.SUBMIT);
   }
 
-  if (
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER
-  ) {
-    if (isAssignedActor(owner.id, actorUserId)) {
+  if (isEditorQueueStage && actorHasStageAccess) {
+    availableActions.push(FIVE_M1E_WORKFLOW_ACTION.SUBMIT);
+  }
+
+  if (workflowStage === FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER) {
+    if (isActionableActor) {
       availableActions.push(FIVE_M1E_WORKFLOW_ACTION.CHECK, FIVE_M1E_WORKFLOW_ACTION.REJECT);
     }
   }
 
-  if (
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.REVIEWER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER ||
-    workflowStage === FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER
-  ) {
-    if (isAssignedActor(owner.id, actorUserId)) {
+  if (workflowStage === FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER) {
+    if (isActionableActor) {
       availableActions.push(FIVE_M1E_WORKFLOW_ACTION.APPROVE, FIVE_M1E_WORKFLOW_ACTION.REJECT);
     }
   }
 
-  if (workflowStage === FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE && isAssignedActor(owner.id, actorUserId)) {
+  if (
+    (workflowStage === FIVE_M1E_WORKFLOW_STAGE.APPROVED ||
+      workflowStage === FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION ||
+      workflowStage === FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE) &&
+    isActionableActor
+  ) {
     availableActions.push(FIVE_M1E_WORKFLOW_ACTION.RELEASE);
   }
 
@@ -290,5 +389,6 @@ export function buildFiveM1EWorkflowMetadata(record: RecordLike, context: ActorC
     availableActions,
     nextApproverId: owner.id,
     nextApproverName: owner.name,
+    ownerMode,
   };
 }
