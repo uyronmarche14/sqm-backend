@@ -8,6 +8,7 @@ const authRepositoryMock = vi.hoisted(() => ({
   findAssignedSqmpAccessibleForms: vi.fn(),
   findAssignedNpiAccessibleForms: vi.fn(),
   findAssignedMnrAccessibleForms: vi.fn(),
+  findAssignedQmqaAccessibleForms: vi.fn(),
   findAssignedSqprAccessibleForms: vi.fn(),
   findAssignedFiveM1EAccessibleForms: vi.fn(),
 }));
@@ -41,6 +42,7 @@ describe('PermissionService SQMP assigned-form fallback', () => {
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
   });
@@ -269,6 +271,54 @@ describe('PermissionService SQMP assigned-form fallback', () => {
 
     expect(result).toBe(true);
     expect(authRepositoryMock.findAssignedMnrAccessibleForms).toHaveBeenCalledWith('supplier-user-1');
+  });
+
+  it('allows assigned QMQA closure checker access for QMQA-05-09 check without ROLE_ACCESS', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-1',
+      role_name: 'ACCESSSS',
+    });
+    const formsQuery = createQuery(undefined);
+    const permissionQuery = createQuery(undefined);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue(['QMQA-05-09']);
+
+    const service = new PermissionService();
+    const result = await service.checkPermission('checker-1', 'QMQA-05-09', 'check');
+
+    expect(result).toBe(true);
+    expect(authRepositoryMock.findAssignedQmqaAccessibleForms).toHaveBeenCalledWith('checker-1');
+  });
+
+  it('allows assigned SQPR reviewer access for SQPR-03-02 approve without ROLE_ACCESS', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-1',
+      role_name: 'ACCESSSS',
+    });
+    const formsQuery = createQuery(undefined);
+    const permissionQuery = createQuery(undefined);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue(['SQPR-03-02']);
+
+    const service = new PermissionService();
+    const result = await service.checkPermission('reviewer-1', 'SQPR-03-02', 'approve');
+
+    expect(result).toBe(true);
+    expect(authRepositoryMock.findAssignedSqprAccessibleForms).toHaveBeenCalledWith('reviewer-1');
   });
 
   it('allows assigned 5M1E checker access for 5M1EApprovalSecDes-06-17 check without ROLE_ACCESS', async () => {

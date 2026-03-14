@@ -19,6 +19,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@sqm/permissions-contract": "file:../packages/permissions-contract",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

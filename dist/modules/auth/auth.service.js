@@ -2,27 +2,18 @@ import { authRepository } from './auth.repository.js';
 import { UnauthorizedError } from '../../shared/errors/AppError.js';
 import { verifyPassword } from '../../shared/utils/hash.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
+import { getLegacyFormMapping, getModulePermissionManifest } from '@sqm/permissions-contract';
 export class AuthService {
     buildAuthContextResponse(user, accessibleForms) {
-        const userMenu = [];
-        if (accessibleForms.some((formCode) => formCode.startsWith('SQMP-'))) {
-            userMenu.push('Supplier Quality Management Plan');
+        const userMenuSet = new Set();
+        for (const formCode of accessibleForms) {
+            const mapping = getLegacyFormMapping(formCode);
+            if (!mapping) {
+                continue;
+            }
+            userMenuSet.add(getModulePermissionManifest(mapping.module).menuLabel);
         }
-        if (accessibleForms.some((formCode) => formCode.startsWith('NPILOT-'))) {
-            userMenu.push('New Parts Incoming');
-        }
-        if (accessibleForms.some((formCode) => formCode.startsWith('MNR-'))) {
-            userMenu.push('MNR Tracking');
-        }
-        if (accessibleForms.some((formCode) => formCode.startsWith('QMQA-'))) {
-            userMenu.push('QMQA');
-        }
-        if (accessibleForms.some((formCode) => formCode.startsWith('5M1E'))) {
-            userMenu.push('5M1E');
-        }
-        if (accessibleForms.some((formCode) => formCode.startsWith('SQPR-') || formCode.startsWith('SFR-'))) {
-            userMenu.push('SQPR');
-        }
+        const userMenu = Array.from(userMenuSet);
         const normalizedRoleName = user.role_name?.toLowerCase() || '';
         const isAdmin = normalizedRoleName.includes('admin') ? 1 : 0;
         const isSupplier = normalizedRoleName.includes('supplier');

@@ -7,6 +7,7 @@ const authRepositoryMock = vi.hoisted(() => ({
   findAssignedNpiAccessibleForms: vi.fn(),
   findAssignedMnrAccessibleForms: vi.fn(),
   findAssignedQmqaAccessibleForms: vi.fn(),
+  findAssignedSqprAccessibleForms: vi.fn(),
   findAssignedFiveM1EAccessibleForms: vi.fn(),
 }));
 
@@ -62,6 +63,7 @@ describe('AuthService login SQMP assignment access', () => {
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
     hashMock.verifyPassword.mockResolvedValue(true);
     jwtMock.generateAccessToken.mockReturnValue('access-token');
@@ -161,6 +163,32 @@ describe('AuthService login SQMP assignment access', () => {
 
     expect(result.accessibleForms).toEqual(['MNR-12-10']);
     expect(result.userMenu).toEqual(['MNR Tracking']);
+  });
+
+  it('includes QMQA accessibleForms and module menu when the user is assigned to a QMQA queue', async () => {
+    authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue(['QMQA-05-09']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['QMQA-05-09']);
+    expect(result.userMenu).toEqual(['QMQA']);
+  });
+
+  it('includes SQPR accessibleForms and module menu when the user is assigned to an SQPR queue', async () => {
+    authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue(['SQPR-03-02']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['SQPR-03-02']);
+    expect(result.userMenu).toEqual(['SQPR']);
   });
 
   it('includes MNR issuer response workspace access after supplier-response handoff', async () => {
