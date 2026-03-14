@@ -1,392 +1,242 @@
-/**
- * NPI Workflow Service
- * Handles workflow state transitions and approvals
- * Type-safe implementation with no 'any' types
- */
-
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { NpiRepository } from '../npi.repository.js';
-import { NotFoundError } from '../../../shared/errors/AppError.js';
-import { mapStatusToDB } from '../../../shared/utils/status-mapper.js';
-import { ServiceResponse, WorkflowActionResponse, WorkflowAction, UserRole } from '../types/npi.types.js';
+import type { ServiceResponse, WorkflowActionResponse } from '../types/npi.types.js';
+import {
+  buildNpiWorkflowMetadata,
+  getNpiDbStatus,
+  normalizeNpiWorkflowStage,
+} from '../workflow/npi-workflow.utils.js';
+import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
 
 export class NpiWorkflowService {
-  constructor(
-    private repository: NpiRepository
-  ) {}
+  constructor(private repository: NpiRepository) {}
 
-  /**
-   * Submit record for approval (DRAFT → SUBMITTED)
-   */
-  async submitForApproval(id: string, userId: string): Promise<ServiceResponse<WorkflowActionResponse>> {
+  async submitForApproval(
+    id: string,
+    userId: string,
+  ): Promise<ServiceResponse<WorkflowActionResponse>> {
     const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
+    if (!existing) throw new NotFoundError('NPI Record not found');
+
+    const record = existing.record;
+    const stage = normalizeNpiWorkflowStage(record.request_status);
+    if (
+      stage !== NPI_WORKFLOW_STAGE.DRAFT &&
+      stage !== NPI_WORKFLOW_STAGE.REJECT_CHECKER &&
+      stage !== NPI_WORKFLOW_STAGE.REJECT_APPROVER
+    ) {
+      throw new BadRequestError(`Cannot submit record from ${stage}`);
     }
 
-    const currentStatus = existing.record.request_status;
-    if (currentStatus !== 'DRAFT' && currentStatus !== 'DR') {
-      throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
+    if (record.inspector_id !== userId) {
+      throw new ForbiddenError('Only the originator can submit this NPI record.');
+    }
+
+    if (!record.checker_id || !record.approver_id) {
+      throw new BadRequestError('Checker and approver must be assigned before submitting.');
     }
 
     const now = new Date();
-    const dbStatus = mapStatusToDB('SUBMITTED');
-
     await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
+      await trx
+        .updateTable('NPI_LOTS')
         .set({
-          request_status: dbStatus,
+          request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER),
+          submitted_date: now,
           last_update: now,
-          updateby: userId
+          updateby: userId,
         })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
+        .where('npi_lot_id', '=', record.npi_lot_id)
         .execute();
     });
 
-    // TODO: Send notification to checker
-    // await notificationService.sendWorkflowNotification('submitted', {...});
-
     return {
       success: true,
-      data: { id },
-      message: 'Record submitted for approval'
+      data: {
+        id: record.npi_lot_id,
+        status: getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER),
+      },
+      message: 'Record submitted for checker approval',
     };
   }
 
-  /**
-   * Check record (SUBMITTED → CHECKED)
-   */
-  async checkRecord(id: string, userId: string, remarks?: string): Promise<ServiceResponse<WorkflowActionResponse>> {
+  async checkRecord(
+    id: string,
+    userId: string,
+    remarks?: string,
+  ): Promise<ServiceResponse<WorkflowActionResponse>> {
     const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
+    if (!existing) throw new NotFoundError('NPI Record not found');
+
+    const record = existing.record;
+    const stage = normalizeNpiWorkflowStage(record.request_status);
+    if (stage !== NPI_WORKFLOW_STAGE.CHECKER) {
+      throw new BadRequestError(`Cannot check record from ${stage}`);
     }
 
-    const currentStatus = existing.record.request_status;
-    if (currentStatus !== 'SUBMITTED' && currentStatus !== 'SU') {
-      throw new Error(`Cannot check: record is in ${currentStatus}, expected SUBMITTED`);
+    if (record.checker_id !== userId) {
+      throw new ForbiddenError('Only the assigned checker can check this NPI record.');
     }
 
     const now = new Date();
-    const dbStatus = mapStatusToDB('CHECKED');
-
     await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
+      await trx
+        .updateTable('NPI_LOTS')
         .set({
-          request_status: dbStatus,
-          checker_id: userId,
+          request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.APPROVER),
           checked_date: now,
           checker_remarks: remarks || null,
           last_update: now,
-          updateby: userId
+          updateby: userId,
         })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
+        .where('npi_lot_id', '=', record.npi_lot_id)
         .execute();
     });
 
-    // TODO: Send notification to approver
-    // await notificationService.sendWorkflowNotification('checked', {...});
-
     return {
       success: true,
-      data: { id },
-      message: 'Record checked successfully'
+      data: {
+        id: record.npi_lot_id,
+        status: getNpiDbStatus(NPI_WORKFLOW_STAGE.APPROVER),
+      },
+      message: 'Record checked successfully',
     };
   }
 
-  /**
-   * Approve record (CHECKED → APPROVED)
-   */
-  async approveRecord(id: string, userId: string, remarks?: string): Promise<ServiceResponse<WorkflowActionResponse>> {
+  async approveRecord(
+    id: string,
+    userId: string,
+    remarks?: string,
+  ): Promise<ServiceResponse<WorkflowActionResponse>> {
     const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
+    if (!existing) throw new NotFoundError('NPI Record not found');
+
+    const record = existing.record;
+    const stage = normalizeNpiWorkflowStage(record.request_status);
+    if (stage !== NPI_WORKFLOW_STAGE.APPROVER) {
+      throw new BadRequestError(`Cannot approve record from ${stage}`);
     }
 
-    const currentStatus = existing.record.request_status;
-    if (currentStatus !== 'CHECKED' && currentStatus !== 'CK') {
-      throw new Error(`Cannot approve: record is in ${currentStatus}, expected CHECKED`);
+    if (record.approver_id !== userId) {
+      throw new ForbiddenError('Only the assigned approver can approve this NPI record.');
     }
 
     const now = new Date();
-    const dbStatus = mapStatusToDB('APPROVED');
-
     await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
+      await trx
+        .updateTable('NPI_LOTS')
         .set({
-          request_status: dbStatus,
-          approver_id: userId,
+          request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.ACCEPT),
           approved_date: now,
           approver_remarks: remarks || null,
           last_update: now,
-          updateby: userId
+          updateby: userId,
         })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
+        .where('npi_lot_id', '=', record.npi_lot_id)
         .execute();
     });
 
-    // TODO: Send notification to creator
-    // await notificationService.sendWorkflowNotification('approved', {...});
-
     return {
       success: true,
-      data: { id },
-      message: 'Record approved successfully'
+      data: {
+        id: record.npi_lot_id,
+        status: getNpiDbStatus(NPI_WORKFLOW_STAGE.ACCEPT),
+      },
+      message: 'Record approved successfully',
     };
   }
 
-  /**
-   * Reject record (any status → REJECTED → DRAFT)
-   */
-  async rejectRecord(id: string, userId: string, remarks: string): Promise<ServiceResponse<WorkflowActionResponse>> {
+  async rejectRecord(
+    id: string,
+    userId: string,
+    remarks: string,
+  ): Promise<ServiceResponse<WorkflowActionResponse>> {
     if (!remarks) {
-      throw new Error('Remarks are required for rejection');
+      throw new BadRequestError('Remarks are required for rejection');
     }
 
     const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
-    }
+    if (!existing) throw new NotFoundError('NPI Record not found');
 
+    const record = existing.record;
+    const stage = normalizeNpiWorkflowStage(record.request_status);
     const now = new Date();
-    const dbStatus = mapStatusToDB('DRAFT'); // Return to draft for editing
 
-    await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
-        .set({
-          request_status: dbStatus,
-          approver_remarks: remarks,
-          last_update: now,
-          updateby: userId
-        })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
-        .execute();
-    });
+    if (stage === NPI_WORKFLOW_STAGE.CHECKER) {
+      if (record.checker_id !== userId) {
+        throw new ForbiddenError('Only the assigned checker can reject this NPI record.');
+      }
 
-    // TODO: Send notification to creator
-    // await notificationService.sendWorkflowNotification('rejected', {...});
+      await this.repository.executeTransaction(async (trx) => {
+        await trx
+          .updateTable('NPI_LOTS')
+          .set({
+            request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER),
+            checked_date: now,
+            checker_remarks: remarks,
+            last_update: now,
+            updateby: userId,
+          })
+          .where('npi_lot_id', '=', record.npi_lot_id)
+          .execute();
+      });
 
-    return {
-      success: true,
-      data: { id },
-      message: 'Record rejected and returned to draft'
-    };
+      return {
+        success: true,
+        data: {
+          id: record.npi_lot_id,
+          status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER),
+        },
+        message: 'Record rejected by checker',
+      };
+    }
+
+    if (stage === NPI_WORKFLOW_STAGE.APPROVER) {
+      if (record.approver_id !== userId) {
+        throw new ForbiddenError('Only the assigned approver can reject this NPI record.');
+      }
+
+      await this.repository.executeTransaction(async (trx) => {
+        await trx
+          .updateTable('NPI_LOTS')
+          .set({
+            request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_APPROVER),
+            approved_date: now,
+            approver_remarks: remarks,
+            last_update: now,
+            updateby: userId,
+          })
+          .where('npi_lot_id', '=', record.npi_lot_id)
+          .execute();
+      });
+
+      return {
+        success: true,
+        data: {
+          id: record.npi_lot_id,
+          status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_APPROVER),
+        },
+        message: 'Record rejected by approver',
+      };
+    }
+
+    throw new BadRequestError(`Cannot reject record from ${stage}`);
   }
 
-  /**
-   * Get available workflow actions for current status
-   */
-  getAvailableActions(currentStatus: string, userRole: UserRole): WorkflowAction[] {
-    const actions: WorkflowAction[] = [];
+  getAvailableActions(
+    currentStatus: string,
+    userId?: string,
+    roleName?: string | null,
+    record?: Record<string, unknown>,
+  ) {
+    const metadata = buildNpiWorkflowMetadata(
+      {
+        request_status: currentStatus,
+        ...(record || {}),
+      },
+      { userId, roleName },
+    );
 
-    switch (currentStatus) {
-      case 'DRAFT':
-      case 'DR':
-        actions.push('submit');
-        break;
-      case 'SUBMITTED':
-      case 'SU':
-        if (userRole === 'checker' || userRole === 'admin') {
-          actions.push('check', 'reject');
-        }
-        break;
-      case 'CHECKED':
-      case 'CK':
-        if (userRole === 'approver' || userRole === 'admin') {
-          actions.push('approve', 'reject');
-        }
-        break;
-      case 'APPROVED':
-      case 'AP':
-        // No further actions (terminal state for NPI)
-        break;
-    }
-
-    return actions;
-  }
-}
-    const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
-    }
-
-    const currentStatus = existing.record.request_status;
-    if (currentStatus !== 'DRAFT' && currentStatus !== 'DR') {
-      throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
-    }
-
-    const now = new Date();
-    const dbStatus = mapStatusToDB('SUBMITTED');
-
-    await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
-        .set({
-          request_status: dbStatus,
-          last_update: now,
-          updateby: userId
-        })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
-        .execute();
-    });
-
-    // TODO: Send notification to checker
-    // await notificationService.sendWorkflowNotification('submitted', {...});
-
-    return {
-      success: true,
-      data: { id },
-      message: 'Record submitted for approval'
-    };
-  }
-
-  /**
-   * Check record (SUBMITTED → CHECKED)
-   */
-  async checkRecord(id: string, userId: string, remarks?: string): Promise<any> {
-    const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
-    }
-
-    const currentStatus = existing.record.request_status;
-    if (currentStatus !== 'SUBMITTED' && currentStatus !== 'SU') {
-      throw new Error(`Cannot check: record is in ${currentStatus}, expected SUBMITTED`);
-    }
-
-    const now = new Date();
-    const dbStatus = mapStatusToDB('CHECKED');
-
-    await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
-        .set({
-          request_status: dbStatus,
-          checker_id: userId,
-          checker_date: now,
-          checker_remarks: remarks || null,
-          last_update: now,
-          updateby: userId
-        })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
-        .execute();
-    });
-
-    // TODO: Send notification to approver
-    // await notificationService.sendWorkflowNotification('checked', {...});
-
-    return {
-      success: true,
-      data: { id },
-      message: 'Record checked successfully'
-    };
-  }
-
-  /**
-   * Approve record (CHECKED → APPROVED)
-   */
-  async approveRecord(id: string, userId: string, remarks?: string): Promise<any> {
-    const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
-    }
-
-    const currentStatus = existing.record.request_status;
-    if (currentStatus !== 'CHECKED' && currentStatus !== 'CK') {
-      throw new Error(`Cannot approve: record is in ${currentStatus}, expected CHECKED`);
-    }
-
-    const now = new Date();
-    const dbStatus = mapStatusToDB('APPROVED');
-
-    await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
-        .set({
-          request_status: dbStatus,
-          approver_id: userId,
-          approver_date: now,
-          approver_remarks: remarks || null,
-          last_update: now,
-          updateby: userId
-        })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
-        .execute();
-    });
-
-    // TODO: Send notification to creator
-    // await notificationService.sendWorkflowNotification('approved', {...});
-
-    return {
-      success: true,
-      data: { id },
-      message: 'Record approved successfully'
-    };
-  }
-
-  /**
-   * Reject record (any status → REJECTED → DRAFT)
-   */
-  async rejectRecord(id: string, userId: string, remarks: string): Promise<any> {
-    if (!remarks) {
-      throw new Error('Remarks are required for rejection');
-    }
-
-    const existing = await this.repository.findByIdDetailed(id);
-    if (!existing) {
-      throw new NotFoundError('NPI Record not found');
-    }
-
-    const now = new Date();
-    const dbStatus = mapStatusToDB('DRAFT'); // Return to draft for editing
-
-    await this.repository.executeTransaction(async (trx) => {
-      await trx.updateTable('NPI_LOTS')
-        .set({
-          request_status: dbStatus,
-          approver_remarks: remarks,
-          last_update: now,
-          updateby: userId
-        })
-        .where('npi_lot_id', '=', existing.record.npi_lot_id)
-        .execute();
-    });
-
-    // TODO: Send notification to creator
-    // await notificationService.sendWorkflowNotification('rejected', {...});
-
-    return {
-      success: true,
-      data: { id },
-      message: 'Record rejected and returned to draft'
-    };
-  }
-
-  /**
-   * Get available workflow actions for current status
-   */
-  getAvailableActions(currentStatus: string, userRole: string): string[] {
-    const actions: string[] = [];
-
-    switch (currentStatus) {
-      case 'DRAFT':
-      case 'DR':
-        actions.push('submit');
-        break;
-      case 'SUBMITTED':
-      case 'SU':
-        if (userRole === 'checker' || userRole === 'admin') {
-          actions.push('check', 'reject');
-        }
-        break;
-      case 'CHECKED':
-      case 'CK':
-        if (userRole === 'approver' || userRole === 'admin') {
-          actions.push('approve', 'reject');
-        }
-        break;
-      case 'APPROVED':
-      case 'AP':
-        // No further actions (terminal state for NPI)
-        break;
-    }
-
-    return actions;
+    return metadata.availableActions;
   }
 }

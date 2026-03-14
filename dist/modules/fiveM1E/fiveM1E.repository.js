@@ -47,29 +47,50 @@ export class FiveM1ERepository extends BaseRepository {
             .selectAll('app')
             .select([
             'approval.Status as approval_status',
+            'approval.ApprovalSeq as approval_seq',
             'approval.MPDPIC as mpd_pic',
+            'approval.MPDChecker as mpd_checker',
+            'approval.MPDCheckerName as mpd_checker_name',
+            'approval.MPDCheckerStatus as mpd_checker_status',
             'approval.MPDApprover as mpd_approver',
+            'approval.MPDApproverName as mpd_approver_name',
+            'approval.MPDApproverStatus as mpd_approver_status',
             // Approval section fields
             'approval.Reviewer as reviewer',
+            'approval.ReviewerName as reviewer_name',
+            'approval.ReviewerStatus as reviewer_status',
             'approval.Checker as checker',
+            'approval.CheckerName as checker_name',
+            'approval.ChkrStatus as chkr_status',
             'approval.Approver as approver',
+            'approval.ApproverName as approver_name',
+            'approval.AprStatus as apr_status',
             'approval.IssueDate as issue_date',
             'approval.ChkrDtAprd as chkr_dt_aprd',
             'approval.ApproverDtAprd as approver_dt_aprd',
+            'approval.EvaluationIC as evaluation_ic',
+            'approval.EvaluationICName as evaluation_ic_name',
+            'approval.EvaluationICStatus as evaluation_ic_status',
             // SQE / QA Approval fields
             'approval.QACheckerID as qa_checker_id',
             'approval.QACheckerName as qa_checker_name',
+            'approval.QACheckerStatus as qa_checker_status',
             'approval.QACheckerDtAprd as qa_checker_dt_aprd',
             'approval.FinalApprover as final_approver',
             'approval.FAName as fa_name',
+            'approval.FAStatus as fa_status',
             'approval.FADtAprd as fa_dt_aprd',
             // Design Approval fields
             'approval.DSAppproverNecessary as ds_approver_necessary',
             'approval.DesignApproverID as design_approver_id',
+            'approval.DesignApproverName as design_approver_name',
+            'approval.DesignApproverStatus as design_approver_status',
             'approval.DesignApproverDtAprd as design_approver_dt_aprd',
             'approval.DSCheckerNecessary as ds_checker_necessary',
             'approval.DesignCheckerID as design_checker_id',
+            'approval.DesignCheckerName as design_checker_name',
             'approval.DesignCheckerDtAprd as design_checker_dt_aprd',
+            'approval.RevisedSequence as revised_sequence',
             // Environment Approval fields
             'approval.EnviCheckerNecessary as envi_checker_necessary',
             'approval.EnviCheckerID as envi_checker_id',
@@ -133,33 +154,54 @@ export class FiveM1ERepository extends BaseRepository {
             .selectAll('app')
             .select([
             'approval.Status as approval_status',
+            'approval.ApprovalSeq as approval_seq',
             'approval.MPDPIC as mpd_pic',
+            'approval.MPDChecker as mpd_checker',
+            'approval.MPDCheckerName as mpd_checker_name',
+            'approval.MPDCheckerStatus as mpd_checker_status',
             'approval.MPDApprover as mpd_approver',
+            'approval.MPDApproverName as mpd_approver_name',
+            'approval.MPDApproverStatus as mpd_approver_status',
             // Approval section fields
             'approval.Reviewer as reviewer',
             'approval.ReviewerName as reviewer_name',
+            'approval.ReviewerStatus as reviewer_status',
             'approval.Checker as checker',
             'approval.CheckerName as checker_name',
+            'approval.ChkrStatus as chkr_status',
             'approval.Approver as approver',
             'approval.ApproverName as approver_name',
+            'approval.AprStatus as apr_status',
+            'approval.EvaluationIC as evaluation_ic',
+            'approval.EvaluationICName as evaluation_ic_name',
+            'approval.EvaluationICStatus as evaluation_ic_status',
             // SQE / QA Approval fields
             'approval.QACheckerID as qa_checker_id',
             'approval.QACheckerName as qa_checker_name',
+            'approval.QACheckerStatus as qa_checker_status',
             'approval.QACheckerDtAprd as qa_checker_dt_aprd',
             'approval.FinalApprover as final_approver',
             'approval.FAName as fa_name',
+            'approval.FAStatus as fa_status',
             'approval.FADtAprd as fa_dt_aprd',
             // Design Approval fields
             'approval.DSAppproverNecessary as ds_approver_necessary',
             'approval.DesignApproverID as design_approver_id',
+            'approval.DesignApproverName as design_approver_name',
+            'approval.DesignApproverStatus as design_approver_status',
             'approval.DesignApproverDtAprd as design_approver_dt_aprd',
             'approval.DSCheckerNecessary as ds_checker_necessary',
             'approval.DesignCheckerID as design_checker_id',
+            'approval.DesignCheckerName as design_checker_name',
             'approval.DesignCheckerDtAprd as design_checker_dt_aprd',
+            'approval.RevisedSequence as revised_sequence',
             // Environment Approval fields
             'approval.EnviAppproverNecessary as envi_approver_necessary',
             'approval.EnviApproverID as envi_approver_id',
+            'approval.EnviApproveStatus as envi_approve_status',
             'approval.EnviCheckerNecessary as envi_checker_necessary',
+            'approval.EnviCheckerID as envi_checker_id',
+            'approval.EnviCheckerStatus as envi_checker_status',
             // Human-readable names from joined tables
             'sup.supplier_name as supplier_name',
             'site.site_name as site_name',
@@ -183,7 +225,7 @@ export class FiveM1ERepository extends BaseRepository {
                 query = query.where('approval.Status', 'in', ['SUBMITTED', 'CHECKED']);
             }
             else if (statuses.length === 1 && statuses[0] === 'FAPPROVED') {
-                query = query.where('approval.Status', 'in', ['FAPPROVED', 'CHECKED']);
+                query = query.where('approval.Status', 'in', ['FAPPROVED', 'FOR APPROVAL', 'CHECKED']);
             }
             else {
                 query = query.where('approval.Status', 'in', statuses);

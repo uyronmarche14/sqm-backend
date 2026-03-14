@@ -1,6 +1,6 @@
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import type { Database } from '../../shared/infrastructure/db.types.js';
 
 export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
@@ -8,8 +8,15 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
     super('NPI_LOTS');
   }
 
-  async findAllDetailed() {
-    return await db.selectFrom('NPI_LOTS as n')
+  async findAllDetailed(filters?: {
+    status?: string;
+    siteId?: string;
+    supplierId?: string;
+    keyword?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    let query = db.selectFrom('NPI_LOTS as n')
       .leftJoin('MFG_SITES as s', 'n.site_id', 's.site_id')
       .leftJoin('SUPPLIERS as sup', 'n.supplier_id', 'sup.supplier_id')
       .leftJoin('PARTS as p', 'n.part_id', 'p.part_id')
@@ -24,6 +31,8 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
       .leftJoin('INSPECTORS as verifier', 'n.data_verified_by_id', 'verifier.inspector_id')
       .leftJoin('INSPECTORS as checker', 'n.checker_id', 'checker.inspector_id')
       .leftJoin('INSPECTORS as approver', 'n.approver_id', 'approver.inspector_id')
+      .leftJoin('USERS as checker_user', 'n.checker_id', 'checker_user.user_id')
+      .leftJoin('USERS as approver_user', 'n.approver_id', 'approver_user.user_id')
       .selectAll('n')
       .select([
         's.site_name',
@@ -41,11 +50,34 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
         'disp.disposition_name',
         'insp.inspector_name as inspected_by_name',
         'verifier.inspector_name as data_verified_by_name',
-        'checker.inspector_name as checker_name',
-        'approver.inspector_name as approver_name'
-      ])
-      .orderBy('n.datecreated', 'desc')
-      .execute();
+        sql<string | null>`COALESCE(${sql.ref('checker.inspector_name')}, ${sql.ref('checker_user.full_name')})`.as('checker_name'),
+        sql<string | null>`COALESCE(${sql.ref('approver.inspector_name')}, ${sql.ref('approver_user.full_name')})`.as('approver_name')
+      ]);
+
+    // Apply filters
+    if (filters?.status) {
+      const statuses = filters.status.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length > 0) {
+        query = query.where('n.request_status', 'in', statuses);
+      }
+    }
+    if (filters?.siteId) {
+      query = query.where('n.site_id', '=', filters.siteId);
+    }
+    if (filters?.supplierId) {
+      query = query.where('n.supplier_id', '=', filters.supplierId);
+    }
+    if (filters?.keyword) {
+      const kw = `%${filters.keyword}%`;
+      query = query.where((eb) =>
+        eb.or([
+          eb('n.control_no', 'like', kw),
+          eb('n.lot_no', 'like', kw),
+        ])
+      );
+    }
+
+    return await query.orderBy('n.datecreated', 'desc').execute();
   }
 
   async findByIdDetailed(idOrControlNo: string) {
@@ -64,6 +96,8 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
       .leftJoin('INSPECTORS as verifier', 'n.data_verified_by_id', 'verifier.inspector_id')
       .leftJoin('INSPECTORS as checker', 'n.checker_id', 'checker.inspector_id')
       .leftJoin('INSPECTORS as approver', 'n.approver_id', 'approver.inspector_id')
+      .leftJoin('USERS as checker_user', 'n.checker_id', 'checker_user.user_id')
+      .leftJoin('USERS as approver_user', 'n.approver_id', 'approver_user.user_id')
       .selectAll('n')
       .select([
         's.site_name',
@@ -81,8 +115,8 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
         'disp.disposition_name',
         'insp.inspector_name as inspected_by_name',
         'verifier.inspector_name as data_verified_by_name',
-        'checker.inspector_name as checker_name',
-        'approver.inspector_name as approver_name'
+        sql<string | null>`COALESCE(${sql.ref('checker.inspector_name')}, ${sql.ref('checker_user.full_name')})`.as('checker_name'),
+        sql<string | null>`COALESCE(${sql.ref('approver.inspector_name')}, ${sql.ref('approver_user.full_name')})`.as('approver_name')
       ])
       .where((eb) => eb.or([
         eb('n.npi_lot_id', '=', idOrControlNo),
@@ -112,6 +146,16 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
       .where('npi_lot_id', '=', record.npi_lot_id)
       .execute();
 
+    const noise_categories = await db.selectFrom('NPI_NOISECAT')
+      .selectAll()
+      .where('npi_lot_id', '=', record.npi_lot_id)
+      .execute();
+
+    const material_certificates = await db.selectFrom('NPI_MATERIALCERT')
+      .selectAll()
+      .where('npi_lot_id', '=', record.npi_lot_id)
+      .execute();
+
     const cc_list = await db.selectFrom('NPI_CC as cc')
       .leftJoin('INSPECTORS as i', 'cc.user_id', 'i.inspector_id')
       .select([
@@ -125,7 +169,16 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
       .where('cc.npi_lot_id', '=', record.npi_lot_id)
       .execute();
 
-    return { record, attachments, visual_categories, data_categories, dimension_categories, cc_list };
+    return {
+      record,
+      attachments,
+      visual_categories,
+      data_categories,
+      dimension_categories,
+      noise_categories,
+      material_certificates,
+      cc_list,
+    };
   }
 
   async getNextSequence(prefix: string) {

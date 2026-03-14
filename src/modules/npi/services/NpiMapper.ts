@@ -4,11 +4,12 @@
  * Type-safe implementation with no 'any' types
  */
 
-import { mapStatusFromDB } from '../../../shared/utils/status-mapper.js';
+import { buildNpiWorkflowMetadata } from '../workflow/npi-workflow.utils.js';
 import { 
   NpiListDTO, 
   NpiDetailDTO, 
-  NpiDetailQueryResult 
+  NpiDetailQueryResult,
+  NpiWorkflowActorContext,
 } from '../types/npi.types.js';
 import { NpiLot } from '../npi.db.types.js';
 
@@ -16,36 +17,51 @@ export class NpiMapper {
   /**
    * Map database record to list DTO
    */
-  toListDTO(record: NpiLot & Record<string, unknown>): NpiListDTO {
+  toListDTO(record: NpiLot & Record<string, unknown>, actor?: NpiWorkflowActorContext): NpiListDTO {
+    const workflow = buildNpiWorkflowMetadata(record, actor);
     return {
       ...record,
-      status: mapStatusFromDB(record.request_status),
+      status: workflow.workflowStatus,
       created_at: record.datecreated,
+      ...workflow,
     } as NpiListDTO;
   }
 
   /**
    * Map multiple records to list DTOs
    */
-  toListDTOs(records: (NpiLot & Record<string, unknown>)[]): NpiListDTO[] {
-    return records.map(r => this.toListDTO(r));
+  toListDTOs(records: (NpiLot & Record<string, unknown>)[], actor?: NpiWorkflowActorContext): NpiListDTO[] {
+    return records.map((r) => this.toListDTO(r, actor));
   }
 
   /**
    * Map database record with relations to detail DTO
    */
-  toDetailDTO(data: NpiDetailQueryResult): NpiDetailDTO {
-    const { record, attachments, visual_categories, data_categories, dimension_categories, cc_list } = data;
+  toDetailDTO(data: NpiDetailQueryResult, actor?: NpiWorkflowActorContext): NpiDetailDTO {
+    const {
+      record,
+      attachments,
+      visual_categories,
+      data_categories,
+      dimension_categories,
+      noise_categories,
+      material_certificates,
+      cc_list,
+    } = data;
+    const workflow = buildNpiWorkflowMetadata(record as unknown as Record<string, unknown>, actor);
 
     return {
       ...record,
-      status: mapStatusFromDB(record.request_status),
+      status: workflow.workflowStatus,
       created_at: record.datecreated,
       attachments: attachments || [],
       visual_categories: visual_categories || [],
       data_categories: data_categories || [],
       dimension_categories: dimension_categories || [],
-      cc_list: cc_list || []
+      noise_categories: noise_categories || [],
+      material_certificates: material_certificates || [],
+      cc_list: cc_list || [],
+      ...workflow,
     } as NpiDetailDTO;
   }
 

@@ -1,10 +1,32 @@
 import { sqprService } from './sqpr.service.js';
 import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema, SqprAttachmentParamSchema } from './sqpr.schema.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { sqprWorkflowService } from './workflow/sqpr-workflow.service.js';
 export class SqprController {
-    async getAll(_req, res, next) {
+    constructor() {
+        this.getAll = this.getAll.bind(this);
+        this.getById = this.getById.bind(this);
+        this.create = this.create.bind(this);
+        this.update = this.update.bind(this);
+        this.submit = this.submit.bind(this);
+        this.issue = this.issue.bind(this);
+        this.reject = this.reject.bind(this);
+        this.delete = this.delete.bind(this);
+        this.approve = this.approve.bind(this);
+        this.check = this.check.bind(this);
+        this.batchDelete = this.batchDelete.bind(this);
+        this.downloadAttachment = this.downloadAttachment.bind(this);
+    }
+    getUserId(req) {
+        return req.user?.userId || req.user?.id || 'SYSTEM';
+    }
+    getActionRemarks(req) {
+        return req.body?.remarks || req.body?.approver_remarks || req.body?.rejectionRemarks;
+    }
+    async getAll(req, res, next) {
         try {
-            const records = await sqprService.getAllRecords();
+            const status = req.query.status;
+            const records = await sqprService.getAllRecords({ status }, { userId: this.getUserId(req) });
             res.json({ data: records });
         }
         catch (error) {
@@ -15,7 +37,7 @@ export class SqprController {
     async getById(req, res, next) {
         try {
             const { id } = SqprIdParamSchema.parse({ params: req.params }).params;
-            const record = await sqprService.getRecordById(id);
+            const record = await sqprService.getRecordById(id, { userId: this.getUserId(req) });
             res.json({ data: record });
         }
         catch (error) {
@@ -67,14 +89,15 @@ export class SqprController {
                 approverRemarks: body.approver_remarks
             });
             const payload = SqprCreateSchema.parse({ body }).body;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const userId = this.getUserId(req);
             const files = req.files || [];
             const result = await sqprService.createRecord(payload, userId, files);
+            const responseData = result.data;
             // Log response
             console.log('[SQPR Controller] CREATE response:', {
                 success: result.success,
-                sqprId: result.data?.sqpr_id,
-                attachments: result.data?.attachments?.length
+                sqprId: responseData?.sqpr_id,
+                attachments: responseData?.attachments?.length
             });
             res.status(201).json(result);
         }
@@ -114,17 +137,18 @@ export class SqprController {
             }
             const { id } = SqprUpdateSchema.parse({ params: req.params, body }).params;
             const payload = SqprUpdateSchema.parse({ params: req.params, body }).body;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const userId = this.getUserId(req);
             const files = req.files || [];
             const result = await sqprService.updateRecord(id, payload, userId, files);
+            const responseData = result.data;
             // Log response
             console.log('[SQPR Controller] UPDATE response:', {
                 success: result.success,
-                sqprId: result.data?.sqpr_id,
-                status: result.data?.request_status,
-                inchargeRemarks: result.data?.incharge_remarks,
-                checkerRemarks: result.data?.checker_remarks,
-                approverRemarks: result.data?.approver_remarks
+                sqprId: responseData?.sqpr_id,
+                status: responseData?.request_status,
+                inchargeRemarks: responseData?.incharge_remarks,
+                checkerRemarks: responseData?.checker_remarks,
+                approverRemarks: responseData?.approver_remarks
             });
             res.json(result);
         }
@@ -137,11 +161,7 @@ export class SqprController {
     async submit(req, res, next) {
         try {
             const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await sqprService.updateRecord(id, {
-                request_status: 'SUBMITTED',
-                submit_date: new Date()
-            }, userId, []);
+            const result = await sqprWorkflowService.submit(id, this.getUserId(req), this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
@@ -152,10 +172,7 @@ export class SqprController {
     async issue(req, res, next) {
         try {
             const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await sqprService.updateRecord(id, {
-                request_status: 'ISSUED'
-            }, userId, []);
+            const result = await sqprWorkflowService.issue(id, this.getUserId(req));
             res.json(result);
         }
         catch (error) {
@@ -165,12 +182,8 @@ export class SqprController {
     }
     async reject(req, res, next) {
         try {
-            const { params, body } = SqprActionSchema.parse({ params: req.params, body: req.body });
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await sqprService.updateRecord(params.id, {
-                request_status: 'REJECTED',
-                checker_remarks: body?.remarks
-            }, userId, []);
+            const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
+            const result = await sqprWorkflowService.reject(id, this.getUserId(req), this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
@@ -192,9 +205,7 @@ export class SqprController {
     async approve(req, res, next) {
         try {
             const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const { remarks } = req.body || {};
-            const result = await sqprService.approveRecord(id, userId, remarks);
+            const result = await sqprWorkflowService.approve(id, this.getUserId(req), this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
@@ -205,9 +216,7 @@ export class SqprController {
     async check(req, res, next) {
         try {
             const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const { remarks } = req.body || {};
-            const result = await sqprService.checkRecord(id, userId, remarks);
+            const result = await sqprWorkflowService.check(id, this.getUserId(req), this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
@@ -217,7 +226,7 @@ export class SqprController {
     }
     async batchDelete(req, res, next) {
         try {
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const userId = this.getUserId(req);
             const { ids } = req.body;
             if (!Array.isArray(ids)) {
                 res.status(400).json({ error: 'ids must be an array' });

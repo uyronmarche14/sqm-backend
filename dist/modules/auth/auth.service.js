@@ -3,6 +3,52 @@ import { UnauthorizedError } from '../../shared/errors/AppError.js';
 import { verifyPassword } from '../../shared/utils/hash.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 export class AuthService {
+    buildAuthContextResponse(user, accessibleForms) {
+        const userMenu = [];
+        if (accessibleForms.some((formCode) => formCode.startsWith('SQMP-'))) {
+            userMenu.push('Supplier Quality Management Plan');
+        }
+        if (accessibleForms.some((formCode) => formCode.startsWith('NPILOT-'))) {
+            userMenu.push('New Parts Incoming');
+        }
+        if (accessibleForms.some((formCode) => formCode.startsWith('MNR-'))) {
+            userMenu.push('MNR Tracking');
+        }
+        if (accessibleForms.some((formCode) => formCode.startsWith('QMQA-'))) {
+            userMenu.push('QMQA');
+        }
+        if (accessibleForms.some((formCode) => formCode.startsWith('5M1E'))) {
+            userMenu.push('5M1E');
+        }
+        if (accessibleForms.some((formCode) => formCode.startsWith('SQPR-') || formCode.startsWith('SFR-'))) {
+            userMenu.push('SQPR');
+        }
+        const normalizedRoleName = user.role_name?.toLowerCase() || '';
+        const isAdmin = normalizedRoleName.includes('admin') ? 1 : 0;
+        const isSupplier = normalizedRoleName.includes('supplier');
+        return {
+            isSupplier,
+            userData: {
+                USER_ID: user.user_id,
+                FULL_NAME: user.full_name,
+                EMAIL: user.email,
+                ROLE_ID: user.role_id || '',
+                SITE_ID: user.site_id || '',
+                ROLE_NAME: user.role_name || 'User',
+                SITE_NAME: '',
+                CREATION_DATE: user.creation_date,
+                ACTIVE_FLAG: user.active_flag ? true : false,
+                LAST_PASWORD_CHANGE: user.last_pasword_change,
+                LOCAL_USER: user.local_user ? true : false,
+                LOGIN_FLAG: user.login_flag ? true : false,
+                LAST_UPDATE: user.last_update,
+                UPDATEBY: user.updateby,
+                isAdmin: isAdmin
+            },
+            userMenu,
+            accessibleForms,
+        };
+    }
     async refreshTokens(refreshToken) {
         const decoded = verifyRefreshToken(refreshToken);
         const payload = {
@@ -38,36 +84,66 @@ export class AuthService {
         };
         const accessToken = generateAccessToken(payload);
         const refreshToken = generateRefreshToken(payload);
-        // 4. Return Data (Without sensitive info)
-        const isAdmin = user.role_name?.toLowerCase().includes('admin') ? 1 : 0;
+        const [assignedSqmpForms, assignedNpiForms, assignedMnrForms, assignedQmqaForms, assignedSqprForms, assignedFiveM1EForms] = await Promise.all([
+            authRepository.findAssignedSqmpAccessibleForms(user.user_id),
+            authRepository.findAssignedNpiAccessibleForms(user.user_id),
+            authRepository.findAssignedMnrAccessibleForms(user.user_id),
+            authRepository.findAssignedQmqaAccessibleForms(user.user_id),
+            authRepository.findAssignedSqprAccessibleForms(user.user_id),
+            authRepository.findAssignedFiveM1EAccessibleForms(user.user_id),
+        ]);
+        const accessibleForms = Array.from(new Set([
+            ...assignedSqmpForms,
+            ...assignedNpiForms,
+            ...assignedMnrForms,
+            ...assignedQmqaForms,
+            ...assignedSqprForms,
+            ...assignedFiveM1EForms,
+        ]));
+        const authContext = this.buildAuthContextResponse(user, accessibleForms);
         return {
             success: true,
             message: 'Welcome back!',
-            isSupplier: false, // Supplier association comes from SUPPLIERSUSER in legacy
-            userData: {
-                USER_ID: user.user_id,
-                FULL_NAME: user.full_name,
-                EMAIL: user.email,
-                ROLE_ID: user.role_id || '',
-                SITE_ID: user.site_id || '',
-                ROLE_NAME: user.role_name || 'User',
-                SITE_NAME: '',
-                CREATION_DATE: user.creation_date,
-                ACTIVE_FLAG: user.active_flag ? true : false,
-                LAST_PASWORD_CHANGE: user.last_pasword_change,
-                LOCAL_USER: user.local_user ? true : false,
-                LOGIN_FLAG: user.login_flag ? true : false,
-                LAST_UPDATE: user.last_update,
-                UPDATEBY: user.updateby,
-                isAdmin: isAdmin
-            },
+            isSupplier: authContext.isSupplier,
+            userData: authContext.userData,
             tokens: {
                 accessToken,
                 refreshToken,
             },
             mustChangePassword: user.change_pw ? true : false,
-            userMenu: [],
-            accessibleForms: []
+            userMenu: authContext.userMenu,
+            accessibleForms: authContext.accessibleForms,
+        };
+    }
+    async getCurrentUserContext(userId) {
+        const user = await authRepository.findUserById(userId);
+        if (!user) {
+            throw new UnauthorizedError('Invalid session');
+        }
+        const [assignedSqmpForms, assignedNpiForms, assignedMnrForms, assignedQmqaForms, assignedSqprForms, assignedFiveM1EForms] = await Promise.all([
+            authRepository.findAssignedSqmpAccessibleForms(user.user_id),
+            authRepository.findAssignedNpiAccessibleForms(user.user_id),
+            authRepository.findAssignedMnrAccessibleForms(user.user_id),
+            authRepository.findAssignedQmqaAccessibleForms(user.user_id),
+            authRepository.findAssignedSqprAccessibleForms(user.user_id),
+            authRepository.findAssignedFiveM1EAccessibleForms(user.user_id),
+        ]);
+        const accessibleForms = Array.from(new Set([
+            ...assignedSqmpForms,
+            ...assignedNpiForms,
+            ...assignedMnrForms,
+            ...assignedQmqaForms,
+            ...assignedSqprForms,
+            ...assignedFiveM1EForms,
+        ]));
+        const authContext = this.buildAuthContextResponse(user, accessibleForms);
+        return {
+            success: true,
+            message: 'User context refreshed',
+            isSupplier: authContext.isSupplier,
+            userData: authContext.userData,
+            userMenu: authContext.userMenu,
+            accessibleForms: authContext.accessibleForms,
         };
     }
 }

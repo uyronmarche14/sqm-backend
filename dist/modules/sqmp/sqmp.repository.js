@@ -9,12 +9,13 @@ const SQMP_STATUS_FILTERS = {
     AWAITING_APPROVAL: [SQMP_STAGE_CODE.APPROVER],
     APPROVED: [SQMP_STAGE_CODE.ISSUER],
     REJECTED: [SQMP_STAGE_CODE.REJECTED_BY_CHECKER, SQMP_STAGE_CODE.REJECTED_BY_APPROVER],
-    ISSUED: [SQMP_STAGE_CODE.SUPPLIER],
-    RESPONSE_AWAITING: [SQMP_STAGE_CODE.SUPPLIER],
+    ISSUED: [SQMP_STAGE_CODE.SUPPLIER, '13', '14'],
+    RESPONSE_AWAITING: [SQMP_STAGE_CODE.SUPPLIER, '13', '14'],
     RESPONSE_SUBMITTED: [SQMP_STAGE_CODE.ISSUER_2ND],
     RESPONSE_AWAITING_CHECKED: [SQMP_STAGE_CODE.CHECKER_2ND],
     RESPONSE_AWAITING_APPROVAL: [SQMP_STAGE_CODE.APPROVER_2ND, SQMP_STAGE_CODE.ISSUER_3RD],
     RESPONSE_REJECTED: [
+        '20',
         SQMP_STAGE_CODE.REJECTED_BY_CHECKER_2ND,
         SQMP_STAGE_CODE.REJECTED_BY_APPROVER_2ND,
         SQMP_STAGE_CODE.NOT_ACCEPTED_BY_ISSUER,
@@ -53,9 +54,12 @@ export class SqmpRepository extends BaseRepository {
         if (userId && userRole) {
             const isSupplier = userRole.toUpperCase().includes('SUPPLIER');
             if (isSupplier) {
-                query = query.where('s.supplier_id', 'in', (eb) => eb.selectFrom('SUPPLIERSUSER as su')
-                    .select('su.supplier_id')
-                    .where('su.user_id', '=', userId));
+                query = query.where((eb) => eb.or([
+                    eb('s.attention_id', '=', userId),
+                    eb('s.supplier_id', 'in', eb.selectFrom('SUPPLIERSUSER as su')
+                        .select('su.supplier_id')
+                        .where('su.user_id', '=', userId)),
+                ]));
             }
             else {
                 // Internal users: Check if they are restricted by site
@@ -64,7 +68,20 @@ export class SqmpRepository extends BaseRepository {
                 // For baseline, we filter by the user's assigned site if they aren't admin.
                 const isGlobalRole = ['ADMIN', 'MPD'].some(r => userRole.toUpperCase().includes(r));
                 if (!isGlobalRole) {
-                    query = query.innerJoin('USERS as curr_user', (join) => join.on('curr_user.user_id', '=', userId)).whereRef('s.site_id', '=', 'curr_user.site_id');
+                    query = query.innerJoin('USERS as curr_user', (join) => join.on('curr_user.user_id', '=', userId)).where((eb) => eb.or([
+                        eb('s.site_id', '=', eb.ref('curr_user.site_id')),
+                        eb('s.encoder_id', '=', userId),
+                        eb('s.issuer_id', '=', userId),
+                        eb('s.checker_id', '=', userId),
+                        eb('s.approver_id', '=', userId),
+                        eb.exists(eb.selectFrom('SQMP_RESPONSE as resp')
+                            .select('resp.sqmp_response_id')
+                            .whereRef('resp.sqmp_id', '=', 's.sqmp_id')
+                            .where((respEb) => respEb.or([
+                            respEb('resp.checker_id', '=', userId),
+                            respEb('resp.approver_id', '=', userId),
+                        ]))),
+                    ]));
                 }
             }
         }
@@ -155,6 +172,7 @@ export class SqmpRepository extends BaseRepository {
             sql `(
           SELECT 
             r.*,
+            s.issuer_id as issuer_id,
             iss_resp.full_name as issuer_name,
             chk_resp.full_name as checker_name,
             apr_resp.full_name as approver_name,
@@ -187,14 +205,30 @@ export class SqmpRepository extends BaseRepository {
         if (userId && userRole) {
             const isSupplier = userRole.toUpperCase().includes('SUPPLIER');
             if (isSupplier) {
-                query = query.where('s.supplier_id', 'in', (eb) => eb.selectFrom('SUPPLIERSUSER as su')
-                    .select('su.supplier_id')
-                    .where('su.user_id', '=', userId));
+                query = query.where((eb) => eb.or([
+                    eb('s.attention_id', '=', userId),
+                    eb('s.supplier_id', 'in', eb.selectFrom('SUPPLIERSUSER as su')
+                        .select('su.supplier_id')
+                        .where('su.user_id', '=', userId)),
+                ]));
             }
             else {
                 const isGlobalRole = ['ADMIN', 'MPD'].some(r => userRole.toUpperCase().includes(r));
                 if (!isGlobalRole) {
-                    query = query.innerJoin('USERS as curr_user', (join) => join.on('curr_user.user_id', '=', userId)).whereRef('s.site_id', '=', 'curr_user.site_id');
+                    query = query.innerJoin('USERS as curr_user', (join) => join.on('curr_user.user_id', '=', userId)).where((eb) => eb.or([
+                        eb('s.site_id', '=', eb.ref('curr_user.site_id')),
+                        eb('s.encoder_id', '=', userId),
+                        eb('s.issuer_id', '=', userId),
+                        eb('s.checker_id', '=', userId),
+                        eb('s.approver_id', '=', userId),
+                        eb.exists(eb.selectFrom('SQMP_RESPONSE as resp')
+                            .select('resp.sqmp_response_id')
+                            .whereRef('resp.sqmp_id', '=', 's.sqmp_id')
+                            .where((respEb) => respEb.or([
+                            respEb('resp.checker_id', '=', userId),
+                            respEb('resp.approver_id', '=', userId),
+                        ]))),
+                    ]));
                 }
             }
         }
@@ -241,9 +275,34 @@ export class SqmpRepository extends BaseRepository {
             'chk.full_name as checker_name',
             'apr.full_name as approver_name',
         ])
-            .where('sqmp_id', '=', sqmpId)
-            .orderBy('response_date', 'desc')
+            .where('r.sqmp_id', '=', sqmpId)
+            .orderBy('r.response_date', 'desc')
             .executeTakeFirst();
+    }
+    async findLatestResponsesBySqmpIds(sqmpIds) {
+        if (!sqmpIds.length) {
+            return [];
+        }
+        return await db.selectFrom('SQMP_RESPONSE as r')
+            .innerJoin(db.selectFrom('SQMP_RESPONSE as latest_r')
+            .select('latest_r.sqmp_id')
+            .select((eb) => eb.fn.max('latest_r.response_date').as('max_response_date'))
+            .where('latest_r.sqmp_id', 'in', sqmpIds)
+            .groupBy('latest_r.sqmp_id')
+            .as('latest'), (join) => join
+            .onRef('latest.sqmp_id', '=', 'r.sqmp_id')
+            .onRef('latest.max_response_date', '=', 'r.response_date'))
+            .leftJoin('SQMP as s', 'r.sqmp_id', 's.sqmp_id')
+            .leftJoin('USERS as iss', 's.issuer_id', 'iss.user_id')
+            .leftJoin('USERS as chk', 'r.checker_id', 'chk.user_id')
+            .leftJoin('USERS as apr', 'r.approver_id', 'apr.user_id')
+            .selectAll('r')
+            .select([
+            'iss.full_name as issuer_name',
+            'chk.full_name as checker_name',
+            'apr.full_name as approver_name',
+        ])
+            .execute();
     }
     async findSupplierIdsByUserId(userId) {
         const rows = await db.selectFrom('SUPPLIERSUSER as su')

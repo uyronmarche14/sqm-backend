@@ -24,9 +24,10 @@ export class AuthController {
                 userMenu: result.userMenu,
                 accessibleForms: result.accessibleForms
             });
+            return;
         }
         catch (error) {
-            next(error); // Pass to global Error Handler
+            return next(error); // Pass to global Error Handler
         }
     }
     /**
@@ -37,7 +38,8 @@ export class AuthController {
             const token = req.cookies?.refreshToken || req.body?.refreshToken;
             if (!token) {
                 // Here we could throw UnauthorizedError, but inline is fine to avoid importing AppError
-                return res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
+                res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
+                return;
             }
             const result = await authService.refreshTokens(token);
             res.cookie('refreshToken', result.refreshToken, {
@@ -46,13 +48,28 @@ export class AuthController {
                 sameSite: 'strict',
                 maxAge: 7 * 24 * 60 * 60 * 1000,
             });
-            return res.status(200).json({
+            res.status(200).json({
                 success: true,
                 accessToken: result.accessToken
             });
+            return;
         }
         catch (error) {
             res.clearCookie('refreshToken');
+            return next(error);
+        }
+    }
+    async me(req, res, next) {
+        try {
+            if (!req.user?.userId) {
+                res.status(401).json({ success: false, message: 'Unauthorized' });
+                return;
+            }
+            const result = await authService.getCurrentUserContext(req.user.userId);
+            res.status(200).json(result);
+            return;
+        }
+        catch (error) {
             return next(error);
         }
     }
@@ -66,9 +83,10 @@ export class AuthController {
                 status: 'success',
                 message: 'Successfully logged out',
             });
+            return;
         }
         catch (error) {
-            next(error);
+            return next(error);
         }
     }
 }

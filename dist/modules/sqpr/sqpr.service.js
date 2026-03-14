@@ -1,16 +1,20 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sqprRepository } from './sqpr.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
-import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
+import { buildSqprWorkflowMetadata, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, normalizeSqprWorkflowStage, } from './workflow/sqpr-workflow.utils.js';
+import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
 export class SqprService {
     /**
-     * Helper: Generate Control No
+     * Legacy SQPR draft control numbers stay in DRF form until submit.
      */
-    async generateControlNo(fiscalYear, reportType) {
-        const typeStr = reportType === 1 ? 'M' : 'Q';
-        // In production, should get MAX() + 1
-        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        return `SFR-${fiscalYear}-${typeStr}-C${random}`;
+    buildLegacyDraftControlNo(fiscalYear, reportType, month, siteCode) {
+        const normalizedSiteCode = String(siteCode || '').trim().toUpperCase();
+        const controlPeriod = reportType === 1
+            ? String(month || 1)
+            : Number(month || 1) === 1
+                ? 'A'
+                : 'B';
+        return `DRF-${fiscalYear}-${controlPeriod}-${normalizedSiteCode}`;
     }
     /**
      * Safe Date Parser
@@ -21,30 +25,37 @@ export class SqprService {
         const parsed = new Date(d);
         return isNaN(parsed.getTime()) ? null : parsed;
     }
-    async getAllRecords() {
-        const records = await sqprRepository.findAllDetailed();
-        return records.map((r) => ({
-            ...r,
-            status: mapStatusFromDB(r.request_status),
-            created_at: r.date_created,
-            // Overwrite DB flat rows back to expected UI names if needed
-            incharge_name: r.incharge_name,
-            attention_name: r.attention_name,
-            checker_name: r.checker_name,
-            approver_name: r.approver_name,
-            site_name: r.site_name,
-            supplier_name: r.supplier_name
-        }));
+    decorateRecord(record, actor = {}) {
+        const workflow = buildSqprWorkflowMetadata(record, { actor });
+        return {
+            ...record,
+            status: getSqprCompatibilityStatus(workflow.workflowStage, record),
+            request_status: getSqprCompatibilityRequestStatus(workflow.workflowStage, record),
+            created_at: record.date_created,
+            ...workflow,
+        };
     }
-    async getRecordById(id) {
+    normalizeStatusForStorage(status) {
+        const raw = String(status || '').trim();
+        if (/^\d+$/.test(raw)) {
+            return raw;
+        }
+        const workflowStage = normalizeSqprWorkflowStage(raw);
+        return SQPR_LEGACY_STAGE_CODE[workflowStage] || raw;
+    }
+    async getAllRecords(filters = {}, actor = {}) {
+        const records = await sqprRepository.findAllDetailed();
+        return records
+            .filter((record) => matchesSqprStatusFilter(record, filters.status))
+            .map((record) => this.decorateRecord(record, actor));
+    }
+    async getRecordById(id, actor = {}) {
         const data = await sqprRepository.findByIdDetailed(id);
         if (!data)
             throw new NotFoundError('SQPR Record not found');
         const { record, attachments, ccList } = data;
         return {
-            ...record,
-            status: mapStatusFromDB(record.request_status),
-            created_at: record.date_created,
+            ...this.decorateRecord(record, actor),
             attachments: attachments || [],
             cc_list: ccList || []
         };
@@ -52,7 +63,11 @@ export class SqprService {
     async createRecord(payload, userId, files = []) {
         const sqprId = uuidv4();
         const now = new Date();
-        const controlNo = await this.generateControlNo(payload.fiscal_year, payload.report_type);
+        const site = await sqprRepository.findSiteCode(payload.site_id);
+        if (!site?.site_code) {
+            throw new NotFoundError('Manufacturing site not found');
+        }
+        const controlNo = this.buildLegacyDraftControlNo(payload.fiscal_year, payload.report_type, payload.month, site.site_code);
         const dbPayload = {
             sqpr_id: sqprId,
             control_no: controlNo,
@@ -74,7 +89,7 @@ export class SqprService {
             checker_remarks: payload.checker_remarks || null,
             approver_id: payload.approver_id || null,
             approver_remarks: payload.approver_remarks || null,
-            request_status: mapStatusToDB('DRAFT'),
+            request_status: SQPR_LEGACY_STAGE_CODE.DRAFT,
             last_update: now,
             updateby: userId
         };
@@ -132,6 +147,8 @@ export class SqprService {
                 sqpr_id: sqprId,
                 control_no: controlNo,
                 site_id: dbPayload.site_id,
+                site_name: site.site_name,
+                site_code: site.site_code,
                 fiscal_year: dbPayload.fiscal_year,
                 report_type: dbPayload.report_type,
                 month: dbPayload.month,
@@ -140,7 +157,7 @@ export class SqprService {
                 attention: dbPayload.attention,
                 remarks: dbPayload.remarks,
                 date_created: now,
-                request_status: 'DRFT',
+                request_status: dbPayload.request_status,
                 last_update: now,
                 updateby: userId,
                 incharge_id: dbPayload.incharge_id,
@@ -159,9 +176,7 @@ export class SqprService {
             return {
                 success: true,
                 data: {
-                    ...recordData,
-                    status: 'DRAFT',
-                    created_at: now,
+                    ...this.decorateRecord(recordData, { userId }),
                     attachments: savedAttachments,
                     cc_list: savedCcList
                 },
@@ -197,7 +212,7 @@ export class SqprService {
         // Status Mapping
         const statusVal = payload.status || payload.request_status;
         if (statusVal)
-            dbUpdates.request_status = mapStatusToDB(statusVal);
+            dbUpdates.request_status = this.normalizeStatusForStorage(statusVal);
         if (payload.incharge_id)
             dbUpdates.incharge_id = payload.incharge_id;
         if (payload.incharge_remarks !== undefined)
@@ -283,8 +298,7 @@ export class SqprService {
             return {
                 success: true,
                 data: {
-                    ...recordData,
-                    status: mapStatusFromDB(dbUpdates.request_status || existing.record.request_status),
+                    ...this.decorateRecord(recordData, { userId }),
                     attachments: savedAttachments.length > 0 ? savedAttachments : (existing.attachments || []),
                     cc_list: savedCcList.length > 0 ? savedCcList : (existing.ccList || [])
                 },
@@ -304,55 +318,9 @@ export class SqprService {
         });
     }
     /**
-     * Workflow: Check record (DRAFT → CHECKED)
-     */
-    async checkRecord(id, userId, remarks) {
-        const existing = await sqprRepository.findByIdDetailed(id);
-        if (!existing)
-            throw new NotFoundError('Record not found');
-        const now = new Date();
-        return await sqprRepository.executeTransaction(async (trx) => {
-            await trx.updateTable('SQPR')
-                .set({
-                request_status: mapStatusToDB('CHECKED'),
-                checker_id: userId,
-                checker_remarks: remarks || null,
-                checker_date: now,
-                last_update: now,
-                updateby: userId
-            })
-                .where('sqpr_id', '=', existing.record.sqpr_id)
-                .execute();
-            return { success: true, message: 'Record checked successfully' };
-        });
-    }
-    /**
-     * Workflow: Approve record (CHECKED → APPROVED)
-     */
-    async approveRecord(id, userId, remarks) {
-        const existing = await sqprRepository.findByIdDetailed(id);
-        if (!existing)
-            throw new NotFoundError('Record not found');
-        const now = new Date();
-        return await sqprRepository.executeTransaction(async (trx) => {
-            await trx.updateTable('SQPR')
-                .set({
-                request_status: mapStatusToDB('APPROVED'),
-                approver_id: userId,
-                approver_remarks: remarks || null,
-                approver_date: now,
-                last_update: now,
-                updateby: userId
-            })
-                .where('sqpr_id', '=', existing.record.sqpr_id)
-                .execute();
-            return { success: true, message: 'Record approved successfully' };
-        });
-    }
-    /**
      * Batch delete multiple SQPR records
      */
-    async batchDelete(ids, userId) {
+    async batchDelete(ids, _userId) {
         return await sqprRepository.executeTransaction(async (trx) => {
             let deletedCount = 0;
             for (const id of ids) {

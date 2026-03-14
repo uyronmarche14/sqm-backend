@@ -246,5 +246,25 @@ export const MnrAttachmentParamSchema = z.object({
   })
 });
 
+export const MnrWorkflowActionSchema = z.object({
+  body: z.object({
+    remarks: z.string().optional(),
+    updates: z.object({
+      remarks: z.string().optional(),
+    }).optional(),
+  }).optional(),
+});
+
+export const MnrResponseWorkflowSchema = z.object({
+  body: z.object({
+    response8D: JsonParsed(z.record(z.string(), z.unknown())).optional(),
+    updates: z.object({
+      response8D: JsonParsed(z.record(z.string(), z.unknown())).optional(),
+      remarks: z.string().optional(),
+    }).optional(),
+    remarks: z.string().optional(),
+  }).optional(),
+});
+
 export type MNRCreationInput = z.infer<typeof MnrCreateSchema>['body'];
 export type MNRUpdateInput = z.infer<typeof MnrUpdateSchema>['body'];

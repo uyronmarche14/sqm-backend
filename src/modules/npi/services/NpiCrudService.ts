@@ -6,12 +6,11 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { Transaction } from 'kysely';
-import type { Database } from '../../shared/infrastructure/db.types.js';
+import type { Database } from '../../../shared/infrastructure/db.types.js';
 import { NpiRepository } from '../npi.repository.js';
 import { NpiMapper } from './NpiMapper.js';
 import { NPICreationInput, NPIUpdateInput } from '../npi.schema.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
-import { mapStatusToDB } from '../../../shared/utils/status-mapper.js';
 import { INpiService } from './INpiService.js';
 import { 
   NpiListDTO, 
@@ -23,10 +22,15 @@ import {
   NpiVisualCategoryInput,
   NpiDataCategoryInput,
   NpiDimensionCategoryInput,
+  NpiMaterialCertificateInput,
+  NpiNoiseCategoryInput,
   NpiCcInput,
+  NpiWorkflowActorContext,
   UploadedFile
 } from '../types/npi.types.js';
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
+import { getNpiDbStatus } from '../workflow/npi-workflow.utils.js';
+import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
 
 export class NpiCrudService implements INpiService {
   constructor(
@@ -34,23 +38,49 @@ export class NpiCrudService implements INpiService {
     private mapper: NpiMapper
   ) {}
 
+  private getActorId(
+    payload: NPICreationInput | NPIUpdateInput,
+    camelKey: 'inspectorId' | 'checkerId' | 'approverId',
+    snakeKey: 'inspector_id' | 'checker_id' | 'approver_id',
+  ) {
+    return (payload[camelKey] || payload[snakeKey] || null) as string | null;
+  }
+
+  private getRemarks(
+    payload: NPICreationInput | NPIUpdateInput,
+    camelKey: 'inspectorRemarks' | 'checkerRemarks' | 'approverRemarks',
+    snakeKey: 'inspector_remarks' | 'checker_remarks' | 'approver_remarks',
+  ) {
+    return (payload[camelKey] ?? payload[snakeKey] ?? null) as string | null;
+  }
+
   /**
    * Get all NPI records with related data
    */
-  async getAllRecords(): Promise<NpiListDTO[]> {
-    const records = await this.repository.findAllDetailed();
-    return this.mapper.toListDTOs(records);
+  async getAllRecords(
+    actor?: NpiWorkflowActorContext,
+    filters?: {
+      status?: string;
+      siteId?: string;
+      supplierId?: string;
+      keyword?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    }
+  ): Promise<NpiListDTO[]> {
+    const records = await this.repository.findAllDetailed(filters);
+    return this.mapper.toListDTOs(records, actor);
   }
 
   /**
    * Get single NPI record by ID with all related data
    */
-  async getRecordById(id: string): Promise<NpiDetailDTO> {
+  async getRecordById(id: string, actor?: NpiWorkflowActorContext): Promise<NpiDetailDTO> {
     const data = await this.repository.findByIdDetailed(id);
     if (!data) {
       throw new NotFoundError('NPI Record not found');
     }
-    return this.mapper.toDetailDTO(data);
+    return this.mapper.toDetailDTO(data, actor);
   }
 
   /**
@@ -66,7 +96,6 @@ export class NpiCrudService implements INpiService {
     const defaultUserId = '6a15b66a-079b-433b-b70f-dc15dce25631'; // System Fallback
     const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
     
-    const dbStatus = mapStatusToDB(payload.status || 'DRAFT');
     const defaultInspector = await this.repository.findDefaultInspector();
     
     // Generate control number if not provided
@@ -82,7 +111,6 @@ export class NpiCrudService implements INpiService {
       controlNo,
       now,
       effectiveUserId,
-      dbStatus,
       defaultInspector
     });
 
@@ -95,6 +123,8 @@ export class NpiCrudService implements INpiService {
       await this.insertVisualCategories(trx, npiId, payload.visual_categories, effectiveUserId, now);
       await this.insertDataCategories(trx, npiId, payload.data_categories, effectiveUserId, now);
       await this.insertDimensionCategories(trx, npiId, payload.dimension_categories, effectiveUserId, now);
+      await this.insertNoiseCategories(trx, npiId, payload.noise_categories, effectiveUserId, now);
+      await this.insertMaterialCertificates(trx, npiId, payload.material_certificates, effectiveUserId, now);
       await this.insertCCList(trx, npiId, payload.cc_list, effectiveUserId, now);
 
       return { 
@@ -155,6 +185,16 @@ export class NpiCrudService implements INpiService {
         await this.insertDimensionCategories(trx, npiLotId, payload.dimension_categories, effectiveUserId, now);
       }
 
+      if (payload.noise_categories !== undefined) {
+        await trx.deleteFrom('NPI_NOISECAT').where('npi_lot_id', '=', npiLotId).execute();
+        await this.insertNoiseCategories(trx, npiLotId, payload.noise_categories, effectiveUserId, now);
+      }
+
+      if (payload.material_certificates !== undefined) {
+        await trx.deleteFrom('NPI_MATERIALCERT').where('npi_lot_id', '=', npiLotId).execute();
+        await this.insertMaterialCertificates(trx, npiLotId, payload.material_certificates, effectiveUserId, now);
+      }
+
       if (payload.cc_list !== undefined) {
         await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', npiLotId).execute();
         await this.insertCCList(trx, npiLotId, payload.cc_list, effectiveUserId, now);
@@ -185,6 +225,8 @@ export class NpiCrudService implements INpiService {
       await trx.deleteFrom('NPI_VISUALCAT').where('npi_lot_id', '=', npiLotId).execute();
       await trx.deleteFrom('NPI_DATACAT').where('npi_lot_id', '=', npiLotId).execute();
       await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_NOISECAT').where('npi_lot_id', '=', npiLotId).execute();
+      await trx.deleteFrom('NPI_MATERIALCERT').where('npi_lot_id', '=', npiLotId).execute();
       await trx.deleteFrom('NPI_CC').where('npi_lot_id', '=', npiLotId).execute();
       await trx.deleteFrom('NPI_LOTS').where('npi_lot_id', '=', npiLotId).execute();
       
@@ -227,7 +269,10 @@ export class NpiCrudService implements INpiService {
    * Build payload for creating new record
    */
   private buildCreatePayload(payload: NPICreationInput, context: CreatePayloadContext): NewNpiLot {
-    const { npiId, controlNo, now, effectiveUserId, dbStatus, defaultInspector } = context;
+    const { npiId, controlNo, now, effectiveUserId, defaultInspector } = context;
+    const inspectorId = this.getActorId(payload, 'inspectorId', 'inspector_id');
+    const checkerId = this.getActorId(payload, 'checkerId', 'checker_id');
+    const approverId = this.getActorId(payload, 'approverId', 'approver_id');
 
     return {
       npi_lot_id: npiId,
@@ -257,28 +302,28 @@ export class NpiCrudService implements INpiService {
       receivetime: payload.receivedTime || 0,
       endorsetime: payload.endorseTime || 0,
       data_verified_by_id: payload.dataVerifiedBy || '',
-      inspector_id: effectiveUserId,
+      inspector_id: inspectorId || effectiveUserId,
+      checker_id: checkerId,
+      approver_id: approverId,
       total_minor: payload.total_minor || 0,
       total_major: payload.total_major || 0,
       total_critical: payload.total_critical || 0,
-      ssi_accept: 1, // Legacy default
+      ssi_accept: payload.ssiAccept ?? 1, // Legacy default
       judgment: payload.judgment || null,
-      request_status: dbStatus,
+      request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.DRAFT),
       last_update: now,
       updateby: effectiveUserId,
       rohs_verification: payload.rohsVerification || null,
       reference_mnr_no: payload.referenceMnrNo || null,
-      inspector_remarks: payload.inspectorRemarks || null,
+      inspector_remarks: this.getRemarks(payload, 'inspectorRemarks', 'inspector_remarks'),
       // Additional required fields with defaults
-      remarks: null,
+      remarks: payload.remarks || null,
       submitted_date: null,
-      checker_remarks: null,
-      checker_id: undefined,
+      checker_remarks: this.getRemarks(payload, 'checkerRemarks', 'checker_remarks'),
       checked_date: null,
-      approver_remarks: null,
-      approver_id: undefined,
+      approver_remarks: this.getRemarks(payload, 'approverRemarks', 'approver_remarks'),
       approved_date: null,
-      ogi_ref_no: null,
+      ogi_ref_no: payload.ogiRefNo || null,
       visual_judgment: null
     };
   }
@@ -291,6 +336,9 @@ export class NpiCrudService implements INpiService {
       last_update: now,
       updateby: userId
     };
+    const inspectorId = this.getActorId(payload, 'inspectorId', 'inspector_id');
+    const checkerId = this.getActorId(payload, 'checkerId', 'checker_id');
+    const approverId = this.getActorId(payload, 'approverId', 'approver_id');
 
     // Map all possible update fields
     if (payload.siteId) dbUpdates.site_id = payload.siteId;
@@ -323,20 +371,27 @@ export class NpiCrudService implements INpiService {
     if (payload.inspectedBy) dbUpdates.inspected_by_id = payload.inspectedBy;
     if (payload.inspectionCategory) dbUpdates.inspectioncat_id = payload.inspectionCategory;
     if (payload.dataVerifiedBy) dbUpdates.data_verified_by_id = payload.dataVerifiedBy;
+    if (payload.checkerId !== undefined || payload.checker_id !== undefined) dbUpdates.checker_id = checkerId;
+    if (payload.approverId !== undefined || payload.approver_id !== undefined) dbUpdates.approver_id = approverId;
     if (payload.total_minor !== undefined) dbUpdates.total_minor = payload.total_minor;
     if (payload.total_major !== undefined) dbUpdates.total_major = payload.total_major;
     if (payload.total_critical !== undefined) dbUpdates.total_critical = payload.total_critical;
     if (payload.judgment !== undefined) dbUpdates.judgment = payload.judgment;
     if (payload.rohsVerification !== undefined) dbUpdates.rohs_verification = payload.rohsVerification;
     if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo;
-    if (payload.inspectorRemarks !== undefined) dbUpdates.inspector_remarks = payload.inspectorRemarks;
-    if (payload.checkerRemarks !== undefined) dbUpdates.checker_remarks = payload.checkerRemarks;
-    if (payload.approverRemarks !== undefined) dbUpdates.approver_remarks = payload.approverRemarks;
-
-    const statusVal = payload.status || payload.request_status;
-    if (statusVal) {
-      dbUpdates.request_status = mapStatusToDB(statusVal);
+    if (payload.inspectorRemarks !== undefined || payload.inspector_remarks !== undefined) {
+      dbUpdates.inspector_remarks = this.getRemarks(payload, 'inspectorRemarks', 'inspector_remarks');
     }
+    if (payload.checkerRemarks !== undefined || payload.checker_remarks !== undefined) {
+      dbUpdates.checker_remarks = this.getRemarks(payload, 'checkerRemarks', 'checker_remarks');
+    }
+    if (payload.approverRemarks !== undefined || payload.approver_remarks !== undefined) {
+      dbUpdates.approver_remarks = this.getRemarks(payload, 'approverRemarks', 'approver_remarks');
+    }
+    if (payload.inspectorId !== undefined || payload.inspector_id !== undefined) dbUpdates.inspector_id = inspectorId;
+    if (payload.ssiAccept !== undefined) dbUpdates.ssi_accept = payload.ssiAccept;
+    if (payload.ogiRefNo !== undefined) dbUpdates.ogi_ref_no = payload.ogiRefNo;
+    if (payload.remarks !== undefined) dbUpdates.remarks = payload.remarks;
 
     return dbUpdates;
   }
@@ -456,6 +511,62 @@ export class NpiCrudService implements INpiService {
         last_update: now,
         updateby: userId
       }).execute();
+    }
+  }
+
+  private async insertNoiseCategories(
+    trx: Transaction<Database>,
+    npiLotId: string,
+    categories: NpiNoiseCategoryInput[] | undefined,
+    userId: string,
+    now: Date,
+  ): Promise<void> {
+    if (!categories || categories.length === 0) return;
+
+    for (const category of categories) {
+      await trx
+        .insertInto('NPI_NOISECAT')
+        .values({
+          npi_noisecat_id: uuidv4(),
+          npi_lot_id: npiLotId,
+          partnoisecategory_name: category.partnoisecategory_name,
+          std_min: category.std_min,
+          std_max: category.std_max,
+          actual_min: category.actual_min ?? null,
+          actual_max: category.actual_max ?? null,
+          cpk: category.cpk ?? null,
+          remarks: category.remarks || null,
+          last_update: now,
+          updateby: userId,
+        })
+        .execute();
+    }
+  }
+
+  private async insertMaterialCertificates(
+    trx: Transaction<Database>,
+    npiLotId: string,
+    certificates: NpiMaterialCertificateInput[] | undefined,
+    userId: string,
+    now: Date,
+  ): Promise<void> {
+    if (!certificates || certificates.length === 0) return;
+
+    for (const certificate of certificates) {
+      await trx
+        .insertInto('NPI_MATERIALCERT')
+        .values({
+          npi_materialcert_id: uuidv4(),
+          npi_lot_id: npiLotId,
+          component: certificate.component,
+          description: certificate.description,
+          required_data: certificate.required_data,
+          judgement: Number(Boolean(certificate.judgement)),
+          remarks: certificate.remarks || null,
+          last_update: now,
+          updateby: userId,
+        })
+        .execute();
     }
   }
 

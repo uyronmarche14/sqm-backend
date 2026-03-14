@@ -232,3 +232,21 @@ export const MnrAttachmentParamSchema = z.object({
         attachmentId: z.string().min(1, 'Attachment ID is required')
     })
 });
+export const MnrWorkflowActionSchema = z.object({
+    body: z.object({
+        remarks: z.string().optional(),
+        updates: z.object({
+            remarks: z.string().optional(),
+        }).optional(),
+    }).optional(),
+});
+export const MnrResponseWorkflowSchema = z.object({
+    body: z.object({
+        response8D: JsonParsed(z.record(z.string(), z.unknown())).optional(),
+        updates: z.object({
+            response8D: JsonParsed(z.record(z.string(), z.unknown())).optional(),
+            remarks: z.string().optional(),
+        }).optional(),
+        remarks: z.string().optional(),
+    }).optional(),
+});

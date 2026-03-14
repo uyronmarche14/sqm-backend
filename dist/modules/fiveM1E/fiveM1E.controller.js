@@ -27,7 +27,7 @@ export class FiveM1EController {
     async getAllApplications(req, res, next) {
         try {
             const status = req.query.status;
-            const records = await fiveM1EService.getAllApplications(status);
+            const records = await fiveM1EService.getAllApplications(status, req.user?.userId);
             res.status(200).json(successResponse(records));
         }
         catch (error) {
@@ -40,7 +40,7 @@ export class FiveM1EController {
     async getApplication(req, res, next) {
         try {
             const id = req.params.id; // ID acts as controlNo in our URL schema
-            const record = await fiveM1EService.getApplication(id);
+            const record = await fiveM1EService.getApplication(id, req.user?.userId);
             res.status(200).json(successResponse(record));
         }
         catch (error) {

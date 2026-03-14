@@ -6,6 +6,8 @@ import { SmartMapper, MapperSchema } from '../../shared/infrastructure/SmartMapp
 import { FiveM1EApplicationTable, NewFiveM1EApp, FiveM1EAppUpdate } from './fiveM1E.db.types.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
+import { buildFiveM1EWorkflowMetadata } from './workflow/fiveM1E-workflow.utils.js';
+import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
 
 /**
  * 5M1E Domain Service
@@ -202,16 +204,23 @@ export class FiveM1EService {
   /**
    * Retrieves all 5M1E Applications
    */
-  async getAllApplications(status?: string) {
+  async getAllApplications(status?: string, actorUserId?: string) {
     const records = await fiveM1ERepository.findAllWithApproval(status);
     
     return records.map((record: any) => {
       const dto = SmartMapper.toDTO(record as unknown as FiveM1EApplicationTable, applicationSchema);
+      const workflow = buildFiveM1EWorkflowMetadata(record, { actorUserId });
       return {
         ...dto,
         id: record.ID,
         control_no: record.ControlNo,
         status: record.approval_status,
+        workflowStage: workflow.workflowStage,
+        workflowStageCode: workflow.workflowStageCode,
+        workflowStageLabel: workflow.workflowStageLabel,
+        availableActions: workflow.availableActions,
+        nextApproverId: workflow.nextApproverId,
+        nextApproverName: workflow.nextApproverName,
         mpd_pic: record.mpd_pic,
         mpd_approver: record.mpd_approver,
         created_at: record.CreateDate,
@@ -229,7 +238,7 @@ export class FiveM1EService {
   /**
    * Retrieves a 5M1E Application with its full Approval + Child Tables
    */
-  async getApplication(controlNo: string) {
+  async getApplication(controlNo: string, actorUserId?: string) {
     const record = await fiveM1ERepository.findWithApproval(controlNo);
     
     if (!record) {
@@ -258,12 +267,20 @@ export class FiveM1EService {
       WHERE cc.ControlNo = ${cn}
     `.execute(db);
     const ccList = ccResult.rows;
+    const workflow = buildFiveM1EWorkflowMetadata(record as any, { actorUserId });
 
     return {
       ...dto,
       id: record.ID,
       control_no: record.ControlNo,
       status: record.approval_status,
+      workflowStage: workflow.workflowStage,
+      workflowStageCode: workflow.workflowStageCode,
+      workflowStageLabel: workflow.workflowStageLabel,
+      availableActions: workflow.availableActions,
+      nextApproverId: workflow.nextApproverId,
+      nextApproverName: workflow.nextApproverName,
+      workflow,
       // Human-readable display names resolved via USERS table JOIN
       created_by_name: (record as any).created_by_name,
       reviewer_name: (record as any).reviewer_full_name,
@@ -358,7 +375,6 @@ export class FiveM1EService {
 
     // Update Approval table fields (status + any approval workflow data)
     const approvalUpdates: Record<string, unknown> = {};
-    if (data.status) approvalUpdates.Status = data.status;
     if (data.mpd_pic) approvalUpdates.MPDPIC = data.mpd_pic;
     if (data.mpd_approver) approvalUpdates.MPDApprover = data.mpd_approver;
     if (data.mpd_approver_name) approvalUpdates.MPDApproverName = data.mpd_approver_name;
@@ -412,7 +428,11 @@ export class FiveM1EService {
 
     if (Object.keys(approvalUpdates).length > 0) {
       approvalUpdates.ModifiedDate = new Date();
-      await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, data.status || existing.approval_status || 'DRAFT', approvalUpdates);
+      await fiveM1ERepository.updateApprovalStatus(
+        existing.ControlNo,
+        existing.approval_status || 'DRAFT',
+        approvalUpdates,
+      );
     }
 
     // Sync child tables (replace strategy)
@@ -531,18 +551,7 @@ export class FiveM1EService {
    * Workflow: Submit application (DRAFT → SUBMITTED)
    */
   async submitApplication(controlNo: string, _userId: string) {
-    const existing = await fiveM1ERepository.findWithApproval(controlNo);
-    if (!existing) throw new NotFoundError(`5M1E Application ${controlNo} not found`);
-
-    const currentStatus = existing.approval_status || 'DRAFT';
-    if (currentStatus !== 'DRAFT' && currentStatus !== 'RAR') {
-      throw new Error(`Cannot submit: application is in ${currentStatus}, expected DRAFT or RAR`);
-    }
-
-    await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, 'SUBMITTED', {
-      ModifiedDate: new Date(),
-    });
-    return { success: true, message: 'Application submitted successfully', data: { controlNo: existing.ControlNo } };
+    return fiveM1EWorkflowService.submitApplication(controlNo, _userId);
   }
 
   /**
@@ -550,73 +559,28 @@ export class FiveM1EService {
    * Two-stage approval: Checker marks as reviewed, record stays on Awaiting Approval page
    */
   async checkApplication(controlNo: string, userId: string, remarks?: string) {
-    const existing = await fiveM1ERepository.findWithApproval(controlNo);
-    if (!existing) throw new NotFoundError(`5M1E Application ${controlNo} not found`);
-
-    await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, 'CHECKED', {
-      ModifiedDate: new Date(),
-    });
-    if (remarks) {
-      await fiveM1ERepository.insertStatusRemark(existing.ControlNo, {
-        remarks,
-        remark_by: userId,
-        status: 'CHECKED'
-      });
-    }
-    return { success: true, message: 'Application checked successfully', data: { controlNo: existing.ControlNo } };
+    return fiveM1EWorkflowService.checkApplication(controlNo, userId, remarks);
   }
 
   /**
    * Workflow: Approve application (SUBMITTED → APPROVED)
    */
   async approveApplication(controlNo: string, userId: string, remarks?: string, status: string = 'APPROVED') {
-    const existing = await fiveM1ERepository.findWithApproval(controlNo);
-    if (!existing) throw new NotFoundError(`5M1E Application ${controlNo} not found`);
-
-    await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, status, {
-      ModifiedDate: new Date(),
-    });
-    if (remarks) {
-      await fiveM1ERepository.insertStatusRemark(existing.ControlNo, {
-        remarks,
-        remark_by: userId,
-        status: status
-      });
-    }
-    return { success: true, message: 'Application approved successfully', data: { controlNo: existing.ControlNo } };
+    return fiveM1EWorkflowService.approveApplication(controlNo, userId, remarks, status);
   }
 
   /**
    * Workflow: Reject application → REJECTED
    */
   async rejectApplication(controlNo: string, userId: string, remarks?: string) {
-    const existing = await fiveM1ERepository.findWithApproval(controlNo);
-    if (!existing) throw new NotFoundError(`5M1E Application ${controlNo} not found`);
-
-    await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, 'REJECTED', {
-      ModifiedDate: new Date(),
-    });
-    if (remarks) {
-      await fiveM1ERepository.insertStatusRemark(existing.ControlNo, {
-        remarks,
-        remark_by: userId,
-        status: 'REJECTED'
-      });
-    }
-    return { success: true, message: 'Application rejected successfully', data: { controlNo: existing.ControlNo } };
+    return fiveM1EWorkflowService.rejectApplication(controlNo, userId, remarks);
   }
 
   /**
    * Workflow: Release application (APPROVED → RELEASE)
    */
   async releaseApplication(controlNo: string, _userId: string) {
-    const existing = await fiveM1ERepository.findWithApproval(controlNo);
-    if (!existing) throw new NotFoundError(`5M1E Application ${controlNo} not found`);
-
-    await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, 'RELEASE', {
-      ModifiedDate: new Date(),
-    });
-    return { success: true, message: 'Application released successfully', data: { controlNo: existing.ControlNo } };
+    return fiveM1EWorkflowService.releaseApplication(controlNo, _userId);
   }
 }
 

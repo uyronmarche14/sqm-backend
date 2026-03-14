@@ -9,8 +9,11 @@ import {
   NpiVisualcat, 
   NpiDatacat, 
   NpiDimensioncat, 
-  NpiCc 
+  NpiCc,
+  NpiMaterialcert,
+  NpiNoisecat,
 } from '../npi.db.types.js';
+import type { NpiWorkflowAction, NpiWorkflowStage } from '../workflow/npi-workflow.constants.js';
 
 // ============================================================================
 // DTO Types (Data Transfer Objects)
@@ -40,6 +43,13 @@ export interface NpiListDTO {
   inspected_by_name?: string;
   checker_name?: string;
   approver_name?: string;
+  workflowStage: NpiWorkflowStage;
+  workflowStageCode: number;
+  workflowStageLabel: string;
+  workflowStatus: string;
+  availableActions: NpiWorkflowAction[];
+  nextApproverId?: string | null;
+  nextApproverName?: string | null;
 }
 
 /**
@@ -54,6 +64,8 @@ export interface NpiDetailDTO extends Omit<NpiLot, 'request_status' | 'datecreat
   visual_categories: NpiVisualcat[];
   data_categories: NpiDatacat[];
   dimension_categories: NpiDimensioncat[];
+  noise_categories: NpiNoisecat[];
+  material_certificates: NpiMaterialcert[];
   cc_list: NpiCcWithUser[];
   
   // Joined names (from related tables)
@@ -72,6 +84,13 @@ export interface NpiDetailDTO extends Omit<NpiLot, 'request_status' | 'datecreat
   data_verified_by_name?: string;
   checker_name?: string;
   approver_name?: string;
+  workflowStage: NpiWorkflowStage;
+  workflowStageCode: number;
+  workflowStageLabel: string;
+  workflowStatus: string;
+  availableActions: NpiWorkflowAction[];
+  nextApproverId?: string | null;
+  nextApproverName?: string | null;
 }
 
 /**
@@ -90,6 +109,8 @@ export interface NpiDetailQueryResult {
   visual_categories: NpiVisualcat[];
   data_categories: NpiDatacat[];
   dimension_categories: NpiDimensioncat[];
+  noise_categories: NpiNoisecat[];
+  material_certificates: NpiMaterialcert[];
   cc_list: NpiCcWithUser[];
 }
 
@@ -143,6 +164,24 @@ export interface NpiDimensionCategoryInput {
   remarks?: string;
 }
 
+export interface NpiNoiseCategoryInput {
+  partnoisecategory_name: string;
+  std_min: number;
+  std_max: number;
+  actual_min?: number | null;
+  actual_max?: number | null;
+  cpk?: number | null;
+  remarks?: string;
+}
+
+export interface NpiMaterialCertificateInput {
+  component: string;
+  description: string;
+  required_data: string;
+  judgement?: boolean | number | null;
+  remarks?: string;
+}
+
 /**
  * CC list input
  */
@@ -192,7 +231,6 @@ export interface CreatePayloadContext {
   controlNo: string;
   now: Date;
   effectiveUserId: string;
-  dbStatus: string;
   defaultInspector: string | null;
 }
 
@@ -214,35 +252,20 @@ export interface UploadedFile {
 /**
  * Workflow status codes (database)
  */
-export type WorkflowStatusDB = 
-  | 'DR'  // Draft
-  | 'SU'  // Submitted
-  | 'CK'  // Checked
-  | 'AP'  // Approved
-  | 'RA'  // Rejected
-  | 'DRAFT'
-  | 'SUBMITTED'
-  | 'CHECKED'
-  | 'APPROVED'
-  | 'REJECTED';
+export interface NpiWorkflowActorContext {
+  userId?: string;
+  roleName?: string | null;
+}
 
-/**
- * Workflow actions
- */
-export type WorkflowAction = 
-  | 'submit'
-  | 'check'
-  | 'approve'
-  | 'reject';
-
-/**
- * User roles
- */
-export type UserRole = 
-  | 'creator'
-  | 'checker'
-  | 'approver'
-  | 'admin';
+export interface NpiWorkflowMetadata {
+  workflowStage: NpiWorkflowStage;
+  workflowStageCode: number;
+  workflowStageLabel: string;
+  workflowStatus: string;
+  availableActions: NpiWorkflowAction[];
+  nextApproverId?: string | null;
+  nextApproverName?: string | null;
+}
 
 // ============================================================================
 // Query Types
@@ -294,7 +317,7 @@ export interface QueryOptions {
  * This is the proper type for transaction callbacks
  */
 import type { Transaction as KyselyTransaction } from 'kysely';
-import type { Database as DatabaseType } from '../../shared/infrastructure/db.types.js';
+import type { Database as DatabaseType } from '../../../shared/infrastructure/db.types.js';
 
 export type NpiTransaction = KyselyTransaction<DatabaseType>;
 

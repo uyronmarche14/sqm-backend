@@ -24,13 +24,13 @@ export class NpiController {
    * GET /api/npi
    * Get all NPI records
    */
-  async getAll(_req: Request, res: Response, next: NextFunction) {
+  async getAll(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const records = await crudService.getAllRecords();
       res.json(successResponse(records));
     } catch (error) {
       console.error('[NPI] GET ALL error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -38,14 +38,14 @@ export class NpiController {
    * GET /api/npi/:id
    * Get single NPI record by ID
    */
-  async getById(req: Request, res: Response, next: NextFunction) {
+  async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
       const record = await crudService.getRecordById(id);
       res.json(successResponse(record));
     } catch (error) {
       console.error('[NPI] GET BY ID error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -53,17 +53,20 @@ export class NpiController {
    * POST /api/npi
    * Create new NPI record
    */
-  async create(req: Request, res: Response, next: NextFunction) {
+  async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const payload = NpiCreateSchema.parse({ body: req.body }).body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
       
       const result = await crudService.createRecord(payload, userId, files);
-      res.status(201).json(createResponse(result.data || result, result.message));
+      res
+        .status(201)
+        .json(createResponse(result.data || { id: 'new' }, result.message));
+      return;
     } catch (error) {
       console.error('[NPI] CREATE error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -71,7 +74,7 @@ export class NpiController {
    * PUT /api/npi/:id
    * Update existing NPI record
    */
-  async update(req: Request, res: Response, next: NextFunction) {
+  async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
       const { id } = parsed.params;
@@ -83,7 +86,7 @@ export class NpiController {
       res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] UPDATE error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -91,14 +94,14 @@ export class NpiController {
    * DELETE /api/npi/:id
    * Delete NPI record
    */
-  async delete(req: Request, res: Response, next: NextFunction) {
+  async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
       const result = await crudService.deleteRecord(id);
       res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] DELETE error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -106,7 +109,7 @@ export class NpiController {
    * GET /api/npi/stats
    * Get statistics by status
    */
-  async getStats(_req: Request, res: Response, next: NextFunction) {
+  async getStats(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { db } = await import('../../shared/infrastructure/db.js');
       const stats = await db.selectFrom('NPI_LOTS')
@@ -116,7 +119,7 @@ export class NpiController {
 
       res.json(successResponse(stats));
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -124,15 +127,17 @@ export class NpiController {
    * GET /api/npi/sequence
    * Generate next sequence number
    */
-  async generateSequence(req: Request, res: Response, next: NextFunction) {
+  async generateSequence(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const siteId = req.query.siteId as string;
       if (!siteId) {
-        return res.status(400).json({ message: 'Site Code required' });
+        res.status(400).json({ message: 'Site Code required' });
+        return;
       }
       
       const sequence = await crudService.generateSequence(siteId);
-      return res.json(successResponse({ sequence }));
+      res.json(successResponse({ sequence }));
+      return;
     } catch (error) {
       return next(error);
     }
@@ -142,7 +147,7 @@ export class NpiController {
    * GET /api/npi/:id/attachments/:attachmentId
    * Download attachment
    */
-  async downloadAttachment(req: Request, res: Response, next: NextFunction) {
+  async downloadAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { attachmentId } = NpiAttachmentParamSchema.parse({ params: req.params }).params;
       const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment(
@@ -152,10 +157,11 @@ export class NpiController {
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      return res.download(filePath);
+      res.download(filePath);
+      return;
     } catch (error) {
       console.error('[NPI] DOWNLOAD error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -167,16 +173,17 @@ export class NpiController {
    * POST /api/npi/:id/submit
    * Submit record for approval
    */
-  async submit(req: Request, res: Response, next: NextFunction) {
+  async submit(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       
       const result = await workflowService.submitForApproval(id, userId);
       res.json(successResponse(result.data || result, result.message));
+      return;
     } catch (error) {
       console.error('[NPI] SUBMIT error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -184,7 +191,7 @@ export class NpiController {
    * POST /api/npi/:id/check
    * Check record (checker approval)
    */
-  async check(req: Request, res: Response, next: NextFunction) {
+  async check(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
@@ -192,9 +199,10 @@ export class NpiController {
       
       const result = await workflowService.checkRecord(id, userId, remarks);
       res.json(successResponse(result.data || result, result.message));
+      return;
     } catch (error) {
       console.error('[NPI] CHECK error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -202,7 +210,7 @@ export class NpiController {
    * POST /api/npi/:id/approve
    * Approve record (approver approval)
    */
-  async approve(req: Request, res: Response, next: NextFunction) {
+  async approve(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
@@ -210,9 +218,10 @@ export class NpiController {
       
       const result = await workflowService.approveRecord(id, userId, remarks);
       res.json(successResponse(result.data || result, result.message));
+      return;
     } catch (error) {
       console.error('[NPI] APPROVE error:', error);
-      next(error);
+      return next(error);
     }
   }
 
@@ -220,21 +229,23 @@ export class NpiController {
    * POST /api/npi/:id/reject
    * Reject record (return to draft)
    */
-  async reject(req: Request, res: Response, next: NextFunction) {
+  async reject(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { params, body } = NpiActionSchema.parse({ params: req.params, body: req.body });
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const remarks = body?.remarks;
       
       if (!remarks) {
-        return res.status(400).json({ message: 'Remarks are required for rejection' });
+        res.status(400).json({ message: 'Remarks are required for rejection' });
+        return;
       }
       
       const result = await workflowService.rejectRecord(params.id, userId, remarks);
       res.json(successResponse(result.data || result, result.message));
+      return;
     } catch (error) {
       console.error('[NPI] REJECT error:', error);
-      next(error);
+      return next(error);
     }
   }
 }

@@ -2,8 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authRepositoryMock = vi.hoisted(() => ({
   findByEmail: vi.fn(),
-  findById: vi.fn(),
+  findUserById: vi.fn(),
   findAssignedSqmpAccessibleForms: vi.fn(),
+  findAssignedNpiAccessibleForms: vi.fn(),
+  findAssignedMnrAccessibleForms: vi.fn(),
+  findAssignedQmqaAccessibleForms: vi.fn(),
+  findAssignedFiveM1EAccessibleForms: vi.fn(),
 }));
 
 const hashMock = vi.hoisted(() => ({
@@ -53,7 +57,12 @@ describe('AuthService login SQMP assignment access', () => {
       password: 'hashed-password',
     };
     authRepositoryMock.findByEmail.mockResolvedValue(mockUser);
-    authRepositoryMock.findById.mockResolvedValue(mockUser);
+    authRepositoryMock.findUserById.mockResolvedValue(mockUser);
+    authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
     hashMock.verifyPassword.mockResolvedValue(true);
     jwtMock.generateAccessToken.mockReturnValue('access-token');
     jwtMock.generateRefreshToken.mockReturnValue('refresh-token');
@@ -70,6 +79,19 @@ describe('AuthService login SQMP assignment access', () => {
 
     expect(result.accessibleForms).toEqual(['SQMP-09-03']);
     expect(result.userMenu).toEqual(['Supplier Quality Management Plan']);
+  });
+
+  it('includes NPI accessibleForms and menu when the user is assigned to NPI approval queues', async () => {
+    authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue(['NPILOT-09-03']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['NPILOT-09-03']);
+    expect(result.userMenu).toEqual(['New Parts Incoming']);
   });
 
   it('keeps SQMP accessibleForms empty when the user has no assigned SQMP approval queues', async () => {
@@ -122,9 +144,71 @@ describe('AuthService login SQMP assignment access', () => {
     const service = new AuthService();
     const result = await service.getCurrentUserContext('user-1');
 
-    expect(authRepositoryMock.findById).toHaveBeenCalledWith('user-1');
+    expect(authRepositoryMock.findUserById).toHaveBeenCalledWith('user-1');
     expect(result.accessibleForms).toEqual(['SQMP-09-07']);
     expect(result.userMenu).toEqual(['Supplier Quality Management Plan']);
     expect(result.userData.USER_ID).toBe('user-1');
+  });
+
+  it('includes MNR accessibleForms and module menu when the user is assigned to MNR approval queues', async () => {
+    authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue(['MNR-12-10']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['MNR-12-10']);
+    expect(result.userMenu).toEqual(['MNR Tracking']);
+  });
+
+  it('includes MNR issuer response workspace access after supplier-response handoff', async () => {
+    authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue(['MNR-12-09']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['MNR-12-09']);
+    expect(result.userMenu).toEqual(['MNR Tracking']);
+  });
+
+  it('keeps MNR issuer response workspace access for issuer-owned response review stages', async () => {
+    authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue(['MNR-12-09', 'MNR-12-10']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['MNR-12-09', 'MNR-12-10']);
+    expect(result.userMenu).toEqual(['MNR Tracking']);
+  });
+
+  it('includes 5M1E accessibleForms and module menu when the user is assigned to a 5M1E queue', async () => {
+    authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue(['5M1EApprovalSecDes-06-17']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['5M1EApprovalSecDes-06-17']);
+    expect(result.userMenu).toEqual(['5M1E']);
+  });
+
+  it('refreshes the current user context with updated 5M1E accessibleForms', async () => {
+    authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue(['5M1EJudgementSec-06-17']);
+
+    const service = new AuthService();
+    const result = await service.getCurrentUserContext('user-1');
+
+    expect(result.accessibleForms).toEqual(['5M1EJudgementSec-06-17']);
+    expect(result.userMenu).toEqual(['5M1E']);
   });
 });

@@ -15,7 +15,7 @@ import {
 
 export interface INpiService {
   // CRUD Operations
-  getAllRecords(): Promise<NpiListDTO[]>;
+  getAllRecords(actor?: unknown, filters?: Record<string, string | undefined>): Promise<NpiListDTO[]>;
   getRecordById(id: string): Promise<NpiDetailDTO>;
   createRecord(
     payload: NPICreationInput, 

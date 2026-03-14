@@ -36,6 +36,10 @@ export class MnrRepository extends BaseRepository {
             'l.defectcategory_id', 'dc.defectcategory_name as category_name',
             'l.mnrtype_id', 'mt.mnrtype_name as mnr_type_name',
             'l.attention_id', 'attn.full_name as attention_name',
+            'l.encoder_id',
+            'l.issuer_id',
+            'l.checker_id',
+            'l.approver_id',
             'd.part_id', 'pc.part_name', 'pc.part_code',
             'l.reference_no',
             'l.report_issuance_8d',
@@ -59,8 +63,17 @@ export class MnrRepository extends BaseRepository {
                     expandedFilter.add(status);
                     if (status === 'SU')
                         expandedFilter.add('CK');
-                    if (status === 'RA')
+                    if (status === 'RC' || status === 'RA' || status === 'RV') {
                         expandedFilter.add('RC');
+                        expandedFilter.add('RA');
+                        expandedFilter.add('RV');
+                    }
+                    if (status === 'RS' || status === 'AC' || status === 'AA' || status === 'RJ') {
+                        expandedFilter.add('RS');
+                        expandedFilter.add('AC');
+                        expandedFilter.add('AA');
+                        expandedFilter.add('RJ');
+                    }
                     if (status === 'RP') {
                         expandedFilter.add('IS');
                         expandedFilter.add('CL');
@@ -74,8 +87,11 @@ export class MnrRepository extends BaseRepository {
                 if (statusFilter === 'SU') {
                     query = query.where('l.request_status', 'in', ['SU', 'CK']);
                 }
-                else if (statusFilter === 'RA') {
-                    query = query.where('l.request_status', 'in', ['RA', 'RC']);
+                else if (statusFilter === 'RC' || statusFilter === 'RA' || statusFilter === 'RV') {
+                    query = query.where('l.request_status', 'in', ['RC', 'RA', 'RV']);
+                }
+                else if (statusFilter === 'RS' || statusFilter === 'AC' || statusFilter === 'AA' || statusFilter === 'RJ') {
+                    query = query.where('l.request_status', 'in', ['RS', 'AC', 'AA', 'RJ']);
                 }
                 else if (statusFilter === 'RP') {
                     query = query.where('l.request_status', 'in', ['IS', 'CL']);
@@ -131,8 +147,14 @@ export class MnrRepository extends BaseRepository {
         // Fetch Response
         const response = await db.selectFrom('MNR_RESPONSE as r')
             .leftJoin('USERS as u', 'r.updateby', 'u.user_id')
+            .leftJoin('USERS as chk', 'r.checker_id', 'chk.user_id')
+            .leftJoin('USERS as app', 'r.approver_id', 'app.user_id')
             .selectAll('r')
-            .select(['u.full_name as responded_by_name'])
+            .select([
+            'u.full_name as responded_by_name',
+            'chk.full_name as checker_name',
+            'app.full_name as approver_name',
+        ])
             .where('r.mnr_id', '=', record.mnr_id)
             .executeTakeFirst();
         // Fetch Verification (multi-row history)
@@ -177,6 +199,34 @@ export class MnrRepository extends BaseRepository {
             // We pass `trx as any` so it's compatible with methods expecting `db`
             return await callback(trx);
         });
+    }
+    async findLatestResponsesByMnrIds(mnrIds) {
+        if (!mnrIds.length)
+            return [];
+        return await db
+            .selectFrom('MNR_RESPONSE as r')
+            .leftJoin('USERS as chk', 'r.checker_id', 'chk.user_id')
+            .leftJoin('USERS as app', 'r.approver_id', 'app.user_id')
+            .select([
+            'r.mnr_id',
+            'r.mnr_response_id',
+            'r.checker_id',
+            'chk.full_name as checker_name',
+            'r.approver_id',
+            'app.full_name as approver_name',
+            'r.issuer_remarks',
+            'r.issuer_date',
+            'r.attention_date',
+            'r.accept_date',
+            'r.last_update',
+        ])
+            .where('r.mnr_id', 'in', mnrIds)
+            .where((eb) => eb('r.last_update', '=', eb
+            .selectFrom('MNR_RESPONSE as r2')
+            .select((qb) => qb.fn.max('r2.last_update').as('latest_update'))
+            .whereRef('r2.mnr_id', '=', 'r.mnr_id')))
+            .orderBy('r.last_update', 'desc')
+            .execute();
     }
 }
 export const mnrRepository = new MnrRepository();

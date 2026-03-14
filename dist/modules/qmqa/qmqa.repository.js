@@ -58,6 +58,7 @@ export class QmqaRepository extends BaseRepository {
             .leftJoin('AUDITCATEGORY as cat', 'ap.audit_category_id', 'cat.audit_category_id')
             .leftJoin('USERS as sqe', 'ap.sqe_pic_id', 'sqe.user_id')
             .leftJoin('AUDITTYPE as at', 'q.audit_type_id', 'at.audit_type_id')
+            .leftJoin('USERS as att', 'q.attention_id', 'att.user_id')
             .leftJoin('USERS as enc', 'q.encoder_id', 'enc.user_id')
             .leftJoin('USERS as iss', 'q.issuer_id', 'iss.user_id')
             .leftJoin('USERS as chk', 'q.checker_id', 'chk.user_id')
@@ -70,6 +71,13 @@ export class QmqaRepository extends BaseRepository {
             'q.due_date',
             'q.audit_rating',
             'q.request_status',
+            'q.attention_id',
+            'q.issuer_remarks',
+            'q.issuer_date',
+            'q.checker_remarks',
+            'q.checker_date',
+            'q.approver_remarks',
+            'q.approver_date',
             'q.last_update',
             'ap.qmqa_audit_plan_id',
             'ap.control_no',
@@ -86,6 +94,7 @@ export class QmqaRepository extends BaseRepository {
             'at.audit_type_name',
             'q.encoder_id',
             'enc.full_name as encoder_name',
+            'att.full_name as attention_name',
             'q.issuer_id',
             'iss.full_name as issuer_name',
             'q.checker_id',
@@ -160,10 +169,34 @@ export class QmqaRepository extends BaseRepository {
     // 3. RESPONSE & CHILD ATTACHMENT DATA
     // ==========================================
     async findResponseByQmqaId(qmqaId) {
-        return await db.selectFrom('QMQA_RESPONSE')
-            .selectAll()
-            .where('qmqa_id', '=', qmqaId)
+        return await db.selectFrom('QMQA_RESPONSE as qr')
+            .leftJoin('USERS as chk', 'qr.checker_id', 'chk.user_id')
+            .leftJoin('USERS as app', 'qr.approver_id', 'app.user_id')
+            .selectAll('qr')
+            .select([
+            'chk.full_name as checker_name',
+            'app.full_name as approver_name',
+        ])
+            .where('qr.qmqa_id', '=', qmqaId)
+            .orderBy('qr.last_update', 'desc')
             .executeTakeFirst();
+    }
+    async findLatestResponsesByQmqaIds(qmqaIds) {
+        if (qmqaIds.length === 0) {
+            return [];
+        }
+        return await db.selectFrom('QMQA_RESPONSE as qr')
+            .leftJoin('USERS as chk', 'qr.checker_id', 'chk.user_id')
+            .leftJoin('USERS as app', 'qr.approver_id', 'app.user_id')
+            .selectAll('qr')
+            .select([
+            'chk.full_name as checker_name',
+            'app.full_name as approver_name',
+        ])
+            .where('qr.qmqa_id', 'in', qmqaIds)
+            .orderBy('qr.qmqa_id', 'asc')
+            .orderBy('qr.last_update', 'desc')
+            .execute();
     }
     async findResponseInitialAttachments(responseId) {
         return await db.selectFrom('QMQA_RESPONSE_INITIAL')
@@ -218,6 +251,15 @@ export class QmqaRepository extends BaseRepository {
             .orderBy('control_no', 'desc')
             .executeTakeFirst();
         return result?.control_no || null;
+    }
+    async findSupplierIdsByUserId(userId) {
+        const rows = await db.selectFrom('SUPPLIERSUSER')
+            .select('supplier_id')
+            .where('user_id', '=', userId)
+            .execute();
+        return rows
+            .map((row) => row.supplier_id)
+            .filter((supplierId) => Boolean(supplierId));
     }
     async executeTransaction(callback) {
         return await db.transaction().execute(async (trx) => {

@@ -7,7 +7,7 @@ export class AuthController {
   /**
    * Handles user login and sets the Refresh Token securely in an HttpOnly cookie
    */
-  async login(req: Request<{}, {}, LoginInput>, res: Response, next: NextFunction) {
+  async login(req: Request<{}, {}, LoginInput>, res: Response, next: NextFunction): Promise<void> {
     try {
       const result = await authService.login(req.body);
 
@@ -30,21 +30,23 @@ export class AuthController {
         userMenu: result.userMenu,
         accessibleForms: result.accessibleForms
       });
+      return;
     } catch (error) {
-      next(error); // Pass to global Error Handler
+      return next(error); // Pass to global Error Handler
     }
   }
 
   /**
    * Handles refreshing the access token using the HttpOnly Refresh Token cookie
    */
-  async refresh(req: Request, res: Response, next: NextFunction) {
+  async refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const token = req.cookies?.refreshToken || req.body?.refreshToken;
       
       if (!token) {
         // Here we could throw UnauthorizedError, but inline is fine to avoid importing AppError
-        return res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
+        res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
+        return;
       }
       
       const result = await authService.refreshTokens(token);
@@ -56,41 +58,45 @@ export class AuthController {
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
       
-      return res.status(200).json({
+      res.status(200).json({
         success: true,
         accessToken: result.accessToken
       });
+      return;
     } catch (error) {
       res.clearCookie('refreshToken');
       return next(error);
     }
   }
 
-  async me(req: Request, res: Response, next: NextFunction) {
+  async me(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (!req.user?.userId) {
-        return res.status(401).json({ success: false, message: 'Unauthorized' });
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
       }
 
       const result = await authService.getCurrentUserContext(req.user.userId);
-      return res.status(200).json(result);
+      res.status(200).json(result);
+      return;
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
   /**
    * Handles logging out by clearing the HttpOnly cookie
    */
-  async logout(_req: Request, res: Response, next: NextFunction) {
+  async logout(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       res.clearCookie('refreshToken');
       res.status(200).json({
         status: 'success',
         message: 'Successfully logged out',
       });
+      return;
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 }

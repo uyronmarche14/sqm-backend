@@ -6,9 +6,31 @@ import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '.
 
 export class AuthService {
   private buildAuthContextResponse(user: any, accessibleForms: string[]) {
-    const userMenu = accessibleForms.length > 0
-      ? ['Supplier Quality Management Plan']
-      : [];
+    const userMenu: string[] = [];
+
+    if (accessibleForms.some((formCode) => formCode.startsWith('SQMP-'))) {
+      userMenu.push('Supplier Quality Management Plan');
+    }
+
+    if (accessibleForms.some((formCode) => formCode.startsWith('NPILOT-'))) {
+      userMenu.push('New Parts Incoming');
+    }
+
+    if (accessibleForms.some((formCode) => formCode.startsWith('MNR-'))) {
+      userMenu.push('MNR Tracking');
+    }
+
+    if (accessibleForms.some((formCode) => formCode.startsWith('QMQA-'))) {
+      userMenu.push('QMQA');
+    }
+
+    if (accessibleForms.some((formCode) => formCode.startsWith('5M1E'))) {
+      userMenu.push('5M1E');
+    }
+
+    if (accessibleForms.some((formCode) => formCode.startsWith('SQPR-') || formCode.startsWith('SFR-'))) {
+      userMenu.push('SQPR');
+    }
 
     const normalizedRoleName = user.role_name?.toLowerCase() || '';
     const isAdmin = normalizedRoleName.includes('admin') ? 1 : 0;
@@ -81,7 +103,22 @@ export class AuthService {
 
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
-    const accessibleForms = await authRepository.findAssignedSqmpAccessibleForms(user.user_id);
+    const [assignedSqmpForms, assignedNpiForms, assignedMnrForms, assignedQmqaForms, assignedSqprForms, assignedFiveM1EForms] = await Promise.all([
+      authRepository.findAssignedSqmpAccessibleForms(user.user_id),
+      authRepository.findAssignedNpiAccessibleForms(user.user_id),
+      authRepository.findAssignedMnrAccessibleForms(user.user_id),
+      authRepository.findAssignedQmqaAccessibleForms(user.user_id),
+      authRepository.findAssignedSqprAccessibleForms(user.user_id),
+      authRepository.findAssignedFiveM1EAccessibleForms(user.user_id),
+    ]);
+    const accessibleForms = Array.from(new Set([
+      ...assignedSqmpForms,
+      ...assignedNpiForms,
+      ...assignedMnrForms,
+      ...assignedQmqaForms,
+      ...assignedSqprForms,
+      ...assignedFiveM1EForms,
+    ]));
     const authContext = this.buildAuthContextResponse(user, accessibleForms);
     
     return {
@@ -100,13 +137,28 @@ export class AuthService {
   }
 
   async getCurrentUserContext(userId: string) {
-    const user = await authRepository.findById(userId);
+    const user = await authRepository.findUserById(userId);
 
     if (!user) {
       throw new UnauthorizedError('Invalid session');
     }
 
-    const accessibleForms = await authRepository.findAssignedSqmpAccessibleForms(user.user_id);
+    const [assignedSqmpForms, assignedNpiForms, assignedMnrForms, assignedQmqaForms, assignedSqprForms, assignedFiveM1EForms] = await Promise.all([
+      authRepository.findAssignedSqmpAccessibleForms(user.user_id),
+      authRepository.findAssignedNpiAccessibleForms(user.user_id),
+      authRepository.findAssignedMnrAccessibleForms(user.user_id),
+      authRepository.findAssignedQmqaAccessibleForms(user.user_id),
+      authRepository.findAssignedSqprAccessibleForms(user.user_id),
+      authRepository.findAssignedFiveM1EAccessibleForms(user.user_id),
+    ]);
+    const accessibleForms = Array.from(new Set([
+      ...assignedSqmpForms,
+      ...assignedNpiForms,
+      ...assignedMnrForms,
+      ...assignedQmqaForms,
+      ...assignedSqprForms,
+      ...assignedFiveM1EForms,
+    ]));
     const authContext = this.buildAuthContextResponse(user, accessibleForms);
 
     return {

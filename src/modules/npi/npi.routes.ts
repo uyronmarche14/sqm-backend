@@ -8,6 +8,32 @@ import { requirePermission } from '../../shared/middleware/requirePermission.js'
 const router = Router();
 const upload = createModuleUpload('npi', { attachmentType: 'npi-main' });
 
+// Health check (no auth required for monitoring)
+router.get('/health', async (_req, res) => {
+  try {
+    const { db } = await import('../../shared/infrastructure/db.js');
+    const result = await db
+      .selectFrom('NPI_LOTS')
+      .select(db.fn.countAll().as('count'))
+      .executeTakeFirst();
+    res.json({
+      success: true,
+      status: 'healthy',
+      module: 'NPI',
+      npiRecordCount: Number(result?.count ?? 0),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      status: 'unhealthy',
+      module: 'NPI',
+      error: String(error),
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 // Protect all routes
 router.use(requireAuth);
 

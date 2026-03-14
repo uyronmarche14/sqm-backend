@@ -7,6 +7,20 @@ export class SqprRepository extends BaseRepository<'SQPR'> {
     super('SQPR');
   }
 
+  async findSiteCode(siteId: string) {
+    const row = await db
+      .selectFrom('MFG_SITES as site')
+      .select((eb) => [
+        'site.site_id',
+        'site.site_name',
+        sql<string>`COALESCE(site.site_code, site.site_name)`.as('site_code'),
+      ])
+      .where('site.site_id', '=', siteId)
+      .executeTakeFirst();
+
+    return row || null;
+  }
+
   /**
    * Fetches all SQPR records with human-readable joined names.
    */
@@ -21,6 +35,7 @@ export class SqprRepository extends BaseRepository<'SQPR'> {
       .selectAll('s')
       .select([
         'site.site_name as site_name',
+        sql<string>`COALESCE(site.site_code, site.site_name)`.as('site_code'),
         'sup.supplier_name as supplier_name',
         sql<string>`COALESCE(inch.full_name, s.incharge_id)`.as('incharge_name'),
         'attn.full_name as attention_name',
@@ -45,6 +60,7 @@ export class SqprRepository extends BaseRepository<'SQPR'> {
       .selectAll('s')
       .select([
         'site.site_name as site_name',
+        sql<string>`COALESCE(site.site_code, site.site_name)`.as('site_code'),
         'sup.supplier_name as supplier_name',
         sql<string>`COALESCE(inch.full_name, s.incharge_id)`.as('incharge_name'),
         'attn.full_name as attention_name',

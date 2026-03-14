@@ -1,6 +1,24 @@
 import { z } from 'zod';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 
+const OptionalUuidField = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : value),
+  z.string().uuid().optional(),
+);
+
+const OptionalStringField = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : value),
+  z.string().optional(),
+);
+
+const OptionalDateField = z.preprocess((value) => {
+  if (value === '' || value == null) return undefined;
+  if (value instanceof Date) return value;
+
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? value : parsed;
+}, z.date().optional());
+
 const NpiAttachmentSchema = z.object({
   npi_attachment_id: z.string().uuid().optional(),
   fileName: z.string().optional(),
@@ -35,8 +53,26 @@ const NpiDimensionCategorySchema = z.object({
   remarks: z.string().optional()
 });
 
+const NpiNoiseCategorySchema = z.object({
+  partnoisecategory_name: z.string(),
+  std_min: z.coerce.number(),
+  std_max: z.coerce.number(),
+  actual_min: z.coerce.number().nullable().optional(),
+  actual_max: z.coerce.number().nullable().optional(),
+  cpk: z.coerce.number().nullable().optional(),
+  remarks: z.string().optional(),
+});
+
+const NpiMaterialCertificateSchema = z.object({
+  component: z.string(),
+  description: z.string(),
+  required_data: z.string(),
+  judgement: z.union([z.boolean(), z.coerce.number()]).nullable().optional(),
+  remarks: z.string().optional(),
+});
+
 const NpiCcListSchema = z.object({
-  user_id: z.string().uuid().optional(),
+  user_id: z.string().optional(),
   email: z.string().email().optional()
 }).refine((data) => data.user_id || data.email, {
   message: "Either user_id or email must be provided"
@@ -62,17 +98,20 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
 
 export const NpiCreateSchema = z.object({
   body: z.object({
-    controlNo: z.string().optional(),
-    siteId: z.string().uuid('Valid Site ID is required').optional(),
-    supplierId: z.string().uuid().optional(),
-    partId: z.string().uuid().optional(),
-    model: z.string().uuid().optional(),
-    lotNo: z.string().optional(),
+    controlNo: OptionalStringField,
+    siteId: z.preprocess(
+      (value) => (value === '' || value == null ? undefined : value),
+      z.string().uuid('Valid Site ID is required').optional(),
+    ),
+    supplierId: OptionalUuidField,
+    partId: OptionalUuidField,
+    model: OptionalUuidField,
+    lotNo: OptionalStringField,
     lotSize: z.preprocess((v) => Number(v) || 0, z.number().int()),
-    invoiceNo: z.string().optional(),
-    poNo: z.string().optional(),
+    invoiceNo: OptionalStringField,
+    poNo: OptionalStringField,
     
-    inspectionMethod: z.string().uuid().optional(),
+    inspectionMethod: OptionalUuidField,
     inspectionTemp: z.preprocess((v) => Number(v) || 0, z.number()),
     inspectionHum: z.preprocess((v) => Number(v) || 0, z.number()),
     
@@ -81,27 +120,52 @@ export const NpiCreateSchema = z.object({
     receivedTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
     endorseTime: z.preprocess((v) => Number(v) || 0, z.number().int()),
     
-    severity: z.string().uuid().optional(),
-    severity_seq: z.string().optional(),
+    severity: OptionalUuidField,
+    severity_seq: OptionalStringField,
     sampleSize: z.preprocess((v) => Number(v) || 0, z.number().int()),
-    disposition: z.string().uuid().optional(),
+    disposition: OptionalUuidField,
     
-    inspectionDate: z.string().datetime().or(z.date()).optional(),
-    deliveryDate: z.string().datetime().or(z.date()).optional(),
+    inspectionDate: OptionalDateField,
+    deliveryDate: OptionalDateField,
     
-    inspectedBy: z.string().uuid().optional(),
-    inspectionCategory: z.string().uuid().optional(),
-    dataVerifiedBy: z.string().uuid().optional(),
+    inspectedBy: OptionalUuidField,
+    inspectionCategory: OptionalUuidField,
+    dataVerifiedBy: OptionalUuidField,
     
     total_minor: z.preprocess((v) => Number(v) || 0, z.number().int()),
     total_major: z.preprocess((v) => Number(v) || 0, z.number().int()),
     total_critical: z.preprocess((v) => Number(v) || 0, z.number().int()),
     
-    judgment: z.string().optional(),
-    rohsVerification: z.string().optional(),
-    referenceMnrNo: z.string().optional(),
+    judgment: OptionalStringField,
+    rohsVerification: OptionalStringField,
+    referenceMnrNo: OptionalStringField,
+    correctedLotVerification: OptionalStringField,
+    remarks: OptionalStringField,
     
-    inspectorRemarks: z.string().optional(),
+    // Approval Section
+    inspectorId: OptionalUuidField,
+    inspector_id: OptionalUuidField,
+    inspectorRemarks: OptionalStringField,
+    inspector_remarks: OptionalStringField,
+    submittedDate: OptionalDateField,
+    submitted_date: OptionalDateField,
+    checkerId: OptionalUuidField,
+    checker_id: OptionalUuidField,
+    checkerRemarks: OptionalStringField,
+    checker_remarks: OptionalStringField,
+    checkedDate: OptionalDateField,
+    checked_date: OptionalDateField,
+    approverId: OptionalUuidField,
+    approver_id: OptionalUuidField,
+    approverRemarks: OptionalStringField,
+    approver_remarks: OptionalStringField,
+    approvedDate: OptionalDateField,
+    approved_date: OptionalDateField,
+    
+    // Extra fields
+    ssiAccept: z.preprocess((v) => v === 'true' || v === '1' || v === true ? 1 : 0, z.number()).optional(),
+    ogiRefNo: OptionalStringField,
+    
     status: z.nativeEnum(WorkflowStatusEnum).optional(),
 
     // Complex Sub-arrays
@@ -109,6 +173,8 @@ export const NpiCreateSchema = z.object({
     visual_categories: JsonParsedArray(NpiVisualCategorySchema),
     data_categories: JsonParsedArray(NpiDataCategorySchema),
     dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
+    noise_categories: JsonParsedArray(NpiNoiseCategorySchema),
+    material_certificates: JsonParsedArray(NpiMaterialCertificateSchema),
     cc_list: JsonParsedArray(NpiCcListSchema),
   })
 });
@@ -119,18 +185,18 @@ export const NpiUpdateSchema = z.object({
   }),
   body: z.object({
     status: z.nativeEnum(WorkflowStatusEnum).optional(),
-    request_status: z.string().optional(),
+    request_status: OptionalStringField,
     
-    siteId: z.string().uuid().optional(),
-    supplierId: z.string().uuid().optional(),
-    partId: z.string().uuid().optional(),
-    model: z.string().uuid().optional(),
-    lotNo: z.string().optional(),
+    siteId: OptionalUuidField,
+    supplierId: OptionalUuidField,
+    partId: OptionalUuidField,
+    model: OptionalUuidField,
+    lotNo: OptionalStringField,
     lotSize: z.preprocess((v) => Number(v), z.number().int().optional()),
-    invoiceNo: z.string().optional(),
-    poNo: z.string().optional(),
+    invoiceNo: OptionalStringField,
+    poNo: OptionalStringField,
     
-    inspectionMethod: z.string().uuid().optional(),
+    inspectionMethod: OptionalUuidField,
     inspectionTemp: z.preprocess((v) => Number(v), z.number().optional()),
     inspectionHum: z.preprocess((v) => Number(v), z.number().optional()),
     
@@ -139,34 +205,58 @@ export const NpiUpdateSchema = z.object({
     receivedTime: z.preprocess((v) => Number(v), z.number().int().optional()),
     endorseTime: z.preprocess((v) => Number(v), z.number().int().optional()),
     
-    severity: z.string().uuid().optional(),
-    severity_seq: z.string().optional(),
+    severity: OptionalUuidField,
+    severity_seq: OptionalStringField,
     sampleSize: z.preprocess((v) => Number(v), z.number().int().optional()),
-    disposition: z.string().uuid().optional(),
+    disposition: OptionalUuidField,
     
-    inspectionDate: z.string().datetime().or(z.date()).optional(),
-    deliveryDate: z.string().datetime().or(z.date()).optional(),
+    inspectionDate: OptionalDateField,
+    deliveryDate: OptionalDateField,
     
-    inspectedBy: z.string().uuid().optional(),
-    inspectionCategory: z.string().uuid().optional(),
-    dataVerifiedBy: z.string().uuid().optional(),
+    inspectedBy: OptionalUuidField,
+    inspectionCategory: OptionalUuidField,
+    dataVerifiedBy: OptionalUuidField,
     
     total_minor: z.preprocess((v) => Number(v), z.number().int().optional()),
     total_major: z.preprocess((v) => Number(v), z.number().int().optional()),
     total_critical: z.preprocess((v) => Number(v), z.number().int().optional()),
     
-    judgment: z.string().optional(),
-    rohsVerification: z.string().optional(),
-    referenceMnrNo: z.string().optional(),
+    judgment: OptionalStringField,
+    rohsVerification: OptionalStringField,
+    referenceMnrNo: OptionalStringField,
+    correctedLotVerification: OptionalStringField,
+    remarks: OptionalStringField,
     
-    inspectorRemarks: z.string().optional(),
-    checkerRemarks: z.string().optional(),
-    approverRemarks: z.string().optional(),
+    // Approval Section
+    inspectorId: OptionalUuidField,
+    inspector_id: OptionalUuidField,
+    inspectorRemarks: OptionalStringField,
+    inspector_remarks: OptionalStringField,
+    submittedDate: OptionalDateField,
+    submitted_date: OptionalDateField,
+    checkerId: OptionalUuidField,
+    checker_id: OptionalUuidField,
+    checkerRemarks: OptionalStringField,
+    checker_remarks: OptionalStringField,
+    checkedDate: OptionalDateField,
+    checked_date: OptionalDateField,
+    approverId: OptionalUuidField,
+    approver_id: OptionalUuidField,
+    approverRemarks: OptionalStringField,
+    approver_remarks: OptionalStringField,
+    approvedDate: OptionalDateField,
+    approved_date: OptionalDateField,
+    
+    // Extra fields
+    ssiAccept: z.preprocess((v) => v === 'true' || v === '1' || v === true ? 1 : 0, z.number()).optional(),
+    ogiRefNo: OptionalStringField,
 
     attachments: JsonParsedArray(NpiAttachmentSchema),
     visual_categories: JsonParsedArray(NpiVisualCategorySchema),
     data_categories: JsonParsedArray(NpiDataCategorySchema),
     dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
+    noise_categories: JsonParsedArray(NpiNoiseCategorySchema),
+    material_certificates: JsonParsedArray(NpiMaterialCertificateSchema),
     cc_list: JsonParsedArray(NpiCcListSchema),
   })
 });

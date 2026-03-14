@@ -1,12 +1,14 @@
 import { mnrService } from './mnr.service.js';
-import { MnrCreateSchema, MnrUpdateSchema, MnrIdParamSchema, MnrAttachmentParamSchema } from './mnr.schema.js';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
+import { MnrCreateSchema, MnrUpdateSchema, MnrIdParamSchema, MnrAttachmentParamSchema, MnrWorkflowActionSchema, MnrResponseWorkflowSchema, } from './mnr.schema.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { mnrWorkflowService } from './workflow/mnr-workflow.service.js';
 export class MnrController {
     async getAll(req, res, next) {
         try {
             const status = req.query.status;
-            const records = await mnrService.getAllRecords(status);
+            const userId = req.user?.userId || req.user?.id || undefined;
+            const supplierId = req.user?.supplierId || undefined;
+            const records = await mnrService.getAllRecords(status, userId, supplierId);
             res.json({ data: records });
         }
         catch (error) {
@@ -17,7 +19,9 @@ export class MnrController {
     async getById(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const record = await mnrService.getRecordById(id);
+            const userId = req.user?.userId || req.user?.id || undefined;
+            const supplierId = req.user?.supplierId || undefined;
+            const record = await mnrService.getRecordById(id, userId, supplierId);
             res.json({ data: record });
         }
         catch (error) {
@@ -68,14 +72,9 @@ export class MnrController {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            // Accept optional updates from request body for workflow transitions
-            const { updates = {} } = req.body || {};
-            // Merge the status update with any additional updates
-            const payload = {
-                status: WorkflowStatusEnum.SUBMITTED,
-                ...updates
-            };
-            const result = await mnrService.updateRecord(id, payload, userId);
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
+            const result = await mnrWorkflowService.submitMain(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -83,12 +82,16 @@ export class MnrController {
             next(error);
         }
     }
+    async submitMain(req, res, next) {
+        return this.submit(req, res, next);
+    }
     async check(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const { remarks } = req.body;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { updates: { status: 'CHECKED', remarks } }, userId);
+            const result = await mnrWorkflowService.checkMain(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -96,12 +99,16 @@ export class MnrController {
             next(error);
         }
     }
+    async checkMain(req, res, next) {
+        return this.check(req, res, next);
+    }
     async approve(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const { remarks } = req.body;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.APPROVED, remarks } }, userId);
+            const result = await mnrWorkflowService.approveMain(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -109,12 +116,16 @@ export class MnrController {
             next(error);
         }
     }
+    async approveMain(req, res, next) {
+        return this.approve(req, res, next);
+    }
     async reject(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const { remarks } = req.body;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.REJECTED, remarks } }, userId);
+            const result = await mnrWorkflowService.rejectMain(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -122,12 +133,16 @@ export class MnrController {
             next(error);
         }
     }
+    async rejectMain(req, res, next) {
+        return this.reject(req, res, next);
+    }
     async issue(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const { remarks } = req.body;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.issueRecord(id, userId, remarks);
+            const result = await mnrWorkflowService.issueMain(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -135,13 +150,16 @@ export class MnrController {
             next(error);
         }
     }
+    async issueMain(req, res, next) {
+        return this.issue(req, res, next);
+    }
     async close(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const { remarks } = req.body;
-            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.CLOSED, remarks } }, userId);
-            res.json(result);
+            res.status(501).json({
+                success: false,
+                message: `Legacy MNR close workflow is not exposed in Stage 2. Use explicit response workflow endpoints in later stages for record ${id}.`,
+            });
         }
         catch (error) {
             console.error('[MNR] CLOSE error:', error);
@@ -151,13 +169,175 @@ export class MnrController {
     async cancel(req, res, next) {
         try {
             const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-            const { remarks } = req.body;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrService.updateRecord(id, { updates: { status: WorkflowStatusEnum.CANCEL, remarks } }, userId);
+            const result = await mnrWorkflowService.cancelMain(id, userId, remarks);
             res.json(result);
         }
         catch (error) {
             console.error('[MNR] CANCEL error:', error);
+            next(error);
+        }
+    }
+    async cancelMain(req, res, next) {
+        return this.cancel(req, res, next);
+    }
+    async saveInitialResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
+            const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const supplierId = req.user?.supplierId || undefined;
+            const result = await mnrWorkflowService.saveInitialResponse(id, userId, responsePayload, supplierId);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] SAVE INITIAL RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async submitInitialResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
+            const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const supplierId = req.user?.supplierId || undefined;
+            const result = await mnrWorkflowService.submitInitialResponse(id, userId, responsePayload, supplierId);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] SUBMIT INITIAL RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async saveFinalResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
+            const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const supplierId = req.user?.supplierId || undefined;
+            const result = await mnrWorkflowService.saveFinalResponse(id, userId, responsePayload, supplierId);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] SAVE FINAL RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async submitFinalResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
+            const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const supplierId = req.user?.supplierId || undefined;
+            const result = await mnrWorkflowService.submitFinalResponse(id, userId, responsePayload, supplierId);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] SUBMIT FINAL RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async saveResponseReview(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
+            const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.saveResponseReview(id, userId, responsePayload);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] SAVE RESPONSE REVIEW error:', error);
+            next(error);
+        }
+    }
+    async submitResponseReview(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
+            const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.submitResponseReview(id, userId, responsePayload);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] SUBMIT RESPONSE REVIEW error:', error);
+            next(error);
+        }
+    }
+    async checkResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.checkResponse(id, userId, remarks);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] CHECK RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async approveResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.approveResponse(id, userId, remarks);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] APPROVE RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async rejectResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.rejectResponse(id, userId, remarks || '');
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] REJECT RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async acceptResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.acceptResponse(id, userId, remarks);
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] ACCEPT RESPONSE error:', error);
+            next(error);
+        }
+    }
+    async notAcceptResponse(req, res, next) {
+        try {
+            const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
+            const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
+            const remarks = parsed?.remarks || parsed?.updates?.remarks;
+            const userId = req.user?.userId || req.user?.id || 'SYSTEM';
+            const result = await mnrWorkflowService.notAcceptResponse(id, userId, remarks || '');
+            res.json(result);
+        }
+        catch (error) {
+            console.error('[MNR] NOT ACCEPT RESPONSE error:', error);
             next(error);
         }
     }

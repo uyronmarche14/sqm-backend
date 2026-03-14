@@ -1,9 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { mnrRepository } from './mnr.repository.js';
 import { MNRCreationInput, MNRUpdateInput } from './mnr.schema.js';
-import { NotFoundError } from '../../shared/errors/AppError.js';
+import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusToDB, mapStatusFromDB } from '../../shared/utils/status-mapper.js';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
+import { buildMnrWorkflowMetadata } from './workflow/mnr-workflow.utils.js';
+import { MNR_WORKFLOW_STAGE, type MnrWorkflowStage } from './workflow/mnr-workflow.constants.js';
 
 export class MnrService {
   /**
@@ -33,11 +34,200 @@ export class MnrService {
     return Number.isFinite(num) ? num : null;
   }
 
-  private getAutoCloseWhen8DNotRequired(): boolean {
-    return String(process.env.MNR_AUTO_CLOSE_WHEN_8D_NOT_REQUIRED || 'false').toLowerCase() === 'true';
+  private sanitizeUserForeignKey(value?: string | null): string | null {
+    if (!value) return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
-  async getAllRecords(statusFilter?: string) {
+  private async resolveAttentionId(
+    trx: any,
+    attentionId: string | null,
+  ): Promise<string> {
+    const cleanAttentionId = this.sanitizeUserForeignKey(attentionId);
+    if (!cleanAttentionId) {
+      throw new BadRequestError('Attention is required.');
+    }
+
+    const supplierUser = await trx
+      .selectFrom('SUPPLIERSUSER')
+      .select('user_id')
+      .where('Id', '=', cleanAttentionId)
+      .executeTakeFirst();
+
+    if (supplierUser?.user_id) {
+      return supplierUser.user_id;
+    }
+
+    const userExists = await trx
+      .selectFrom('USERS')
+      .select('user_id')
+      .where('user_id', '=', cleanAttentionId)
+      .executeTakeFirst();
+
+    if (userExists?.user_id) {
+      return userExists.user_id;
+    }
+
+    throw new BadRequestError('Attention must be selected from the supplier attention lookup.');
+  }
+
+  private mapWorkflowStageToDisplayStatus(stage: MnrWorkflowStage): string {
+    switch (stage) {
+      case MNR_WORKFLOW_STAGE.DRAFT:
+        return 'DRAFT';
+      case MNR_WORKFLOW_STAGE.CHECKER:
+        return 'AWAITING_CHECKED';
+      case MNR_WORKFLOW_STAGE.APPROVER:
+        return 'AWAITING_APPROVAL';
+      case MNR_WORKFLOW_STAGE.REJECT_CHECKER:
+      case MNR_WORKFLOW_STAGE.REJECT_APPROVER:
+      case MNR_WORKFLOW_STAGE.REJECT_SUPPLIER:
+        return 'REJECTED';
+      case MNR_WORKFLOW_STAGE.ISSUER:
+        return 'APPROVED';
+      case MNR_WORKFLOW_STAGE.SUPPLIER:
+        return 'ISSUED';
+      case MNR_WORKFLOW_STAGE.INITIAL_RESPONSE:
+        return 'IR';
+      case MNR_WORKFLOW_STAGE.FINAL_RESPONSE:
+        return 'FR';
+      case MNR_WORKFLOW_STAGE.ISSUER_2ND:
+        return 'RESPONSE_SUBMITTED';
+      case MNR_WORKFLOW_STAGE.CHECKER_2ND:
+      case MNR_WORKFLOW_STAGE.REJECT_CHECKER_2ND:
+        return 'RESPONSE_AWAITING_CHECKED';
+      case MNR_WORKFLOW_STAGE.APPROVER_2ND:
+      case MNR_WORKFLOW_STAGE.REJECT_APPROVER_2ND:
+        return 'RESPONSE_AWAITING_APPROVAL';
+      case MNR_WORKFLOW_STAGE.ISSUER_3RD:
+        return 'RESPONSE_RECEIVED';
+      case MNR_WORKFLOW_STAGE.REJECT_ISSUER_2ND:
+      case MNR_WORKFLOW_STAGE.NOT_ACCEPT:
+        return 'RESPONSE_REJECTED';
+      case MNR_WORKFLOW_STAGE.CANCEL:
+        return 'CANCELLED';
+      case MNR_WORKFLOW_STAGE.ACCEPT:
+        return 'CLOSED';
+      case MNR_WORKFLOW_STAGE.LOT_TRACKING:
+        return 'CLOSED';
+      default:
+        return mapStatusFromDB(String(stage));
+    }
+  }
+
+  private buildResponseUpdatePayload(responsePayload: Record<string, any>, userId: string, now: Date) {
+    return {
+      d1: responsePayload.d1_teamApproach || responsePayload.teamApproach || null,
+      d2: responsePayload.d2_problemDescription || responsePayload.problemDescription || null,
+      d3: responsePayload.d3_containmentPlan || responsePayload.containmentPlan || null,
+      d4: responsePayload.d4_rootCause || responsePayload.rootCause || null,
+      d5: responsePayload.d5_correctiveAction || responsePayload.correctiveAction || null,
+      d6: responsePayload.d6_verificationEffectiveness || responsePayload.verificationEffectiveness || null,
+      d7: responsePayload.d7_preventRecurrence || responsePayload.preventRecurrence || null,
+      d8: responsePayload.d8_completionApproval || responsePayload.ultimateVerification || null,
+      invoice_no: responsePayload.invoiceDrNo || responsePayload.invoiceNo || null,
+      lot_size: this.toNumber(responsePayload.lotSize),
+      lot_no: responsePayload.lotNo || null,
+      eta: responsePayload.eta || null,
+      marking: responsePayload.ifSortedMarkingIdentification || responsePayload.marking || null,
+      rtv_received: this.toNumber(responsePayload.actualRtvReceived ?? responsePayload.rtvReceived),
+      replacement_date: this.formatDate(responsePayload.targetReplacementDate || responsePayload.replacementDate),
+      replacement_qty: this.toNumber(responsePayload.replacementQty),
+      ncv_invoice_no: responsePayload.ncvInvoiceNo || null,
+      label: responsePayload.boxLabelIdentification || responsePayload.label || null,
+      remarks: responsePayload.correctedPartsNotice || responsePayload.remarks || null,
+      attention_date: this.formatDate(responsePayload.attentionDate),
+      accept_date: this.formatDate(responsePayload.acceptDate),
+      checker_id: responsePayload.cycle2CheckerId || responsePayload.checker || null,
+      checker_remarks: responsePayload.cycle2CheckerRemarks || responsePayload.checkerRemarks || null,
+      checker_date: this.formatDate(responsePayload.cycle2CheckerDate || responsePayload.checkerDate),
+      approver_id: responsePayload.cycle2ApproverId || responsePayload.approver || null,
+      approver_remarks: responsePayload.cycle2ApproverRemarks || responsePayload.approverRemarks || null,
+      approver_date: this.formatDate(responsePayload.cycle2ApproverDate || responsePayload.approverDate),
+      issuer_remarks: responsePayload.cycle2IssuerRemarks || responsePayload.issuerRemarks || null,
+      issuer_date: this.formatDate(responsePayload.cycle2IssuerDate || responsePayload.issuerDate),
+      last_update: now,
+      updateby: userId,
+    };
+  }
+
+  private async persistResponseArtifacts(
+    trx: any,
+    realId: string,
+    responsePayload: Record<string, any>,
+    userId: string,
+    now: Date,
+  ) {
+    const existingResponse = await trx
+      .selectFrom('MNR_RESPONSE')
+      .select('mnr_response_id')
+      .where('mnr_id', '=', realId)
+      .executeTakeFirst();
+
+    const responseUpdatePayload = this.buildResponseUpdatePayload(responsePayload, userId, now);
+
+    if (existingResponse?.mnr_response_id) {
+      await trx
+        .updateTable('MNR_RESPONSE')
+        .set(responseUpdatePayload)
+        .where('mnr_id', '=', realId)
+        .execute();
+    } else {
+      await trx
+        .insertInto('MNR_RESPONSE')
+        .values({
+          mnr_response_id: uuidv4(),
+          mnr_id: realId,
+          ...responseUpdatePayload,
+        })
+        .execute();
+    }
+
+    if (Array.isArray(responsePayload.verificationEntries)) {
+      await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', realId).execute();
+      for (const entry of responsePayload.verificationEntries) {
+        if (!entry?.receivedDate || !entry?.invoiceNo || !entry?.judgment) continue;
+        await trx.insertInto('MNR_VERIFICATION').values({
+          mnr_verification_id: uuidv4(),
+          mnr_id: realId,
+          received_date: this.formatDate(entry.receivedDate) || now,
+          invoice_no: String(entry.invoiceNo),
+          judgment: String(entry.judgment),
+          remarks: entry.remarks ? String(entry.remarks) : null,
+          last_update: now,
+          updateby: userId,
+        }).execute();
+      }
+    }
+  }
+
+  async saveResponseContent(id: string, responsePayload: Record<string, any>, userId: string) {
+    const now = new Date();
+
+    return await mnrRepository.executeTransaction(async (trx) => {
+      const currentRecord = await trx.selectFrom('MNR_LOTS')
+        .select(['mnr_id'])
+        .where((eb) => eb.or([
+          eb('mnr_id', '=', id),
+          eb('control_no', '=', id),
+        ]))
+        .executeTakeFirst();
+
+      if (!currentRecord) throw new NotFoundError('MNR Record not found');
+      await this.persistResponseArtifacts(trx, currentRecord.mnr_id, responsePayload, userId, now);
+
+      return {
+        success: true,
+        message: 'Response content saved successfully',
+        data: {
+          id: currentRecord.mnr_id,
+        },
+      };
+    });
+  }
+
+  async getAllRecords(statusFilter?: string, userId?: string, supplierId?: string) {
     let dbFilter: string[] | string | undefined;
     if (statusFilter) {
       if (statusFilter.includes(',')) {
@@ -47,12 +237,45 @@ export class MnrService {
       }
     }
     const records = await mnrRepository.findAllDetailed(dbFilter);
+    const latestResponses = await mnrRepository.findLatestResponsesByMnrIds(
+      records.map((record) => record.id),
+    );
+    const latestResponseMap = new Map(latestResponses.map((response) => [response.mnr_id, response]));
     
     // Map DB flat rows back to expected DTO shape
-    return records.map(r => ({
+    return records.map(r => {
+      const workflow = buildMnrWorkflowMetadata({
+        request_status: r.status,
+        supplier_id: r.supplier_id,
+        encoder_id: (r as any).encoder_id,
+        encoder_name: r.encoder_name,
+        issuer_id: (r as any).issuer_id,
+        issuer_name: r.issuer_name,
+        checker_id: (r as any).checker_id,
+        checker_name: r.checker_name,
+        approver_id: (r as any).approver_id,
+        approver_name: r.approver_name,
+        attention_id: (r as any).attention_id,
+      }, {
+        latestResponse: latestResponseMap.get(r.id),
+        actor: { userId, supplierId },
+      });
+
+      return ({
       id: r.id,
       control_no: r.control_no,
-      status: mapStatusFromDB(r.status), 
+      status: this.mapWorkflowStageToDisplayStatus(workflow.workflowStage),
+      workflowStage: workflow.workflowStage,
+      workflowStageCode: workflow.workflowStageCode,
+      workflowStageName: workflow.workflowStageName,
+      workflowStageLabel: workflow.workflowStageLabel,
+      availableActions: workflow.availableActions,
+      nextApproverId: workflow.nextApproverId,
+      nextApproverName: workflow.nextApproverName,
+      response_checker_id: latestResponseMap.get(r.id)?.checker_id || null,
+      response_checker_name: latestResponseMap.get(r.id)?.checker_name || null,
+      response_approver_id: latestResponseMap.get(r.id)?.approver_id || null,
+      response_approver_name: latestResponseMap.get(r.id)?.approver_name || null,
       created_at: r.date_created,
       
       supplier_name: r.supplier_name,
@@ -88,20 +311,33 @@ export class MnrService {
       part_code: r.part_code,
       last_update: r.last_update,
       updateby: r.updateby
-    }));
+    });
+    });
   }
 
-  async getRecordById(id: string) {
+  async getRecordById(id: string, userId?: string, supplierId?: string) {
     const data = await mnrRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('MNR Record not found');
 
     const main = data.record;
     
+    const workflow = buildMnrWorkflowMetadata(main, {
+      latestResponse: data.response || undefined,
+      actor: { userId, supplierId },
+    });
+
     return {
       mainDetails: {
         id: main.mnr_id,
         controlNo: main.control_no,
-        status: mapStatusFromDB(main.request_status),
+        status: this.mapWorkflowStageToDisplayStatus(workflow.workflowStage),
+        workflowStage: workflow.workflowStage,
+        workflowStageCode: workflow.workflowStageCode,
+        workflowStageName: workflow.workflowStageName,
+        workflowStageLabel: workflow.workflowStageLabel,
+        availableActions: workflow.availableActions,
+        nextApproverId: workflow.nextApproverId,
+        nextApproverName: workflow.nextApproverName,
         created_at: main.date_created,
         
         mfgSites: main.site_id,
@@ -173,6 +409,7 @@ export class MnrService {
         approverDate: main.approver_date,
         approverRemarks: main.approver_remarks,
       },
+      workflow,
       copiedUsers: data.ccList.map(cc => {
         const ccAny = cc as any;
         const fullName = ccAny.full_name || ccAny.fullName || ccAny.username || 
@@ -289,22 +526,10 @@ export class MnrService {
     };
 
     return await mnrRepository.executeTransaction(async (trx) => {
-      // Defensive: Validate attention_id exists in USERS before inserting
-      // The Attention dropdown may source values from a non-USERS table,
-      // but MNR_LOTS has FK_MNR_LOTS_USERS1 referencing USERS.user_id
-      if (dbLotsPayload.attention_id) {
-        const attentionExists = await trx.selectFrom('USERS')
-          .select('user_id')
-          .where('user_id', '=', dbLotsPayload.attention_id)
-          .executeTakeFirst();
-        if (!attentionExists) {
-          console.warn(`[MNR] attention_id "${dbLotsPayload.attention_id}" not found in USERS — falling back to creator userId`);
-          dbLotsPayload.attention_id = userId;
-        }
-      } else {
-        // attention_id cannot be null in DB
-        dbLotsPayload.attention_id = userId;
-      }
+      dbLotsPayload.attention_id = await this.resolveAttentionId(
+        trx,
+        dbLotsPayload.attention_id,
+      );
 
       // 1. Insert Main Record
       await trx.insertInto('MNR_LOTS').values(dbLotsPayload).execute();
@@ -477,7 +702,7 @@ export class MnrService {
      const now = new Date();
      
      return await mnrRepository.executeTransaction(async (trx) => {
-         // First, get the current record status to determine workflow transitions
+         // First, resolve the real record id for content-only updates
          const currentRecord = await trx.selectFrom('MNR_LOTS')
              .select(['mnr_id', 'request_status', 'report_issuance_8d'])
              .where((eb) => eb.or([
@@ -489,68 +714,10 @@ export class MnrService {
          if (!currentRecord) throw new NotFoundError('MNR Record not found');
          const realId = currentRecord.mnr_id;
          
-         const currentStatus = mapStatusFromDB(currentRecord.request_status);
-         console.log(`[MNR Workflow] Current status: ${currentStatus}, Requested status: ${updates.status}`);
-         
          const dbUpdates: any = {
              last_update: now,
              updateby: userId
          };
-
-         let targetStatus: string | undefined = updates.status as string | undefined;
-
-         // ============================================================================
-         // WORKFLOW STATE TRANSITION LOGIC
-         // ============================================================================
-         
-         // If status is being updated, apply context-aware workflow transitions
-         if (targetStatus) {
-             const upperTarget = targetStatus.toUpperCase();
-             
-             // Handle SUBMIT action based on current context
-             if (upperTarget === 'SUBMITTED' || upperTarget === 'SUBMIT') {
-                 // Context-aware transitions:
-                 // - DRAFT → SUBMITTED (initial submission)
-                 // - IR → FR (submitting Initial Report response)
-                 // - FR → RESPONSE_AWAIT_APPROVAL (submitting Final Report response)
-                 if (currentStatus === 'IR') {
-                     targetStatus = 'FR';
-                     console.log(`[MNR Workflow] Transition: IR → FR (Initial Report submitted)`);
-                 } else if (currentStatus === 'FR') {
-                     targetStatus = 'RESPONSE_AWAIT_APPROVAL';
-                     console.log(`[MNR Workflow] Transition: FR → RESPONSE_AWAIT_APPROVAL (Final Report submitted, awaiting approval)`);
-                 } else if (currentStatus === 'DRAFT') {
-                     targetStatus = 'SUBMITTED';
-                     console.log(`[MNR Workflow] Transition: DRAFT → SUBMITTED (Initial submission)`);
-                 }
-             }
-             
-             // Handle RESPONSE_RECEIVED → automatically move to RESPONSE_AWAIT_APPROVAL
-             if (upperTarget === 'RESPONSE_RECEIVED') {
-                 targetStatus = 'RESPONSE_AWAIT_APPROVAL';
-                 console.log(`[MNR Workflow] Response received, moving to RESPONSE_AWAIT_APPROVAL`);
-             }
-
-             // Handle CHECKED context-awareness
-             if (upperTarget === 'CHECKED' || upperTarget === 'CHECK') {
-                 if (currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
-                     targetStatus = 'RESPONSE_CHECKED';
-                     console.log(`[MNR Workflow] Transition: RESPONSE_AWAIT_APPROVAL → RESPONSE_CHECKED (Cycle 2 Check)`);
-                 } else {
-                     targetStatus = 'CHECKED';
-                 }
-             }
-
-             // Handle APPROVED response context-awareness
-             if (upperTarget === 'CLOSED') {
-                 if (currentStatus === 'RESPONSE_CHECKED' || currentStatus === 'RESPONSE_AWAIT_APPROVAL') {
-                     targetStatus = 'CLOSED';
-                     console.log(`[MNR Workflow] Transition: RESPONSE_CHECKED → CLOSED (Cycle 2 Approve)`);
-                 }
-             }
-         }
-
-         if (targetStatus) dbUpdates.request_status = mapStatusToDB(targetStatus);
 
 
          // Main details — frontend sends standardized snake_case _id keys
@@ -560,7 +727,13 @@ export class MnrService {
          if (updates.mfg_area_id) dbUpdates.mfg_area_id = updates.mfg_area_id;
          if (updates.defectcategory_id) dbUpdates.defectcategory_id = updates.defectcategory_id;
          if (updates.mnrType) dbUpdates.mnrtype_id = updates.mnrType;
-         if (updates.attention_id) dbUpdates.attention_id = updates.attention_id;
+         const requestedAttentionId =
+           updates.attention_id ??
+           updates.attention ??
+           updates.mainDetails?.attention;
+         if (requestedAttentionId !== undefined) {
+           dbUpdates.attention_id = await this.resolveAttentionId(trx, requestedAttentionId);
+         }
          if (updates.reference !== undefined) dbUpdates.reference_no = updates.reference;
          if (updates.reportIssuance8D !== undefined) dbUpdates.report_issuance_8d = updates.reportIssuance8D ? 1 : 0;
          
@@ -632,79 +805,7 @@ export class MnrService {
          // 4. Response 8D + Verification (Update/Upsert)
          const responsePayload = (updates as any).response8D;
          if (responsePayload && typeof responsePayload === 'object') {
-            const existingResponse = await trx.selectFrom('MNR_RESPONSE')
-              .select('mnr_response_id')
-              .where('mnr_id', '=', realId)
-              .executeTakeFirst();
-
-            const responseUpdatePayload = {
-              d1: responsePayload.d1_teamApproach || responsePayload.teamApproach || null,
-              d2: responsePayload.d2_problemDescription || responsePayload.problemDescription || null,
-              d3: responsePayload.d3_containmentPlan || responsePayload.containmentPlan || null,
-              d4: responsePayload.d4_rootCause || responsePayload.rootCause || null,
-              d5: responsePayload.d5_correctiveAction || responsePayload.correctiveAction || null,
-              d6: responsePayload.d6_verificationEffectiveness || responsePayload.verificationEffectiveness || null,
-              d7: responsePayload.d7_preventRecurrence || responsePayload.preventRecurrence || null,
-              d8: responsePayload.d8_completionApproval || responsePayload.ultimateVerification || null,
-              invoice_no: responsePayload.invoiceDrNo || responsePayload.invoiceNo || null,
-              lot_size: this.toNumber(responsePayload.lotSize),
-              lot_no: responsePayload.lotNo || null,
-              eta: responsePayload.eta || null,
-              marking: responsePayload.ifSortedMarkingIdentification || responsePayload.marking || null,
-              rtv_received: this.toNumber(responsePayload.actualRtvReceived ?? responsePayload.rtvReceived),
-              replacement_date: this.formatDate(responsePayload.targetReplacementDate || responsePayload.replacementDate),
-              replacement_qty: this.toNumber(responsePayload.replacementQty),
-              ncv_invoice_no: responsePayload.ncvInvoiceNo || null,
-              label: responsePayload.boxLabelIdentification || responsePayload.label || null,
-              remarks: responsePayload.correctedPartsNotice || responsePayload.remarks || null,
-              attention_date: this.formatDate(responsePayload.attentionDate),
-              accept_date: this.formatDate(responsePayload.acceptDate),
-              checker_id: responsePayload.cycle2CheckerId || responsePayload.checker || null,
-              checker_remarks: responsePayload.cycle2CheckerRemarks || responsePayload.checkerRemarks || null,
-              checker_date: this.formatDate(responsePayload.cycle2CheckerDate || responsePayload.checkerDate),
-              approver_id: responsePayload.cycle2ApproverId || responsePayload.approver || null,
-              approver_remarks: responsePayload.cycle2ApproverRemarks || responsePayload.approverRemarks || null,
-              approver_date: this.formatDate(responsePayload.cycle2ApproverDate || responsePayload.approverDate),
-              issuer_remarks: responsePayload.cycle2IssuerRemarks || responsePayload.issuerRemarks || null,
-              issuer_date: this.formatDate(responsePayload.cycle2IssuerDate || responsePayload.issuerDate),
-              last_update: now,
-              updateby: userId
-            };
-
-            if (existingResponse?.mnr_response_id) {
-              await trx.updateTable('MNR_RESPONSE')
-                .set(responseUpdatePayload)
-                .where('mnr_id', '=', realId)
-                .execute();
-            } else {
-              await trx.insertInto('MNR_RESPONSE')
-                .values({
-                  mnr_response_id: uuidv4(),
-                  mnr_id: realId,
-                  ...responseUpdatePayload
-                })
-                .execute();
-            }
-
-            const verificationEntries = Array.isArray(responsePayload.verificationEntries)
-              ? responsePayload.verificationEntries
-              : [];
-            if (Array.isArray(responsePayload.verificationEntries)) {
-              await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', realId).execute();
-              for (const entry of verificationEntries) {
-                if (!entry?.receivedDate || !entry?.invoiceNo || !entry?.judgment) continue;
-                await trx.insertInto('MNR_VERIFICATION').values({
-                  mnr_verification_id: uuidv4(),
-                  mnr_id: realId,
-                  received_date: this.formatDate(entry.receivedDate) || now,
-                  invoice_no: String(entry.invoiceNo),
-                  judgment: String(entry.judgment),
-                  remarks: entry.remarks ? String(entry.remarks) : null,
-                  last_update: now,
-                  updateby: userId
-                }).execute();
-              }
-            }
+            await this.persistResponseArtifacts(trx, realId, responsePayload, userId, now);
          }
 
          // 5. Attachments (Update)
@@ -761,44 +862,6 @@ export class MnrService {
 
          return { success: true, message: 'Record updated successfully' };
      });
-  }
-
-  async issueRecord(id: string, userId: string, remarks?: string) {
-    const autoCloseWhen8DNotRequired = this.getAutoCloseWhen8DNotRequired();
-
-    const current = await mnrRepository.executeTransaction(async (trx) => {
-      return await trx.selectFrom('MNR_LOTS')
-        .select(['mnr_id', 'report_issuance_8d'])
-        .where((eb) => eb.or([
-          eb('mnr_id', '=', id),
-          eb('control_no', '=', id)
-        ]))
-        .executeTakeFirst();
-    });
-
-    if (!current) throw new NotFoundError('MNR Record not found');
-    const is8DRequired = current.report_issuance_8d === 1 || current.report_issuance_8d === true;
-
-    await this.updateRecord(id, { updates: { status: WorkflowStatusEnum.ISSUED, remarks } }, userId);
-
-    let autoClosed = false;
-    if (!is8DRequired && autoCloseWhen8DNotRequired) {
-      await this.updateRecord(id, { updates: { status: WorkflowStatusEnum.CLOSED, remarks: remarks || 'Auto-closed: 8D response not required' } }, userId);
-      autoClosed = true;
-    }
-
-    return {
-      success: true,
-      message: autoClosed
-        ? 'Record issued and auto-closed (8D not required)'
-        : 'Record issued successfully',
-      status: autoClosed ? WorkflowStatusEnum.CLOSED : WorkflowStatusEnum.ISSUED,
-      is8DRequired,
-      autoClosed,
-      workflowFlags: {
-        autoCloseWhen8DNotRequired,
-      },
-    };
   }
 
   async deleteRecord(id: string) {
