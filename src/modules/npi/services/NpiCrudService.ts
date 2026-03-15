@@ -96,6 +96,12 @@ export class NpiCrudService implements INpiService {
     const defaultUserId = '6a15b66a-079b-433b-b70f-dc15dce25631'; // System Fallback
     const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
     
+    console.log('[NPI createRecord] User IDs:', {
+      userId,
+      effectiveUserId,
+      payloadInspectorId: payload.inspectorId || (payload as any).inspector_id,
+    });
+    
     const defaultInspector = await this.repository.findDefaultInspector();
     
     // Generate control number if not provided
@@ -274,6 +280,16 @@ export class NpiCrudService implements INpiService {
     const checkerId = this.getActorId(payload, 'checkerId', 'checker_id');
     const approverId = this.getActorId(payload, 'approverId', 'approver_id');
 
+    // IMPORTANT: If inspector_id is not explicitly provided, use the current user (effectiveUserId)
+    // This ensures the creator becomes the inspector/originator
+    const finalInspectorId = inspectorId || effectiveUserId;
+    
+    console.log('[NPI buildCreatePayload] Inspector ID resolution:', {
+      payloadInspectorId: inspectorId,
+      effectiveUserId,
+      finalInspectorId,
+    });
+
     return {
       npi_lot_id: npiId,
       control_no: controlNo,
@@ -302,7 +318,7 @@ export class NpiCrudService implements INpiService {
       receivetime: payload.receivedTime || 0,
       endorsetime: payload.endorseTime || 0,
       data_verified_by_id: payload.dataVerifiedBy || '',
-      inspector_id: inspectorId || effectiveUserId,
+      inspector_id: finalInspectorId,
       checker_id: checkerId,
       approver_id: approverId,
       total_minor: payload.total_minor || 0,
@@ -371,24 +387,24 @@ export class NpiCrudService implements INpiService {
     if (payload.inspectedBy) dbUpdates.inspected_by_id = payload.inspectedBy;
     if (payload.inspectionCategory) dbUpdates.inspectioncat_id = payload.inspectionCategory;
     if (payload.dataVerifiedBy) dbUpdates.data_verified_by_id = payload.dataVerifiedBy;
-    if (payload.checkerId !== undefined || payload.checker_id !== undefined) dbUpdates.checker_id = checkerId;
-    if (payload.approverId !== undefined || payload.approver_id !== undefined) dbUpdates.approver_id = approverId;
+    if (payload.checkerId !== undefined || (payload as any).checker_id !== undefined) dbUpdates.checker_id = checkerId;
+    if (payload.approverId !== undefined || (payload as any).approver_id !== undefined) dbUpdates.approver_id = approverId;
     if (payload.total_minor !== undefined) dbUpdates.total_minor = payload.total_minor;
     if (payload.total_major !== undefined) dbUpdates.total_major = payload.total_major;
     if (payload.total_critical !== undefined) dbUpdates.total_critical = payload.total_critical;
     if (payload.judgment !== undefined) dbUpdates.judgment = payload.judgment;
     if (payload.rohsVerification !== undefined) dbUpdates.rohs_verification = payload.rohsVerification;
     if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo;
-    if (payload.inspectorRemarks !== undefined || payload.inspector_remarks !== undefined) {
+    if (payload.inspectorRemarks !== undefined || (payload as any).inspector_remarks !== undefined) {
       dbUpdates.inspector_remarks = this.getRemarks(payload, 'inspectorRemarks', 'inspector_remarks');
     }
-    if (payload.checkerRemarks !== undefined || payload.checker_remarks !== undefined) {
+    if (payload.checkerRemarks !== undefined || (payload as any).checker_remarks !== undefined) {
       dbUpdates.checker_remarks = this.getRemarks(payload, 'checkerRemarks', 'checker_remarks');
     }
-    if (payload.approverRemarks !== undefined || payload.approver_remarks !== undefined) {
+    if (payload.approverRemarks !== undefined || (payload as any).approver_remarks !== undefined) {
       dbUpdates.approver_remarks = this.getRemarks(payload, 'approverRemarks', 'approver_remarks');
     }
-    if (payload.inspectorId !== undefined || payload.inspector_id !== undefined) dbUpdates.inspector_id = inspectorId;
+    if (payload.inspectorId !== undefined || (payload as any).inspector_id !== undefined) dbUpdates.inspector_id = inspectorId;
     if (payload.ssiAccept !== undefined) dbUpdates.ssi_accept = payload.ssiAccept;
     if (payload.ogiRefNo !== undefined) dbUpdates.ogi_ref_no = payload.ogiRefNo;
     if (payload.remarks !== undefined) dbUpdates.remarks = payload.remarks;

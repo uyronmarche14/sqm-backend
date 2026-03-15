@@ -54,7 +54,7 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
   // ==========================================
   // 2. RECORDS (Audit Execution)
   // ==========================================
-  async findAllRecordsDetailed(filters?: { mappedStatus?: string | string[] }) {
+  async findAllRecordsDetailed(filters?: { mappedStatus?: string | string[], actorContext?: any }) {
     let query = db.selectFrom('QMQA as q')
       .innerJoin('QMQA_AUDIT_PLAN as ap', 'q.qmqa_audit_plan_id', 'ap.qmqa_audit_plan_id')
       .leftJoin('MFG_SITES as site', 'ap.site_id', 'site.site_id')
@@ -113,6 +113,14 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
       } else {
         query = query.where('q.request_status', '=', filters.mappedStatus);
       }
+    }
+
+    if (filters?.actorContext?.supplierIds && filters.actorContext.supplierIds.length > 0) {
+      const { userId, supplierIds } = filters.actorContext;
+      query = query.where((eb: any) => eb.or([
+        eb('ap.supplier_id', 'in', supplierIds),
+        eb('q.attention_id', '=', userId)
+      ]));
     }
 
     return await query

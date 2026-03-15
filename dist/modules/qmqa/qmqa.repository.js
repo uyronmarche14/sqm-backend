@@ -110,6 +110,13 @@ export class QmqaRepository extends BaseRepository {
                 query = query.where('q.request_status', '=', filters.mappedStatus);
             }
         }
+        if (filters?.actorContext?.supplierIds && filters.actorContext.supplierIds.length > 0) {
+            const { userId, supplierIds } = filters.actorContext;
+            query = query.where((eb) => eb.or([
+                eb('ap.supplier_id', 'in', supplierIds),
+                eb('q.attention_id', '=', userId)
+            ]));
+        }
         return await query
             .orderBy('q.created_date', 'desc')
             .orderBy('ap.audit_plan_date', 'desc')

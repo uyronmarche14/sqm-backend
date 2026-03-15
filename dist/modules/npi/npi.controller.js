@@ -24,10 +24,26 @@ export class NpiController {
         this.reject = this.reject.bind(this);
         this.delete = this.delete.bind(this);
     }
-    getActor(req) {
+    async getActor(req) {
+        const userId = req.user?.userId || 'SYSTEM';
+        const roleId = this.getRoleId(req);
+        let roleName = req.user?.roleName || req.user?.role_name || req.user?.role || '';
+        if (!roleName && roleId) {
+            const { userRepository } = await import('../users/user.repository.js');
+            const roleObj = await userRepository.findRoleById(roleId);
+            roleName = roleObj?.role_name || '';
+        }
         return {
-            userId: req.user?.userId || 'SYSTEM',
+            userId,
+            roleId,
+            roleName
         };
+    }
+    getRoleId(req) {
+        return req.user?.roleId || req.user?.role_id;
+    }
+    getActionRemarks(req) {
+        return req.body?.remarks || req.body?.checker_remarks || req.body?.approver_remarks;
     }
     async getAll(req, res, next) {
         try {
@@ -39,7 +55,7 @@ export class NpiController {
                 dateFrom: req.query.dateFrom,
                 dateTo: req.query.dateTo,
             };
-            const records = await crudService.getAllRecords(this.getActor(req), filters);
+            const records = await crudService.getAllRecords(await this.getActor(req), filters);
             res.json(successResponse(records));
         }
         catch (error) {
@@ -50,7 +66,7 @@ export class NpiController {
     async getById(req, res, next) {
         try {
             const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
-            const record = await crudService.getRecordById(id, this.getActor(req));
+            const record = await crudService.getRecordById(id, await this.getActor(req));
             res.json(successResponse(record));
         }
         catch (error) {
@@ -61,7 +77,8 @@ export class NpiController {
     async create(req, res, next) {
         try {
             const payload = NpiCreateSchema.parse({ body: req.body }).body;
-            const userId = this.getActor(req).userId;
+            const actor = await this.getActor(req);
+            const userId = actor.userId;
             const files = (req.files || []);
             const result = await crudService.createRecord(payload, userId, files);
             res
@@ -78,7 +95,8 @@ export class NpiController {
         try {
             const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
             const files = (req.files || []);
-            const result = await crudService.updateRecord(parsed.params.id, parsed.body, this.getActor(req).userId, files);
+            const actor = await this.getActor(req);
+            const result = await crudService.updateRecord(parsed.params.id, parsed.body, actor.userId, files);
             res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
@@ -132,7 +150,8 @@ export class NpiController {
     async submit(req, res, next) {
         try {
             const { id } = NpiActionSchema.parse({ params: req.params, body: req.body }).params;
-            const result = await workflowService.submitForApproval(id, this.getActor(req).userId);
+            const actor = await this.getActor(req);
+            const result = await workflowService.submitForApproval(id, actor.userId, this.getRoleId(req), this.getActionRemarks(req));
             res.json(successResponse(result.data || result, result.message));
             return;
         }
@@ -144,7 +163,8 @@ export class NpiController {
     async check(req, res, next) {
         try {
             const parsed = NpiActionSchema.parse({ params: req.params, body: req.body });
-            const result = await workflowService.checkRecord(parsed.params.id, this.getActor(req).userId, parsed.body?.remarks);
+            const actor = await this.getActor(req);
+            const result = await workflowService.checkRecord(parsed.params.id, actor.userId, this.getRoleId(req), this.getActionRemarks(req));
             res.json(successResponse(result.data || result, result.message));
             return;
         }
@@ -156,7 +176,8 @@ export class NpiController {
     async approve(req, res, next) {
         try {
             const parsed = NpiActionSchema.parse({ params: req.params, body: req.body });
-            const result = await workflowService.approveRecord(parsed.params.id, this.getActor(req).userId, parsed.body?.remarks);
+            const actor = await this.getActor(req);
+            const result = await workflowService.approveRecord(parsed.params.id, actor.userId, this.getRoleId(req), this.getActionRemarks(req));
             res.json(successResponse(result.data || result, result.message));
             return;
         }
@@ -168,7 +189,8 @@ export class NpiController {
     async reject(req, res, next) {
         try {
             const parsed = NpiActionSchema.parse({ params: req.params, body: req.body });
-            const result = await workflowService.rejectRecord(parsed.params.id, this.getActor(req).userId, parsed.body?.remarks || '');
+            const actor = await this.getActor(req);
+            const result = await workflowService.rejectRecord(parsed.params.id, actor.userId, this.getRoleId(req), this.getActionRemarks(req) || '');
             res.json(successResponse(result.data || result, result.message));
             return;
         }

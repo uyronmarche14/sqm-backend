@@ -65,7 +65,12 @@ export const QmqaRecordCreateSchema = z.object({
         pic_auditor_id: z.string().uuid().optional().or(z.literal('')),
         due_date: z.string().optional().or(z.literal('')),
         audit_date: z.string().min(1, 'Audit date is required'),
-        audit_rating: z.preprocess((v) => Number(v), z.number().min(0).max(100).optional()),
+        audit_rating: z.preprocess((v) => {
+            if (v === '' || v === undefined || v === null)
+                return undefined;
+            const num = Number(v);
+            return isNaN(num) ? undefined : num;
+        }, z.number().min(0).max(100).optional()),
         auditees: z.string().optional(),
         auditors: z.string().optional(),
         attendees: z.string().optional(),
@@ -94,7 +99,12 @@ export const QmqaRecordUpdateSchema = z.object({
         pic_auditor_id: z.string().uuid().optional().or(z.literal('')),
         due_date: z.string().optional().or(z.literal('')),
         audit_date: z.string().optional(),
-        audit_rating: z.preprocess((v) => Number(v), z.number().min(0).max(100).optional()),
+        audit_rating: z.preprocess((v) => {
+            if (v === '' || v === undefined || v === null)
+                return undefined;
+            const num = Number(v);
+            return isNaN(num) ? undefined : num;
+        }, z.number().min(0).max(100).optional()),
         auditees: z.string().optional(),
         auditors: z.string().optional(),
         attendees: z.string().optional(),

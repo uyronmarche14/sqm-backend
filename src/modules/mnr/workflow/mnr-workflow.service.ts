@@ -11,6 +11,14 @@ import {
   normalizeMnrWorkflowStage,
 } from './mnr-workflow.utils.js';
 import { MNR_WORKFLOW_STAGE } from './mnr-workflow.constants.js';
+import { isAdminUser } from '../../../shared/utils/admin.utils.js';
+import { hasRolePermission } from '../../../shared/utils/role-permission.utils.js';
+import {
+  logAdminBypass,
+  logAssignmentGrant,
+  logRolePermissionGrant,
+  logPermissionDenied,
+} from '../../../shared/utils/permission-audit.utils.js';
 
 export class MnrWorkflowService {
   private isSupplierResponseActor(
@@ -22,6 +30,146 @@ export class MnrWorkflowService {
       Boolean(record.attention_id && record.attention_id === userId) ||
       Boolean(record.supplier_id && supplierId && record.supplier_id === supplierId)
     );
+  }
+
+  /**
+   * Three-layer permission check for workflow actions
+   * Layer 1: Admin Bypass - Admins can perform any action
+   * Layer 2: Assignment Lock - If someone is assigned, only they can act
+   * Layer 3: Role Fallback - If unassigned, check role permissions
+   */
+  private async ensureActor(
+    record: Record<string, any>,
+    userId: string,
+    roleId: string | undefined,
+    action: string,
+    assignedUserId: string | null | undefined,
+    message: string
+  ): Promise<void> {
+    // LAYER 1: ADMIN BYPASS
+    const isAdmin = await isAdminUser(roleId);
+    if (isAdmin) {
+      await logAdminBypass(
+        userId,
+        roleId,
+        action,
+        'MNR',
+        record.mnr_id,
+        `Admin bypassed ${action} permission check`
+      );
+      return;
+    }
+
+    // LAYER 2: ASSIGNMENT LOCK
+    if (assignedUserId) {
+      // Someone is assigned - only they can act
+      if (assignedUserId === userId) {
+        await logAssignmentGrant(
+          userId,
+          roleId,
+          action,
+          'MNR',
+          record.mnr_id,
+          `User is assigned for ${action}`
+        );
+        return;
+      } else {
+        // Assignment lock - deny access
+        await logPermissionDenied(
+          userId,
+          roleId,
+          action,
+          'MNR',
+          record.mnr_id,
+          `Record assigned to different user: ${assignedUserId}`
+        );
+        throw new ForbiddenError(message);
+      }
+    }
+
+    // LAYER 3: ROLE FALLBACK
+    // No one assigned - check role permissions
+    let permissionType: 'approve' | 'check' | 'edit' | undefined;
+    if (action.includes('approve')) permissionType = 'approve';
+    else if (action.includes('check')) permissionType = 'check';
+    else permissionType = 'edit';
+
+    if (permissionType) {
+      const hasPermission = await hasRolePermission(roleId, permissionType, 'MNR-MAIN');
+      if (hasPermission) {
+        await logRolePermissionGrant(
+          userId,
+          roleId,
+          action,
+          'MNR',
+          record.mnr_id,
+          `Role permission granted for ${action} on unassigned record`
+        );
+        return;
+      }
+    }
+
+    // No assignment and no role permission
+    await logPermissionDenied(
+      userId,
+      roleId,
+      action,
+      'MNR',
+      record.mnr_id,
+      `No assignment and no role permission for ${action}`
+    );
+    throw new ForbiddenError(`You don't have permission to ${action} this record`);
+  }
+
+  /**
+   * Special permission check for supplier response actions
+   * Suppliers have different permission logic
+   */
+  private async ensureSupplierActor(
+    record: { attention_id?: string | null; supplier_id?: string | null; mnr_id: string },
+    userId: string,
+    roleId: string | undefined,
+    supplierId: string | null | undefined,
+    action: string,
+    message: string
+  ): Promise<void> {
+    // LAYER 1: ADMIN BYPASS
+    const isAdmin = await isAdminUser(roleId);
+    if (isAdmin) {
+      await logAdminBypass(
+        userId,
+        roleId,
+        action,
+        'MNR',
+        record.mnr_id,
+        `Admin bypassed ${action} permission check`
+      );
+      return;
+    }
+
+    // LAYER 2: SUPPLIER CHECK
+    if (this.isSupplierResponseActor(record, userId, supplierId)) {
+      await logAssignmentGrant(
+        userId,
+        roleId,
+        action,
+        'MNR',
+        record.mnr_id,
+        `Supplier user authorized for ${action}`
+      );
+      return;
+    }
+
+    // Deny access
+    await logPermissionDenied(
+      userId,
+      roleId,
+      action,
+      'MNR',
+      record.mnr_id,
+      'User is not the assigned supplier contact'
+    );
+    throw new ForbiddenError(message);
   }
 
   constructor(private repository: MnrRepository = mnrRepository) {}
@@ -82,7 +230,7 @@ export class MnrWorkflowService {
     };
   }
 
-  async submitMain(id: string, userId: string, remarks?: string) {
+  async submitMain(id: string, userId: string, roleId?: string, remarks?: string) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
     const stage = normalizeMnrWorkflowStage(record.request_status);
@@ -95,9 +243,9 @@ export class MnrWorkflowService {
       throw new BadRequestError(`Cannot submit MNR from ${stage}`);
     }
 
-    if (record.issuer_id !== userId && record.encoder_id !== userId) {
-      throw new ForbiddenError('Only the issuer or originator can submit this MNR.');
-    }
+    // Check if user is issuer or encoder
+    const assignedUserId = record.issuer_id || record.encoder_id;
+    await this.ensureActor(record, userId, roleId, 'submit', assignedUserId, 'Only the issuer or originator can submit this MNR.');
 
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -122,16 +270,15 @@ export class MnrWorkflowService {
     };
   }
 
-  async checkMain(id: string, userId: string, remarks?: string) {
+  async checkMain(id: string, userId: string, roleId?: string, remarks?: string) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
     const stage = normalizeMnrWorkflowStage(record.request_status);
     if (stage !== MNR_WORKFLOW_STAGE.CHECKER) {
       throw new BadRequestError(`Cannot check MNR from ${stage}`);
     }
-    if (record.checker_id !== userId) {
-      throw new ForbiddenError('Only the assigned checker can check this MNR.');
-    }
+    
+    await this.ensureActor(record, userId, roleId, 'check', record.checker_id, 'Only the assigned checker can check this MNR.');
 
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -156,16 +303,15 @@ export class MnrWorkflowService {
     };
   }
 
-  async approveMain(id: string, userId: string, remarks?: string) {
+  async approveMain(id: string, userId: string, roleId?: string, remarks?: string) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
     const stage = normalizeMnrWorkflowStage(record.request_status);
     if (stage !== MNR_WORKFLOW_STAGE.APPROVER) {
       throw new BadRequestError(`Cannot approve MNR from ${stage}`);
     }
-    if (record.approver_id !== userId) {
-      throw new ForbiddenError('Only the assigned approver can approve this MNR.');
-    }
+    
+    await this.ensureActor(record, userId, roleId, 'approve', record.approver_id, 'Only the assigned approver can approve this MNR.');
 
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -190,7 +336,7 @@ export class MnrWorkflowService {
     };
   }
 
-  async rejectMain(id: string, userId: string, remarks: string) {
+  async rejectMain(id: string, userId: string, roleId?: string, remarks?: string) {
     if (!remarks) {
       throw new BadRequestError('Remarks are required for rejection.');
     }
@@ -201,9 +347,7 @@ export class MnrWorkflowService {
     const now = new Date();
 
     if (stage === MNR_WORKFLOW_STAGE.CHECKER) {
-      if (record.checker_id !== userId) {
-        throw new ForbiddenError('Only the assigned checker can reject this MNR.');
-      }
+      await this.ensureActor(record, userId, roleId, 'reject', record.checker_id, 'Only the assigned checker can reject this MNR.');
 
       await this.updateLotsWorkflow(record.mnr_id, {
         request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_CHECKER),
@@ -228,9 +372,7 @@ export class MnrWorkflowService {
     }
 
     if (stage === MNR_WORKFLOW_STAGE.APPROVER) {
-      if (record.approver_id !== userId) {
-        throw new ForbiddenError('Only the assigned approver can reject this MNR.');
-      }
+      await this.ensureActor(record, userId, roleId, 'reject', record.approver_id, 'Only the assigned approver can reject this MNR.');
 
       await this.updateLotsWorkflow(record.mnr_id, {
         request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_APPROVER),
@@ -257,16 +399,15 @@ export class MnrWorkflowService {
     throw new BadRequestError(`Cannot reject MNR from ${stage}`);
   }
 
-  async issueMain(id: string, userId: string, remarks?: string) {
+  async issueMain(id: string, userId: string, roleId?: string, remarks?: string) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
     const stage = normalizeMnrWorkflowStage(record.request_status);
     if (stage !== MNR_WORKFLOW_STAGE.ISSUER) {
       throw new BadRequestError(`Cannot issue MNR from ${stage}`);
     }
-    if (record.issuer_id !== userId) {
-      throw new ForbiddenError('Only the assigned issuer can issue this MNR.');
-    }
+    
+    await this.ensureActor(record, userId, roleId, 'issue', record.issuer_id, 'Only the assigned issuer can issue this MNR.');
 
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -291,7 +432,7 @@ export class MnrWorkflowService {
     };
   }
 
-  async cancelMain(id: string, userId: string, remarks?: string) {
+  async cancelMain(id: string, userId: string, roleId?: string, remarks?: string) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
     const stage = normalizeMnrWorkflowStage(record.request_status);
@@ -303,9 +444,8 @@ export class MnrWorkflowService {
       throw new BadRequestError(`Cannot cancel MNR from ${stage}`);
     }
 
-    if (record.issuer_id !== userId && record.encoder_id !== userId) {
-      throw new ForbiddenError('Only the issuer or originator can cancel this MNR.');
-    }
+    const assignedUserId = record.issuer_id || record.encoder_id;
+    await this.ensureActor(record, userId, roleId, 'cancel', assignedUserId, 'Only the issuer or originator can cancel this MNR.');
 
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -332,6 +472,7 @@ export class MnrWorkflowService {
   async saveInitialResponse(
     id: string,
     userId: string,
+    roleId: string | undefined,
     responsePayload: Record<string, any>,
     supplierId?: string | null,
   ) {
@@ -345,9 +486,8 @@ export class MnrWorkflowService {
     ) {
       throw new BadRequestError(`Cannot save initial response from ${stage}`);
     }
-    if (!this.isSupplierResponseActor(record, userId, supplierId)) {
-      throw new ForbiddenError('Only the assigned supplier can save the initial response.');
-    }
+    
+    await this.ensureSupplierActor(record, userId, roleId, supplierId, 'save_initial_response', 'Only the assigned supplier can save the initial response.');
 
     const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
     return {

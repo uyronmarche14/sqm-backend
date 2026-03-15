@@ -38,7 +38,7 @@ router.delete('/records/:id', requirePermission('QMQA-05-02', 'delete'), qmqaCon
 // ==========================================
 // WORKFLOW ACTIONS
 // ==========================================
-router.post('/records/:id/submit', requirePermission('QMQA-05-02', 'submit'), qmqaController.submit);
+router.post('/records/:id/submit', requirePermission('QMQA-05-01', 'submit'), qmqaController.submit);
 router.post('/records/:id/check', requirePermission('QMQA-05-03', 'check'), qmqaController.check);
 router.post('/records/:id/approve', requirePermission('QMQA-05-03', 'approve'), qmqaController.approve);
 router.post('/records/:id/reject', requirePermission('QMQA-05-03', 'reject'), qmqaController.reject);
@@ -47,7 +47,7 @@ router.post('/records/:id/cancel', requirePermission('QMQA-05-07', 'delete'), qm
 router.post('/records/:id/verify', requirePermission('QMQA-05-08', 'submit'), qmqaController.verify);
 
 router.post('/records/:id/save-response', requirePermission('QMQA-05-08', 'edit'), uploadFinal.any(), logUploads, handleUploadError, qmqaController.saveResponse);
-router.post('/records/:id/submit-initial-response', requirePermission('QMQA-05-08', 'submit'), uploadInitial.any(), logUploads, handleUploadError, qmqaController.submitInitialResponse);
+router.post('/records/:id/submit-initial-response', requirePermission('QMQA-05-05', 'submit'), uploadInitial.any(), logUploads, handleUploadError, qmqaController.submitInitialResponse);
 router.post('/records/:id/submit-final-response', requirePermission('QMQA-05-08', 'submit'), uploadFinal.any(), logUploads, handleUploadError, qmqaController.submitFinalResponse);
 router.post('/records/:id/save-response-review', requirePermission('QMQA-05-08', 'edit'), qmqaController.saveResponseReview);
 router.post('/records/:id/submit-response-review', requirePermission('QMQA-05-08', 'submit'), qmqaController.submitResponseReview);
@@ -69,7 +69,7 @@ router.post('/batch/issue', requirePermission('QMQA-05-06', 'issue'), qmqaContro
 // ==========================================
 // SUPPLIER RESPONSE (Initial & Final Reports)
 // ==========================================
-router.post('/records/:id/initial-report', requirePermission('QMQA-05-08', 'edit'), uploadInitial.any(), logUploads, handleUploadError, qmqaController.saveInitialReport);
+router.post('/records/:id/initial-report', requirePermission('QMQA-05-05', 'edit'), uploadInitial.any(), logUploads, handleUploadError, qmqaController.saveInitialReport);
 router.post('/records/:id/final-report', requirePermission('QMQA-05-08', 'submit'), uploadFinal.any(), logUploads, handleUploadError, qmqaController.submitFinalReport);
 
 export default router;

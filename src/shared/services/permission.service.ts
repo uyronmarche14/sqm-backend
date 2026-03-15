@@ -217,6 +217,53 @@ export class PermissionService {
       return true;
     }
 
+    // QMQA: Assigned issuer can issue (Approved -> Issued) even without role permission
+    if (
+      formId === 'QMQA-05-06' &&
+      action === 'issue' &&
+      assignedForms.includes('QMQA-05-06')
+    ) {
+      return true;
+    }
+
+    // QMQA: Supplier (attention_id) can access With Initial Report (QMQA-05-05)
+    if (
+      formId === 'QMQA-05-05' &&
+      (action === 'view' || action === 'viewlist' || action === 'edit' || action === 'submit') &&
+      (assignedForms.includes('QMQA-05-05') || assignedForms.includes('QMQA-05-08'))
+    ) {
+      return true;
+    }
+
+    // QMQA: Issuer can access With Final Report (QMQA-05-08) to add verification
+    if (
+      formId === 'QMQA-05-08' &&
+      (action === 'view' || action === 'viewlist' || action === 'edit' || action === 'submit' || action === 'attach') &&
+      (assignedForms.includes('QMQA-05-06') || assignedForms.includes('QMQA-05-08') || assignedForms.includes('QMQA-05-05'))
+    ) {
+      return true;
+    }
+
+    // QMQA: Cycle 2 Checker/Approver can use the batch check/approve endpoints
+    // The batch routes use QMQA-05-03 as their form code, but Cycle 2 users only have QMQA-05-09.
+    // The backend auto-dispatches to checkResponse/approveResponse based on the record's stage.
+    if (
+      formId === 'QMQA-05-03' &&
+      (action === 'check' || action === 'approve' || action === 'reject') &&
+      assignedForms.includes('QMQA-05-09')
+    ) {
+      return true;
+    }
+
+    // QMQA: Cycle 2 Checker/Approver can access Awaiting Approval (QMQA-05-09)
+    if (
+      formId === 'QMQA-05-09' &&
+      (action === 'view' || action === 'viewlist' || action === 'edit') &&
+      assignedForms.includes('QMQA-05-09')
+    ) {
+      return true;
+    }
+
     const grantedFormId = compatibleFormIds.find((candidate) => assignedForms.includes(candidate));
     if (!grantedFormId) {
       return false;

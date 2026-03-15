@@ -383,24 +383,33 @@ export class AuthRepository extends BaseRepository<'USERS'> {
 
         UNION ALL
 
+        -- QMQA-05-05: With Initial Report - VIEW access for ISSUER
+        -- Issuer needs to see this menu to monitor supplier progress on initial reports
+        -- Edit/Submit actions are still restricted to suppliers by ensureSupplierActor()
         SELECT 'QMQA-05-05' AS form_id
         FROM QMQA q
         WHERE q.request_status IN (
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.SUPPLIER]},
-          'IS'
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
+          'IS',
+          'WI'
         )
           AND q.issuer_id = ${userId}
 
         UNION ALL
 
+        -- QMQA-05-08: With Final Report - ISSUER ONLY
+        -- Issuer adds final verification after supplier submits initial
         SELECT 'QMQA-05-08' AS form_id
         FROM QMQA q
         WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.FINAL_RESPONSE]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_2ND]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_3RD]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_CHECKER_2ND]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_APPROVER_2ND]},
+          'WI',
           'WF',
           'RA'
         )
@@ -439,11 +448,15 @@ export class AuthRepository extends BaseRepository<'USERS'> {
     const supplierAssignments = await sql<{ form_id: string }>`
       SELECT DISTINCT form_id
       FROM (
+        -- QMQA-05-05: With Initial Report - SUPPLIER ONLY
+        -- Supplier submits initial report in SUPPLIER (11) or INITIAL_RESPONSE (13) status
         SELECT 'QMQA-05-05' AS form_id
         FROM QMQA q
         WHERE q.request_status IN (
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.SUPPLIER]},
-          'IS'
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
+          'IS',
+          'WI'
         )
           AND (
             q.attention_id = ${userId}
@@ -461,17 +474,15 @@ export class AuthRepository extends BaseRepository<'USERS'> {
 
         UNION ALL
 
+        -- QMQA-05-08: With Final Report - Supplier gets read-only access
+        -- Supplier can view but not edit in FINAL_RESPONSE and later stages
         SELECT 'QMQA-05-08' AS form_id
         FROM QMQA q
         WHERE q.request_status IN (
-          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.SUPPLIER]},
-          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_SUPPLIER]},
-          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.FINAL_RESPONSE]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_2ND]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_ISSUER_2ND]},
           ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.NOT_ACCEPT]},
-          'IS',
-          'WI',
           'WF',
           'RJ'
         )

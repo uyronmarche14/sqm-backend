@@ -24,6 +24,10 @@ export class SqprController {
     return (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
   }
 
+  private getRoleId(req: Request) {
+    return (req as any).user?.roleId || (req as any).user?.role_id;
+  }
+
   private getActionRemarks(req: Request) {
     return req.body?.remarks || req.body?.approver_remarks || req.body?.rejectionRemarks;
   }
@@ -169,7 +173,7 @@ export class SqprController {
   async submit(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-      const result = await sqprWorkflowService.submit(id, this.getUserId(req), this.getActionRemarks(req));
+      const result = await sqprWorkflowService.submit(id, this.getUserId(req), this.getRoleId(req), this.getActionRemarks(req));
       
       res.json(result);
     } catch (error) {
@@ -181,7 +185,7 @@ export class SqprController {
   async issue(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-      const result = await sqprWorkflowService.issue(id, this.getUserId(req));
+      const result = await sqprWorkflowService.issue(id, this.getUserId(req), this.getRoleId(req));
       
       res.json(result);
     } catch (error) {
@@ -193,7 +197,7 @@ export class SqprController {
   async reject(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-      const result = await sqprWorkflowService.reject(id, this.getUserId(req), this.getActionRemarks(req));
+      const result = await sqprWorkflowService.reject(id, this.getUserId(req), this.getRoleId(req), this.getActionRemarks(req));
       
       res.json(result);
     } catch (error) {
@@ -216,7 +220,7 @@ export class SqprController {
   async approve(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-      const result = await sqprWorkflowService.approve(id, this.getUserId(req), this.getActionRemarks(req));
+      const result = await sqprWorkflowService.approve(id, this.getUserId(req), this.getRoleId(req), this.getActionRemarks(req));
       res.json(result);
     } catch (error) {
       console.error('[SQPR] APPROVE error:', error);
@@ -227,7 +231,7 @@ export class SqprController {
   async check(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SqprActionSchema.parse({ params: req.params, body: req.body }).params;
-      const result = await sqprWorkflowService.check(id, this.getUserId(req), this.getActionRemarks(req));
+      const result = await sqprWorkflowService.check(id, this.getUserId(req), this.getRoleId(req), this.getActionRemarks(req));
       res.json(result);
     } catch (error) {
       console.error('[SQPR] CHECK error:', error);

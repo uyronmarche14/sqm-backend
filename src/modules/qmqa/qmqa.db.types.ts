@@ -19,7 +19,6 @@ export interface QmqaTable {
   auditors: string | null;
   attendees: string | null;
   remarks: string | null;
-  verification_remarks: string | null;
   encoder_id: string;
   encoder_date: Date | string;
   issuer_id: string;

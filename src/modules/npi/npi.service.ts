@@ -111,7 +111,9 @@ export class NpiService {
         receivetime: payload.receivedTime || 0,
         endorsetime: payload.endorseTime || 0,
         data_verified_by_id: payload.dataVerifiedBy || '',
-        inspector_id: effectiveUserId,
+        inspector_id: payload.inspectorId || payload.inspector_id || effectiveUserId,
+        checker_id: payload.checkerId || payload.checker_id || null,
+        approver_id: payload.approverId || payload.approver_id || null,
         
         total_minor: payload.total_minor || 0,
         total_major: payload.total_major || 0,
@@ -278,6 +280,17 @@ export class NpiService {
     if (payload.inspectorRemarks !== undefined) dbUpdates.inspector_remarks = payload.inspectorRemarks;
     if (payload.checkerRemarks !== undefined) dbUpdates.checker_remarks = payload.checkerRemarks;
     if (payload.approverRemarks !== undefined) dbUpdates.approver_remarks = payload.approverRemarks;
+
+    // Approval Assignments
+    if (payload.inspectorId || payload.inspector_id) {
+        dbUpdates.inspector_id = payload.inspectorId || payload.inspector_id;
+    }
+    if (payload.checkerId || payload.checker_id) {
+        dbUpdates.checker_id = payload.checkerId || payload.checker_id;
+    }
+    if (payload.approverId || payload.approver_id) {
+        dbUpdates.approver_id = payload.approverId || payload.approver_id;
+    }
 
     const statusVal = payload.status || payload.request_status;
     if (statusVal) dbUpdates.request_status = mapStatusToDB(statusVal);

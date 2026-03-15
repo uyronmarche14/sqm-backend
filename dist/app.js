@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
+dotenv.config();
 // Middlewares
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { NotFoundError } from './shared/errors/AppError.js';
@@ -15,7 +16,6 @@ import userRoutes from './modules/users/user.routes.js';
 import masterDataRoutes from './modules/masterData/master-data.routes.js';
 // Rate Limiting
 import { globalLimiter } from './shared/middleware/rate-limiter.js';
-dotenv.config();
 const app = express();
 // ==========================================
 // 1. Global Middleware (Security & Parsing)
@@ -23,10 +23,11 @@ const app = express();
 app.use(helmet());
 app.use(globalLimiter); // Apply Rate Limiter globally
 app.use(cors({
-    origin: [
-        process.env.CORS_ORIGIN || 'http://localhost:5173',
-        'http://localhost:3000'
-    ],
+    origin: true,
+    // origin: [
+    //   process.env.CORS_ORIGIN || 'http://localhost:5173',
+    //   'http://localhost:3000'
+    // ],`
     credentials: true, // Allow cookies
 }));
 app.use(express.json({ limit: '10mb' }));

@@ -181,14 +181,17 @@ export class QmqaService {
   }
 
   async getAllRecords(
-    filters?: { status?: string },
+    filters?: { status?: string | string[] },
     actor?: { userId?: string | null },
   ) {
     const mappedStatus = resolveQmqaStatusFilter(filters?.status);
+    const actorContext = await this.resolveActorContext(actor?.userId);
+
     const records = await qmqaRepository.findAllRecordsDetailed({
       mappedStatus,
+      actorContext,
     });
-    const actorContext = await this.resolveActorContext(actor?.userId);
+    
     const latestResponseMap = await this.findLatestResponseMap(
       records.map((record: any) => record.qmqa_id),
     );
@@ -217,9 +220,43 @@ export class QmqaService {
     let responseVerificationAttachments: any[] = [];
 
     if (response) {
-      responseInitialAttachments = await qmqaRepository.findResponseInitialAttachments(response.qmqa_response_id);
-      responseFinalAttachments = await qmqaRepository.findResponseFinalAttachments(response.qmqa_response_id);
-      responseVerificationAttachments = await qmqaRepository.findResponseVerificationAttachments(response.qmqa_response_id);
+      const rawInitial = await qmqaRepository.findResponseInitialAttachments(response.qmqa_response_id);
+      const rawFinal = await qmqaRepository.findResponseFinalAttachments(response.qmqa_response_id);
+      const rawVerification = await qmqaRepository.findResponseVerificationAttachments(response.qmqa_response_id);
+      
+      // Transform snake_case to camelCase for frontend compatibility
+      responseInitialAttachments = rawInitial.map((a: any) => ({
+        id: a.qmqa_response_initial_attachment_id,
+        fileName: a.file_name,
+        fileExtension: a.file_extension,
+        fileSize: a.file_size,
+        fileUrl: a.file_url,
+        remarks: a.remarks,
+        uploadedBy: a.updateby,
+        uploadedAt: a.last_update,
+      }));
+      
+      responseFinalAttachments = rawFinal.map((a: any) => ({
+        id: a.qmqa_response_final_attachment_id,
+        fileName: a.file_name,
+        fileExtension: a.file_extension,
+        fileSize: a.file_size,
+        fileUrl: a.file_url,
+        remarks: a.remarks,
+        uploadedBy: a.updateby,
+        uploadedAt: a.last_update,
+      }));
+      
+      responseVerificationAttachments = rawVerification.map((a: any) => ({
+        id: a.qmqa_response_verification_attachment_id,
+        fileName: a.file_name,
+        fileExtension: a.file_extension,
+        fileSize: a.file_size,
+        fileUrl: a.file_url,
+        remarks: a.remarks,
+        uploadedBy: a.updateby,
+        uploadedAt: a.last_update,
+      }));
     }
 
     return {
@@ -231,6 +268,10 @@ export class QmqaService {
       response_initial_attachments: responseInitialAttachments,
       response_final_attachments: responseFinalAttachments,
       response_verification_attachments: responseVerificationAttachments,
+      // Map first attachment to single field for frontend compatibility
+      initialReportAttachment: responseInitialAttachments[0] || null,
+      finalReportAttachment: responseFinalAttachments[0] || null,
+      verificationAttachment: responseVerificationAttachments[0] || null,
     };
   }
 
@@ -289,7 +330,6 @@ export class QmqaService {
         auditors: payload.auditors || null,
         attendees: payload.attendees || null,
         remarks: payload.remarks || null,
-        verification_remarks: null,
         encoder_id: effectiveUserId,
         encoder_date: now,
         issuer_id: effectiveUserId,
@@ -377,7 +417,12 @@ export class QmqaService {
     if (payload.pic_auditor_id !== undefined) qmqaUpdates.pic_auditor_id = sanitizeUUID(payload.pic_auditor_id);
     if (payload.due_date !== undefined) qmqaUpdates.due_date = payload.due_date ? new Date(payload.due_date) : null;
     if (payload.audit_date !== undefined) qmqaUpdates.audit_date = payload.audit_date ? new Date(payload.audit_date) : null;
-    if (payload.audit_rating !== undefined) qmqaUpdates.audit_rating = payload.audit_rating ?? null;
+    if (payload.audit_rating !== undefined) {
+      const rating = payload.audit_rating;
+      qmqaUpdates.audit_rating = (rating === '' || rating === null || rating === undefined) 
+        ? null 
+        : Number(rating);
+    }
     if (payload.auditees !== undefined) qmqaUpdates.auditees = payload.auditees || null;
     if (payload.auditors !== undefined) qmqaUpdates.auditors = payload.auditors || null;
     if (payload.attendees !== undefined) qmqaUpdates.attendees = payload.attendees || null;
@@ -529,6 +574,10 @@ export class QmqaService {
     const now = new Date();
     const existingResponse = await qmqaRepository.findResponseByQmqaId(id);
 
+    // Sanitize empty strings to null for UUID fields
+    const cleanCheckerId = sanitizeUUID(payload.cycle2_checker_id);
+    const cleanApproverId = sanitizeUUID(payload.cycle2_approver_id);
+
     return qmqaRepository.executeTransaction(async (trx) => {
       let responseId = existingResponse?.qmqa_response_id || uuidv4();
 
@@ -540,9 +589,9 @@ export class QmqaService {
               ?? payload.verification_remarks
               ?? existingResponse.issuer_remarks
               ?? null,
-            checker_id: payload.cycle2_checker_id ?? existingResponse.checker_id ?? null,
+            checker_id: cleanCheckerId ?? existingResponse.checker_id ?? null,
             checker_remarks: payload.cycle2_checker_remarks ?? existingResponse.checker_remarks ?? null,
-            approver_id: payload.cycle2_approver_id ?? existingResponse.approver_id ?? null,
+            approver_id: cleanApproverId ?? existingResponse.approver_id ?? null,
             approver_remarks: payload.cycle2_approver_remarks ?? existingResponse.approver_remarks ?? null,
             verification_remarks: payload.verification_remarks ?? existingResponse.verification_remarks ?? null,
             last_update: now,
@@ -561,10 +610,10 @@ export class QmqaService {
           final_remarks: null,
           issuer_remarks: payload.issuer_remarks || payload.verification_remarks || null,
           issuer_date: now,
-          checker_id: payload.cycle2_checker_id || null,
+          checker_id: cleanCheckerId || null,
           checker_remarks: payload.cycle2_checker_remarks || null,
           checker_date: null,
-          approver_id: payload.cycle2_approver_id || null,
+          approver_id: cleanApproverId || null,
           approver_remarks: payload.cycle2_approver_remarks || null,
           approver_date: null,
           last_update: now,
@@ -577,7 +626,6 @@ export class QmqaService {
 
       await trx.updateTable('QMQA')
         .set({
-          verification_remarks: payload.verification_remarks || null,
           last_update: now,
           updateby: userId,
         })

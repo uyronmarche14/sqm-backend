@@ -75,6 +75,8 @@ const DIRECT_STAGE_BY_STATUS: Record<string, QmqaWorkflowStage> = {
   ISSUED: QMQA_WORKFLOW_STAGE.SUPPLIER,
   WITH_INITIAL_REPORT: QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE,
   WITH_FINAL_REPORT: QMQA_WORKFLOW_STAGE.FINAL_RESPONSE,
+  ACCEPT: QMQA_WORKFLOW_STAGE.ACCEPT,
+  ACCEPTED: QMQA_WORKFLOW_STAGE.ACCEPT,
 };
 
 const QUEUE_STAGE_BY_STATUS: Record<string, QmqaWorkflowStage> = {
@@ -83,7 +85,7 @@ const QUEUE_STAGE_BY_STATUS: Record<string, QmqaWorkflowStage> = {
   AA: QMQA_WORKFLOW_STAGE.CHECKER,
   SUBMITTED: QMQA_WORKFLOW_STAGE.CHECKER,
   AWAITING_CHECKED: QMQA_WORKFLOW_STAGE.CHECKER,
-  AWAITING_APPROVAL: QMQA_WORKFLOW_STAGE.CHECKER,
+  AWAITING_APPROVAL: QMQA_WORKFLOW_STAGE.APPROVER,
   CHECKED: QMQA_WORKFLOW_STAGE.APPROVER,
   CK: QMQA_WORKFLOW_STAGE.APPROVER,
 };
@@ -218,6 +220,7 @@ export function getQmqaCompatibilityStatus(
     case QMQA_WORKFLOW_STAGE.DRAFT:
       return 'DRAFT';
     case QMQA_WORKFLOW_STAGE.CHECKER:
+      return 'AWAITING_CHECKED';
     case QMQA_WORKFLOW_STAGE.APPROVER:
       return 'AWAITING_APPROVAL';
     case QMQA_WORKFLOW_STAGE.REJECT_CHECKER:
@@ -447,29 +450,33 @@ export function buildQmqaWorkflowMetadata(
 const STATUS_FILTERS: Record<string, string[]> = {
   DRAFT: ['2', 'DR'],
   REJECTED: ['5', '6', 'RE', 'RR'],
-  AWAITING_APPROVAL: ['3', '4', 'AA', 'AC', 'SU', 'CK'],
+  AWAITING_APPROVAL: ['4', 'CK'],
   AWAITING_CHECKED: ['3', 'AA', 'AC', 'SU'],
   APPROVED: ['10', 'AP'],
   ISSUED: ['11', 'IS'],
   WITH_INITIAL_REPORT: ['13', 'WI'],
   WITH_FINAL_REPORT: ['14', 'WF'],
-  RESPONSE_AWAIT_APPROVAL: ['15', '16', '17', '19', 'RA'],
-  RESPONSE_AWAITING_APPROVAL: ['15', '16', '17', '19', 'RA'],
+  RESPONSE_AWAIT_APPROVAL: ['16', '17', 'RA'],
+  RESPONSE_AWAITING_APPROVAL: ['16', '17', 'RA'],
+  RESPONSE_AWAITING_CHECKED: ['16', 'RA'],
   RESPONSE_REJECTED: ['12', '20', '21', '22', '24', 'RJ'],
-  CANCELLED: ['9', 'CA', 'CC'],
   CANCEL: ['9', 'CA', 'CC'],
   CLOSED: ['1', 'CL'],
+  ACCEPT: ['1', 'CL'],
+  ACCEPTED: ['1', 'CL'],
 };
 
-export function resolveQmqaStatusFilter(status?: string | null) {
+export function resolveQmqaStatusFilter(status?: string | string[] | null) {
   if (!status) {
     return undefined;
   }
 
-  const requested = status
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  const requested = Array.isArray(status)
+    ? status.flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean)
+    : status
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
 
   const mapped = new Set<string>();
 

@@ -108,3 +108,23 @@ export function buildNpiWorkflowMetadata(
     nextApproverName,
   };
 }
+
+/**
+ * Resolve the "owner" of the record at the current workflow stage.
+ * Used by ensureActor Layer 2 (Assignment Lock).
+ */
+export function getNpiStageOwnerId(record: Record<string, unknown>): string | null {
+  const stage = normalizeNpiWorkflowStage(String(record.request_status || ''));
+  switch (stage) {
+    case NPI_WORKFLOW_STAGE.DRAFT:
+    case NPI_WORKFLOW_STAGE.REJECT_CHECKER:
+    case NPI_WORKFLOW_STAGE.REJECT_APPROVER:
+      return (record.inspector_id as string) || null;
+    case NPI_WORKFLOW_STAGE.CHECKER:
+      return (record.checker_id as string) || null;
+    case NPI_WORKFLOW_STAGE.APPROVER:
+      return (record.approver_id as string) || null;
+    default:
+      return null;
+  }
+}

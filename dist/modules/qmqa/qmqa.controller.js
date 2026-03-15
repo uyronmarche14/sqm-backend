@@ -7,10 +7,13 @@ export class QmqaController {
     getUserId(req) {
         return req.user?.userId || req.user?.id || 'SYSTEM';
     }
+    getRoleId(req) {
+        return req.user?.roleId || req.user?.role_id || undefined;
+    }
     getActionRemarks(req) {
         return req.body?.remarks || req.body?.approver_remarks || req.body?.rejectionRemarks;
     }
-    async getAllSchedules(_req, res, next) {
+    getAllSchedules = async (_req, res, next) => {
         try {
             const records = await qmqaService.getAllSchedules();
             res.json(successResponse(records));
@@ -18,8 +21,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async getScheduleById(req, res, next) {
+    };
+    getScheduleById = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const record = await qmqaService.getScheduleById(id);
@@ -28,8 +31,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async createSchedule(req, res, next) {
+    };
+    createSchedule = async (req, res, next) => {
         try {
             const payload = QmqaScheduleCreateSchema.parse({ body: req.body }).body;
             const result = await qmqaService.createSchedule(payload, this.getUserId(req));
@@ -38,8 +41,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async updateSchedule(req, res, next) {
+    };
+    updateSchedule = async (req, res, next) => {
         try {
             const parsed = QmqaScheduleUpdateSchema.parse({ params: req.params, body: req.body });
             const result = await qmqaService.updateSchedule(parsed.params.id, parsed.body, this.getUserId(req));
@@ -48,8 +51,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async deleteSchedule(req, res, next) {
+    };
+    deleteSchedule = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaService.deleteSchedule(id);
@@ -58,8 +61,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async getAllRecords(req, res, next) {
+    };
+    getAllRecords = async (req, res, next) => {
         try {
             const status = req.query.status;
             const records = await qmqaService.getAllRecords({ status }, { userId: this.getUserId(req) });
@@ -68,8 +71,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async getRecordById(req, res, next) {
+    };
+    getRecordById = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const record = await qmqaService.getRecordById(id, { userId: this.getUserId(req) });
@@ -78,8 +81,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async createRecord(req, res, next) {
+    };
+    createRecord = async (req, res, next) => {
         try {
             const payload = QmqaRecordCreateSchema.parse({ body: req.body }).body;
             const files = req.files || [];
@@ -89,8 +92,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async updateRecord(req, res, next) {
+    };
+    updateRecord = async (req, res, next) => {
         try {
             const parsed = QmqaRecordUpdateSchema.parse({ params: req.params, body: req.body });
             const result = await qmqaService.updateRecord(parsed.params.id, parsed.body, this.getUserId(req));
@@ -99,8 +102,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async deleteRecord(req, res, next) {
+    };
+    deleteRecord = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaService.deleteRecord(id);
@@ -109,71 +112,71 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async submit(req, res, next) {
+    };
+    submit = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.submit(id, this.getUserId(req), this.getActionRemarks(req));
+            const result = await qmqaWorkflowService.submit(id, this.getUserId(req), undefined, this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async check(req, res, next) {
+    };
+    check = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.check(id, this.getUserId(req), this.getActionRemarks(req));
+            const result = await qmqaWorkflowService.check(id, this.getUserId(req), undefined, this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async approve(req, res, next) {
+    };
+    approve = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.approve(id, this.getUserId(req), this.getActionRemarks(req));
+            const result = await qmqaWorkflowService.approve(id, this.getUserId(req), undefined, this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async reject(req, res, next) {
+    };
+    reject = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.reject(id, this.getUserId(req), this.getActionRemarks(req));
+            const result = await qmqaWorkflowService.reject(id, this.getUserId(req), undefined, this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async issue(req, res, next) {
+    };
+    issue = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.issue(id, this.getUserId(req), this.getActionRemarks(req));
+            const result = await qmqaWorkflowService.issue(id, this.getUserId(req), undefined, this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async cancel(req, res, next) {
+    };
+    cancel = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.cancel(id, this.getUserId(req), this.getActionRemarks(req));
+            const result = await qmqaWorkflowService.cancel(id, this.getUserId(req), undefined, this.getActionRemarks(req));
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async verify(req, res, next) {
+    };
+    verify = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.verify(id, this.getUserId(req), {
+            const result = await qmqaWorkflowService.verify(id, this.getUserId(req), this.getRoleId(req), {
                 verification_remarks: req.body?.verification_remarks || req.body?.verificationNotes,
                 cycle2_checker_id: req.body?.cycle2_checker_id || req.body?.checker_id,
                 cycle2_checker_remarks: req.body?.cycle2_checker_remarks,
@@ -185,8 +188,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async saveResponse(req, res, next) {
+    };
+    saveResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.saveResponse(id, this.getUserId(req), req.body, req.files || []);
@@ -195,8 +198,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async submitInitialResponse(req, res, next) {
+    };
+    submitInitialResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.submitInitialResponse(id, this.getUserId(req), req.body, req.files || []);
@@ -205,8 +208,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async submitFinalResponse(req, res, next) {
+    };
+    submitFinalResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.submitFinalResponse(id, this.getUserId(req), req.body, req.files || []);
@@ -215,28 +218,28 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async saveResponseReview(req, res, next) {
+    };
+    saveResponseReview = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.saveResponseReview(id, this.getUserId(req), req.body);
+            const result = await qmqaWorkflowService.saveResponseReview(id, this.getUserId(req), this.getRoleId(req), req.body);
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async submitResponseReview(req, res, next) {
+    };
+    submitResponseReview = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.submitResponseReview(id, this.getUserId(req), req.body);
+            const result = await qmqaWorkflowService.submitResponseReview(id, this.getUserId(req), this.getRoleId(req), req.body);
             res.json(result);
         }
         catch (error) {
             next(error);
         }
-    }
-    async checkResponse(req, res, next) {
+    };
+    checkResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.checkResponse(id, this.getUserId(req), this.getActionRemarks(req));
@@ -245,8 +248,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async approveResponse(req, res, next) {
+    };
+    approveResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.approveResponse(id, this.getUserId(req), this.getActionRemarks(req));
@@ -255,8 +258,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async rejectResponse(req, res, next) {
+    };
+    rejectResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.rejectResponse(id, this.getUserId(req), this.getActionRemarks(req));
@@ -265,8 +268,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async acceptResponse(req, res, next) {
+    };
+    acceptResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.acceptResponse(id, this.getUserId(req), this.getActionRemarks(req));
@@ -275,8 +278,8 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async notAcceptResponse(req, res, next) {
+    };
+    notAcceptResponse = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaWorkflowService.notAcceptResponse(id, this.getUserId(req), this.getActionRemarks(req));
@@ -285,11 +288,11 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async saveInitialReport(req, res, next) {
+    };
+    saveInitialReport = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.saveInitialReport(id, this.getUserId(req), {
+            const result = await qmqaWorkflowService.saveInitialReport(id, this.getUserId(req), this.getRoleId(req), {
                 skip_initial: req.body?.skip_initial === 'true'
                     || req.body?.skip_initial === true
                     || req.body?.skipInitial === 'true'
@@ -305,11 +308,11 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async submitFinalReport(req, res, next) {
+    };
+    submitFinalReport = async (req, res, next) => {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-            const result = await qmqaWorkflowService.submitFinalReport(id, this.getUserId(req), {
+            const result = await qmqaWorkflowService.submitFinalReport(id, this.getUserId(req), this.getRoleId(req), {
                 final_remarks: req.body?.final_remarks || req.body?.finalReport || null,
                 is_submit: req.body?.is_submit === 'true'
                     || req.body?.is_submit === true
@@ -321,93 +324,109 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
-    async batchSubmit(req, res, next) {
+    };
+    batchSubmit = async (req, res, next) => {
         try {
             const userId = this.getUserId(req);
             let count = 0;
+            const failed = [];
             for (const id of req.body?.ids || []) {
                 try {
-                    await qmqaWorkflowService.submit(id, userId, this.getActionRemarks(req));
+                    await qmqaWorkflowService.submit(id, userId, undefined, this.getActionRemarks(req));
                     count += 1;
                 }
-                catch (_error) { }
+                catch (error) {
+                    failed.push({ id, error: error.message || 'Unknown error' });
+                }
             }
-            res.json({ success: true, count });
+            res.json({ success: true, count, failed, total: req.body?.ids?.length || 0 });
         }
         catch (error) {
             next(error);
         }
-    }
-    async batchCheck(req, res, next) {
+    };
+    batchCheck = async (req, res, next) => {
         try {
             const userId = this.getUserId(req);
             let count = 0;
+            const failed = [];
             for (const id of req.body?.ids || []) {
                 try {
-                    await qmqaWorkflowService.check(id, userId, req.body?.remarks);
+                    await qmqaWorkflowService.check(id, userId, this.getRoleId(req), req.body?.remarks);
                     count += 1;
                 }
-                catch (_error) { }
+                catch (error) {
+                    console.error(`[QMQA batchCheck] Failed for ${id}:`, error.message);
+                    failed.push({ id, error: error.message || 'Unknown error' });
+                }
             }
-            res.json({ success: true, count });
+            res.json({ success: count > 0, count, failed, total: req.body?.ids?.length || 0 });
         }
         catch (error) {
             next(error);
         }
-    }
-    async batchApprove(req, res, next) {
+    };
+    batchApprove = async (req, res, next) => {
         try {
             const userId = this.getUserId(req);
             let count = 0;
+            const failed = [];
             for (const id of req.body?.ids || []) {
                 try {
-                    await qmqaWorkflowService.approve(id, userId, req.body?.remarks);
+                    await qmqaWorkflowService.approve(id, userId, this.getRoleId(req), req.body?.remarks);
                     count += 1;
                 }
-                catch (_error) { }
+                catch (error) {
+                    failed.push({ id, error: error.message || 'Unknown error' });
+                }
             }
-            res.json({ success: true, count });
+            res.json({ success: true, count, failed, total: req.body?.ids?.length || 0 });
         }
         catch (error) {
             next(error);
         }
-    }
-    async batchReject(req, res, next) {
+    };
+    batchReject = async (req, res, next) => {
         try {
             const userId = this.getUserId(req);
             let count = 0;
+            const failed = [];
             for (const id of req.body?.ids || []) {
                 try {
-                    await qmqaWorkflowService.reject(id, userId, req.body?.remarks);
+                    await qmqaWorkflowService.reject(id, userId, this.getRoleId(req), req.body?.remarks);
                     count += 1;
                 }
-                catch (_error) { }
+                catch (error) {
+                    failed.push({ id, error: error.message || 'Unknown error' });
+                }
             }
-            res.json({ success: true, count });
+            res.json({ success: true, count, failed, total: req.body?.ids?.length || 0 });
         }
         catch (error) {
             next(error);
         }
-    }
-    async batchIssue(req, res, next) {
+    };
+    batchIssue = async (req, res, next) => {
         try {
             const userId = this.getUserId(req);
             let count = 0;
+            const failed = [];
             for (const id of req.body?.ids || []) {
                 try {
                     await qmqaWorkflowService.issue(id, userId, req.body?.remarks);
                     count += 1;
                 }
-                catch (_error) { }
+                catch (error) {
+                    failed.push({ id, error: error.message || 'Unknown error' });
+                }
             }
-            res.json({ success: true, count });
+            res.json({ success: true, count, failed, total: req.body?.ids?.length || 0 });
         }
         catch (error) {
             next(error);
         }
-    }
-    async downloadAttachment(req, res, next) {
+    };
+    downloadAttachment = async (req, res, next) => {
         try {
             const { moduleType, attachmentId } = QmqaAttachmentParamSchema.parse({ params: req.params }).params;
             const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment(moduleType, attachmentId);
@@ -418,6 +437,6 @@ export class QmqaController {
         catch (error) {
             next(error);
         }
-    }
+    };
 }
 export const qmqaController = new QmqaController();
