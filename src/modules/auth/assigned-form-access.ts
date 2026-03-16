@@ -5,6 +5,7 @@ const ASSIGNED_WORKFLOW_FORM_FETCHERS = {
   NEWPARTS: (userId: string) => authRepository.findAssignedNpiAccessibleForms(userId),
   MNR: (userId: string) => authRepository.findAssignedMnrAccessibleForms(userId),
   QMQA: (userId: string) => authRepository.findAssignedQmqaAccessibleForms(userId),
+  QMQA_MEDIA: (userId: string) => authRepository.findAssignedQmqaMediaAccessibleForms(userId),
   SQPR: (userId: string) => authRepository.findAssignedSqprAccessibleForms(userId),
   '5M1E': (userId: string) => authRepository.findAssignedFiveM1EAccessibleForms(userId),
 } as const;

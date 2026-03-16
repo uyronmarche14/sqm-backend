@@ -8,18 +8,23 @@ import { getAssignedWorkflowAccessibleForms } from './assigned-form-access.js';
 
 export class AuthService {
   private buildAuthContextResponse(user: any, accessibleForms: string[]) {
+    console.log('🏗️ [Auth] Building auth context for accessible forms:', accessibleForms);
     const userMenuSet = new Set<string>();
 
     for (const formCode of accessibleForms) {
       const mapping = getLegacyFormMapping(formCode);
       if (!mapping) {
+        console.warn('⚠️ [Auth] No mapping found for form code:', formCode);
         continue;
       }
 
-      userMenuSet.add(getModulePermissionManifest(mapping.module).menuLabel);
+      const menuLabel = getModulePermissionManifest(mapping.module).menuLabel;
+      console.log('✅ [Auth] Form code:', formCode, '→ Module:', mapping.module, '→ Menu Label:', menuLabel);
+      userMenuSet.add(menuLabel);
     }
 
     const userMenu = Array.from(userMenuSet);
+    console.log('📋 [Auth] Final userMenu:', userMenu);
 
     const normalizedRoleName = user.role_name?.toLowerCase() || '';
     const isAdmin = normalizedRoleName.includes('admin') ? 1 : 0;

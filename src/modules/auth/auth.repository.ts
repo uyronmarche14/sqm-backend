@@ -558,6 +558,255 @@ export class AuthRepository extends BaseRepository<'USERS'> {
     return Array.from(accessibleForms);
   }
 
+  async findAssignedQmqaMediaAccessibleForms(userId: string): Promise<string[]> {
+    console.log('🎬 [QMQA_MEDIA] Starting permission check for user:', userId);
+    const accessibleForms = new Set<string>();
+
+    // HYBRID APPROACH: Check BOTH assignment-based AND role-based permissions
+    
+    // =========================================================================
+    // PART 1: Assignment-Based (Query QMQA table for actual assignments)
+    // =========================================================================
+    console.log('📋 [QMQA_MEDIA] Checking assignment-based permissions...');
+    const cycle1Assignments = await sql<{ has_access: number }>`
+      SELECT TOP 1 1 AS has_access
+      FROM QMQA q
+      WHERE q.request_status IN (
+        ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.CHECKER]},
+        ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.APPROVER]},
+        'AA',
+        'AC',
+        'SU',
+        'CK'
+      )
+        AND (q.checker_id = ${userId} OR q.approver_id = ${userId})
+    `.execute(db);
+
+    if (cycle1Assignments.rows.length > 0) {
+      accessibleForms.add('QMQA-MEDIA-03');
+    }
+
+    const issuerAssignments = await sql<{ form_id: string }>`
+      SELECT DISTINCT form_id
+      FROM (
+        SELECT 'QMQA-MEDIA-06' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER]},
+          'AP'
+        )
+          AND q.issuer_id = ${userId}
+
+        UNION ALL
+
+        SELECT 'QMQA-MEDIA-05' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.SUPPLIER]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
+          'IS',
+          'WI'
+        )
+          AND q.issuer_id = ${userId}
+
+        UNION ALL
+
+        SELECT 'QMQA-MEDIA-08' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.FINAL_RESPONSE]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_3RD]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_CHECKER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_APPROVER_2ND]},
+          'WI',
+          'WF',
+          'RA'
+        )
+          AND q.issuer_id = ${userId}
+
+        UNION ALL
+
+        SELECT 'QMQA-MEDIA-09' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_3RD]},
+          'RA'
+        )
+          AND q.issuer_id = ${userId}
+
+        UNION ALL
+
+        SELECT 'QMQA-MEDIA-10' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_ISSUER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_CHECKER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_APPROVER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.NOT_ACCEPT]},
+          'RJ'
+        )
+          AND q.issuer_id = ${userId}
+      ) issuer_access
+    `.execute(db);
+
+    for (const row of issuerAssignments.rows) {
+      accessibleForms.add(row.form_id);
+    }
+
+    const supplierAssignments = await sql<{ form_id: string }>`
+      SELECT DISTINCT form_id
+      FROM (
+        SELECT 'QMQA-MEDIA-05' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.SUPPLIER]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.INITIAL_RESPONSE]},
+          'IS',
+          'WI'
+        )
+          AND (
+            q.attention_id = ${userId}
+            OR EXISTS (
+              SELECT 1
+              FROM SUPPLIERSUSER su
+              WHERE su.user_id = ${userId}
+                AND su.supplier_id = (
+                  SELECT ap.supplier_id
+                  FROM QMQA_AUDIT_PLAN ap
+                  WHERE ap.qmqa_audit_plan_id = q.qmqa_audit_plan_id
+                )
+            )
+          )
+
+        UNION ALL
+
+        SELECT 'QMQA-MEDIA-08' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.FINAL_RESPONSE]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_ISSUER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.NOT_ACCEPT]},
+          'WF',
+          'RJ'
+        )
+          AND (
+            q.attention_id = ${userId}
+            OR EXISTS (
+              SELECT 1
+              FROM SUPPLIERSUSER su
+              WHERE su.user_id = ${userId}
+                AND su.supplier_id = (
+                  SELECT ap.supplier_id
+                  FROM QMQA_AUDIT_PLAN ap
+                  WHERE ap.qmqa_audit_plan_id = q.qmqa_audit_plan_id
+                )
+            )
+          )
+
+        UNION ALL
+
+        SELECT 'QMQA-MEDIA-10' AS form_id
+        FROM QMQA q
+        WHERE q.request_status IN (
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_SUPPLIER]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.REJECT_ISSUER_2ND]},
+          ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.NOT_ACCEPT]},
+          'RJ'
+        )
+          AND (
+            q.attention_id = ${userId}
+            OR EXISTS (
+              SELECT 1
+              FROM SUPPLIERSUSER su
+              WHERE su.user_id = ${userId}
+                AND su.supplier_id = (
+                  SELECT ap.supplier_id
+                  FROM QMQA_AUDIT_PLAN ap
+                  WHERE ap.qmqa_audit_plan_id = q.qmqa_audit_plan_id
+                )
+            )
+          )
+      ) supplier_access
+    `.execute(db);
+
+    for (const row of supplierAssignments.rows) {
+      accessibleForms.add(row.form_id);
+    }
+
+    const cycle2Assignments = await sql<{ has_access: number }>`
+      SELECT TOP 1 1 AS has_access
+      FROM QMQA q
+      WHERE q.request_status IN (
+        ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.CHECKER_2ND]},
+        ${QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.APPROVER_2ND]},
+        'RA'
+      )
+        AND EXISTS (
+          SELECT 1
+          FROM QMQA_RESPONSE r
+          WHERE r.qmqa_id = q.qmqa_id
+            AND r.last_update = (
+              SELECT MAX(r2.last_update)
+              FROM QMQA_RESPONSE r2
+              WHERE r2.qmqa_id = q.qmqa_id
+            )
+            AND (r.checker_id = ${userId} OR r.approver_id = ${userId})
+        )
+    `.execute(db);
+
+    if (cycle2Assignments.rows.length > 0) {
+      accessibleForms.add('QMQA-MEDIA-09');
+    }
+
+    console.log('📋 [QMQA_MEDIA] Assignment-based forms found:', Array.from(accessibleForms));
+
+    // =========================================================================
+    // PART 2: Role-Based (Query ROLE_ACCESS table for UI-assigned permissions)
+    // This allows immediate access when admin assigns via Maintenance UI
+    // =========================================================================
+    console.log('🔐 [QMQA_MEDIA] Checking role-based permissions...');
+    try {
+      // Get user's role
+      const userRecord = await this.findUserById(userId);
+      console.log('👤 [QMQA_MEDIA] User record:', { userId, roleId: userRecord?.role_id });
+      
+      if (userRecord?.role_id) {
+        // Query ROLE_ACCESS for QMQA_MEDIA form codes
+        const roleAccessRecords = await sql<{ form_name: string }>`
+          SELECT DISTINCT f.form_name
+          FROM ROLE_ACCESS ra
+          INNER JOIN FORMS f ON ra.form_id = f.form_id
+          WHERE ra.role_id = ${userRecord.role_id}
+            AND ra.active_flag = 1
+            AND f.form_name LIKE 'QMQA-MEDIA-%'
+            AND (ra.can_view = 1 OR ra.can_viewlist = 1)
+        `.execute(db);
+
+        console.log('📝 [QMQA_MEDIA] Role-based query returned:', roleAccessRecords.rows.length, 'records');
+        console.log('📝 [QMQA_MEDIA] Form names:', roleAccessRecords.rows.map(r => r.form_name));
+
+        // Add all role-based form codes
+        for (const row of roleAccessRecords.rows) {
+          accessibleForms.add(row.form_name);
+          console.log('✅ [QMQA_MEDIA] Added form:', row.form_name);
+        }
+      } else {
+        console.warn('⚠️ [QMQA_MEDIA] No role_id found for user');
+      }
+    } catch (err) {
+      // If role-based check fails, continue with assignment-based only
+      console.error('❌ [QMQA_MEDIA] Role-based permission check failed:', err);
+    }
+
+    const finalForms = Array.from(accessibleForms);
+    console.log('🎯 [QMQA_MEDIA] Final accessible forms:', finalForms);
+    return finalForms;
+  }
+
   async findAssignedSqprAccessibleForms(userId: string): Promise<string[]> {
     const accessibleForms = new Set<string>();
 
