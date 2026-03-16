@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "verify-master-data": "ts-node src/db/seeds/verify_master_data_implementation.ts",
+    "seed-master-data": "Run the master_data_seed.sql file against your database"
+  },
+  "devDependencies": {
+    "axios": "^1.6.0"
+  }
+}
+
+// Add these scripts to your package.json file
