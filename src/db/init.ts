@@ -38,6 +38,7 @@ const SEED_PRIORITY = [
   'mnr_forms_seed.sql',
   'sqpr_forms_seed.sql',
   'sqmp_forms_seed.sql',
+  'master_data_seed.sql',
 ];
 
 const LEGACY_DATABASE_PRIORITY = [
@@ -226,8 +227,23 @@ WHERE TABLE_NAME = @tableName
 
 async function needsSchemaBootstrap() {
   return withPool(TARGET_DB, async (pool) => {
-    const hasCoreWorkflowTable = await tableExists(pool, 'TBL_5M1E_Application');
-    return !hasCoreWorkflowTable;
+    const criticalTables = [
+      'TBL_5M1E_Application',
+      'SQPR',
+      'SQMP',
+      'MNR_LOTS',
+      'USERS'
+    ];
+    
+    for (const table of criticalTables) {
+      const exists = await tableExists(pool, table);
+      if (!exists) {
+        console.log(`Critical table ${table} is missing. Schema bootstrap required.`);
+        return true;
+      }
+    }
+    
+    return false;
   });
 }
 
@@ -337,6 +353,22 @@ async function recordMigration(pool: sql.ConnectionPool, migrationName: string) 
     .query('INSERT INTO TBL_SQM_Migrations (MigrationName) VALUES (@migrationName)');
 }
 
+async function applyJsSeeds() {
+  const seedFile = path.join(SEEDS_DIR, 'seed_data.js');
+  try {
+    const stats = await fs.stat(seedFile);
+    if (stats.isFile()) {
+      console.log('Applying JS seed data...');
+      // Use dynamic import for the ESM seed file
+      // We use a timestamp to avoid cache issues if this were long-running
+      await import(`${seedFile}?t=${Date.now()}`);
+      console.log('JS seed data applied successfully.');
+    }
+  } catch (error) {
+    console.log('No JS seed_data.js found or failed to apply.');
+  }
+}
+
 async function applyMigrations() {
   const files = sortByPriority(
     (await fs.readdir(MIGRATIONS_DIR)).filter((file) => file.endsWith('.sql')),
@@ -377,6 +409,7 @@ async function initDatabase() {
     }
     await bootstrapSchema();
     await bootstrapLegacyDatabaseScripts();
+    await applyJsSeeds();
   }
 
   await applyMigrations();
