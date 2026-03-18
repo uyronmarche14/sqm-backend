@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { userController } from './user.controller.js';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
-import { requirePermission } from '../../shared/middleware/requirePermission.js';
+import { requireAnyPermission } from '../../shared/middleware/requireAnyPermission.js';
 const router = Router();
+const USER_FORM_IDS = ['USERS-06-01', 'USERS-06-02', 'USERS-06-03'];
 // All user routes require authentication
 router.use(requireAuth);
-router.get('/', userController.getAllUsers);
-router.get('/:id', userController.getUserById);
-router.post('/:id/assignment-coverage', userController.getAssignmentCoverage);
-router.post('/', requirePermission('MAINTENANCE', 'add'), userController.createUser);
-router.put('/:id', requirePermission('MAINTENANCE', 'edit'), userController.updateUser);
-router.delete('/:id', requirePermission('MAINTENANCE', 'delete'), userController.deleteUser);
-router.post('/:id/change-password', requirePermission('MAINTENANCE', 'edit'), userController.changePassword);
+router.get('/', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAllUsers);
+router.get('/:id', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getUserById);
+router.post('/:id/assignment-coverage', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAssignmentCoverage);
+router.post('/', requireAnyPermission(USER_FORM_IDS, 'add'), userController.createUser);
+router.put('/:id', requireAnyPermission(USER_FORM_IDS, 'edit'), userController.updateUser);
+router.delete('/:id', requireAnyPermission(USER_FORM_IDS, 'delete'), userController.deleteUser);
+router.post('/:id/change-password', requireAnyPermission(USER_FORM_IDS, 'edit'), userController.changePassword);
 export default router;

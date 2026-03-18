@@ -5,6 +5,7 @@ const repositoryMock = vi.hoisted(() => ({
   findRecordByIdDetailed: vi.fn(),
   findLatestResponsesByQmqaIds: vi.fn(),
   findSupplierIdsByUserId: vi.fn(),
+  executeTransaction: vi.fn(),
   findPlanAttachments: vi.fn(),
   findAttachments: vi.fn(),
   findCcList: vi.fn(),
@@ -25,6 +26,7 @@ describe('QmqaService workflow metadata hydration', () => {
     vi.clearAllMocks();
     repositoryMock.findLatestResponsesByQmqaIds.mockResolvedValue([]);
     repositoryMock.findSupplierIdsByUserId.mockResolvedValue([]);
+    repositoryMock.executeTransaction.mockImplementation(async (callback: any) => callback({}));
     repositoryMock.findPlanAttachments.mockResolvedValue([]);
     repositoryMock.findAttachments.mockResolvedValue([]);
     repositoryMock.findCcList.mockResolvedValue([]);
@@ -78,7 +80,7 @@ describe('QmqaService workflow metadata hydration', () => {
     const result = await qmqaService.getRecordById('qmqa-1', { userId: 'checker-1' });
 
     expect(result).toEqual(expect.objectContaining({
-      status: 'AWAITING_APPROVAL',
+      status: 'AWAITING_CHECKED',
       workflowStage: 'CHECKER',
       workflowStageCode: '3',
       workflowStageLabel: 'Cycle 1 Checker',
@@ -115,11 +117,15 @@ describe('QmqaService workflow metadata hydration', () => {
 
     const result = await qmqaService.getAllRecords({ status: 'AWAITING_APPROVAL' }, { userId: 'checker-1' });
 
-    expect(repositoryMock.findAllRecordsDetailed).toHaveBeenCalledWith({
-      mappedStatus: expect.arrayContaining(['3', '4', 'AA', 'AC', 'SU', 'CK']),
-    });
+    expect(repositoryMock.findAllRecordsDetailed).toHaveBeenCalledWith(expect.objectContaining({
+      mappedStatus: expect.arrayContaining(['4', 'CK']),
+      actorContext: {
+        userId: 'checker-1',
+        supplierIds: [],
+      },
+    }));
     expect(result[0]).toEqual(expect.objectContaining({
-      status: 'AWAITING_APPROVAL',
+      status: 'AWAITING_CHECKED',
       workflowStage: 'CHECKER',
       workflowStageCode: '3',
       availableActions: ['check-main', 'reject-main'],
@@ -216,6 +222,115 @@ describe('QmqaService workflow metadata hydration', () => {
       availableActions: ['save-response', 'submit-initial-response'],
       nextApproverId: 'supplier-attn-1',
       nextApproverName: 'Supplier Attention',
+    }));
+  });
+
+  it('retries schedule control number generation after a duplicate-key collision', async () => {
+    const insertedControlNos: string[] = [];
+
+    repositoryMock.executeTransaction
+      .mockImplementationOnce(async (callback: any) => callback({
+        selectFrom: () => ({
+          select: () => ({
+            where: () => ({
+              orderBy: () => ({
+                executeTakeFirst: async () => ({ control_no: 'P-2026-0001' })
+              })
+            })
+          })
+        }),
+        insertInto: () => ({
+          values: (payload: any) => ({
+            execute: async () => {
+              insertedControlNos.push(payload.control_no);
+              const error = new Error("Violation of UNIQUE KEY constraint 'QMQA_AUDIT_PLAN'. The duplicate key value is (P-2026-0002).");
+              (error as any).number = 2627;
+              throw error;
+            }
+          })
+        })
+      }))
+      .mockImplementationOnce(async (callback: any) => callback({
+        selectFrom: () => ({
+          select: () => ({
+            where: () => ({
+              orderBy: () => ({
+                executeTakeFirst: async () => ({ control_no: 'P-2026-0001' })
+              })
+            })
+          })
+        }),
+        insertInto: () => ({
+          values: (payload: any) => ({
+            execute: async () => {
+              insertedControlNos.push(payload.control_no);
+            }
+          })
+        })
+      }));
+
+    const result = await qmqaService.createSchedule({
+      site_id: 'site-1',
+      supplier_id: 'supplier-1',
+      audit_category_id: 'category-1',
+      audit_plan_date: '2026-03-26',
+      sqe_pic_id: 'sqe-1',
+      remarks: 'Plan remarks',
+    } as any, 'admin-1');
+
+    expect(insertedControlNos).toEqual(['P-2026-0002', 'P-2026-0003']);
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      controlNo: 'P-2026-0003',
+    }));
+  });
+
+  it('reuses the selected audit plan when schedule_id is provided even without from_schedule', async () => {
+    const insertedTables: string[] = [];
+    const updatedTables: string[] = [];
+
+    repositoryMock.executeTransaction.mockImplementationOnce(async (callback: any) => callback({
+      updateTable: (table: string) => {
+        updatedTables.push(table);
+        return {
+          set: () => ({
+            where: () => ({
+              execute: async () => undefined,
+            }),
+          }),
+        };
+      },
+      selectFrom: () => ({
+        select: () => ({
+          where: () => ({
+            executeTakeFirst: async () => undefined,
+          }),
+        }),
+      }),
+      insertInto: (table: string) => {
+        insertedTables.push(table);
+        return {
+          values: () => ({
+            execute: async () => undefined,
+          }),
+        };
+      },
+    }));
+
+    const result = await qmqaService.createRecord({
+      schedule_id: 'plan-1',
+      audit_type_id: 'audit-type-1',
+      audit_date: '2026-03-26',
+      checker_id: '',
+      approver_id: '',
+    } as any, 'admin-1');
+
+    expect(updatedTables).toContain('QMQA_AUDIT_PLAN');
+    expect(insertedTables).toContain('QMQA');
+    expect(insertedTables).not.toContain('QMQA_AUDIT_PLAN');
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      apid: 'plan-1',
     }));
   });
 });

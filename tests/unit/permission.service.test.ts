@@ -7,8 +7,10 @@ const dbMock = vi.hoisted(() => ({
 const authRepositoryMock = vi.hoisted(() => ({
   findAssignedSqmpAccessibleForms: vi.fn(),
   findAssignedNpiAccessibleForms: vi.fn(),
+  findAssignedOgiAccessibleForms: vi.fn(),
   findAssignedMnrAccessibleForms: vi.fn(),
   findAssignedQmqaAccessibleForms: vi.fn(),
+  findAssignedQmqaMediaAccessibleForms: vi.fn(),
   findAssignedSqprAccessibleForms: vi.fn(),
   findAssignedFiveM1EAccessibleForms: vi.fn(),
 }));
@@ -41,8 +43,10 @@ describe('PermissionService SQMP assigned-form fallback', () => {
     vi.clearAllMocks();
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedOgiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedQmqaMediaAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
   });
@@ -443,6 +447,65 @@ describe('PermissionService SQMP assigned-form fallback', () => {
     const result = await service.checkPermission('release-owner-1', '5M1EJudgementSec-06-17', 'release');
 
     expect(result).toBe(true);
+  });
+
+  it('allows OGI module list access from assigned forms without ROLE_ACCESS', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-ogi',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery([]);
+    const permissionQuery = createQuery([]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    authRepositoryMock.findAssignedOgiAccessibleForms.mockResolvedValue(['OGI-01-04']);
+
+    const service = new PermissionService();
+    const result = await service.checkModulePermission('ogi-owner-1', 'OGI', 'viewlist');
+
+    expect(result).toBe(true);
+    expect(authRepositoryMock.findAssignedOgiAccessibleForms).toHaveBeenCalledWith('ogi-owner-1');
+  });
+
+  it('allows QMQA media module list access from role permissions without assignment fallback', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-media',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery([
+      { form_id: 'form-uuid-qmqa-media-draft', form_name: 'QMQA-MEDIA-02' },
+    ]);
+    const permissionQuery = createQuery({
+      form_id: 'form-uuid-qmqa-media-draft',
+      can_view: 1,
+      can_viewlist: 1,
+      can_add: 0,
+      can_edit: 0,
+      can_delete: 0,
+      can_approve: 0,
+      can_check: 0,
+      can_export: 0,
+      can_attach: 0,
+    });
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const result = await service.checkModulePermission('media-user-1', 'QMQA_MEDIA', 'viewlist');
+
+    expect(result).toBe(true);
+    expect(authRepositoryMock.findAssignedQmqaMediaAccessibleForms).not.toHaveBeenCalled();
   });
 
   it('reports missing baseline actions when a checker assignment relies on scoped runtime access', async () => {

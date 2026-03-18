@@ -8,6 +8,7 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
 import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
+import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
 /**
@@ -38,7 +39,7 @@ router.use(requireAuth);
  * @route   GET /api/5m1e
  * @desc    Retrieve all 5M1E Records
  */
-router.get('/', fiveM1EController.getAllApplications);
+router.get('/', requireModuleAccess('5M1E', 'viewlist'), fiveM1EController.getAllApplications);
 /**
  * @route   POST /api/5m1e
  * @desc    Create a new 5M1E Record
@@ -48,7 +49,7 @@ router.post('/', requirePermission('5M1EMAIN-11-01', 'add'), upload.any(), logUp
  * @route   GET /api/5m1e/:id
  * @desc    Retrieve 5M1E Record Details
  */
-router.get('/:id', fiveM1EController.getApplication);
+router.get('/:id', requireModuleAccess('5M1E', 'view'), fiveM1EController.getApplication);
 /**
  * @route   PUT /api/5m1e/:id
  * @desc    Update 5M1E Record
@@ -70,6 +71,6 @@ router.post('/:id/release', requireFiveM1EWorkflowAccess('release'), fiveM1ECont
 /**
  * Attachment Downloader
  */
-router.get('/attachments/:attachmentId', fiveM1EController.downloadAttachment);
-router.get('/download/:attachmentId', fiveM1EController.downloadAttachment);
+router.get('/attachments/:attachmentId', requireModuleAccess('5M1E', 'view'), fiveM1EController.downloadAttachment);
+router.get('/download/:attachmentId', requireModuleAccess('5M1E', 'view'), fiveM1EController.downloadAttachment);
 export default router;

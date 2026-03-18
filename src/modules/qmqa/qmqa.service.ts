@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+import { sql } from 'kysely';
 import { db } from '../../shared/infrastructure/db.js';
-import { NotFoundError } from '../../shared/errors/AppError.js';
+import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
 import { qmqaRepository } from './qmqa.repository.js';
 import {
@@ -21,8 +22,94 @@ const sanitizeUUID = (value: string | null | undefined): string | null => {
 };
 
 type DetailedRecord = Record<string, any>;
+const QMQA_DUPLICATE_KEY_NUMBERS = new Set([2601, 2627]);
 
 export class QmqaService {
+  private extractDuplicateControlNo(error: unknown): string | null {
+    const message = String((error as any)?.message || '');
+    const match = message.match(/duplicate key value is \(([^)]+)\)/i);
+    return match?.[1] || null;
+  }
+
+  private getControlNoSequence(controlNo: string | null | undefined, prefix: string): number | null {
+    if (!controlNo || !controlNo.startsWith(prefix)) {
+      return null;
+    }
+
+    const sequence = Number(controlNo.slice(prefix.length));
+    return Number.isNaN(sequence) ? null : sequence;
+  }
+
+  private getDbErrorNumber(error: unknown): number | undefined {
+    const candidates = [
+      (error as any)?.number,
+      (error as any)?.code,
+      (error as any)?.originalError?.info?.number,
+      (error as any)?.originalError?.number,
+      (error as any)?.cause?.number,
+    ];
+
+    for (const candidate of candidates) {
+      const parsed = Number(candidate);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private isDuplicateControlNoError(error: unknown): boolean {
+    const message = String((error as any)?.message || '');
+    const errorNumber = this.getDbErrorNumber(error);
+
+    return (
+      (errorNumber !== undefined && QMQA_DUPLICATE_KEY_NUMBERS.has(errorNumber)) ||
+      (message.includes('UNIQUE KEY constraint') && message.includes('duplicate key value'))
+    );
+  }
+
+  private async generateControlNoInContext(
+    year: number,
+    isSchedule = false,
+    trxOrDb: typeof db | any = db,
+    minimumSequence?: number | null,
+  ): Promise<string> {
+    const prefix = isSchedule ? `P-${year}-` : `A-${year}-`;
+    const canExecuteRawSql = typeof (trxOrDb as any)?.getExecutor === 'function';
+    const lastControlNo = canExecuteRawSql
+      ? (
+          await sql<{ control_no: string }>`
+            SELECT TOP 1 control_no
+            FROM QMQA_AUDIT_PLAN WITH (UPDLOCK, HOLDLOCK)
+            WHERE control_no LIKE ${`${prefix}%`}
+            ORDER BY control_no DESC
+          `.execute(trxOrDb)
+        ).rows[0]?.control_no
+      : (
+          await trxOrDb.selectFrom('QMQA_AUDIT_PLAN')
+            .select('control_no')
+            .where('control_no', 'like', `${prefix}%`)
+            .orderBy('control_no', 'desc')
+            .executeTakeFirst()
+        )?.control_no;
+
+    let nextNum = 1;
+
+    if (lastControlNo) {
+      const numPart = this.getControlNoSequence(lastControlNo, prefix);
+      if (numPart !== null) {
+        nextNum = numPart + 1;
+      }
+    }
+
+    if (minimumSequence !== undefined && minimumSequence !== null) {
+      nextNum = Math.max(nextNum, minimumSequence + 1);
+    }
+
+    return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+  }
+
   private async resolveAttentionId(
     userIdOrSupplierUserId: string | null | undefined,
     trxOrDb: typeof db | any = db,
@@ -83,19 +170,7 @@ export class QmqaService {
   }
 
   async generateControlNo(year: number, isSchedule = false): Promise<string> {
-    const prefix = isSchedule ? `P-${year}-` : `A-${year}-`;
-    const lastSeq = await qmqaRepository.getNextSequence(prefix);
-    let nextNum = 1;
-
-    if (lastSeq) {
-      const parts = lastSeq.split('-');
-      const numPart = parseInt(parts[parts.length - 1], 10);
-      if (!Number.isNaN(numPart)) {
-        nextNum = numPart + 1;
-      }
-    }
-
-    return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+    return this.generateControlNoInContext(year, isSchedule, db);
   }
 
   async getAllSchedules() {
@@ -129,27 +204,43 @@ export class QmqaService {
     const now = new Date();
     const effectiveUserId = userId || 'SYSTEM';
     const year = new Date(payload.audit_plan_date).getFullYear();
-    const controlNo = await this.generateControlNo(year, true);
+    let minimumSequence: number | null = null;
 
-    const dbPayload = {
-      qmqa_audit_plan_id: id,
-      control_no: controlNo,
-      created_date: now,
-      site_id: payload.site_id,
-      supplier_id: payload.supplier_id,
-      audit_category_id: payload.audit_category_id,
-      audit_plan_date: payload.audit_plan_date,
-      sqe_pic_id: payload.sqe_pic_id,
-      remarks: payload.remarks || null,
-      request_status: 'PL',
-      last_update: now,
-      updateby: effectiveUserId,
-    };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await qmqaRepository.executeTransaction(async (trx) => {
+          const controlNo = await this.generateControlNoInContext(year, true, trx, minimumSequence);
 
-    return qmqaRepository.executeTransaction(async (trx) => {
-      await trx.insertInto('QMQA_AUDIT_PLAN').values(dbPayload).execute();
-      return { success: true, id, controlNo, message: 'Schedule created' };
-    });
+          await trx.insertInto('QMQA_AUDIT_PLAN').values({
+            qmqa_audit_plan_id: id,
+            control_no: controlNo,
+            created_date: now,
+            site_id: payload.site_id,
+            supplier_id: payload.supplier_id,
+            audit_category_id: payload.audit_category_id,
+            audit_plan_date: payload.audit_plan_date,
+            sqe_pic_id: payload.sqe_pic_id,
+            remarks: payload.remarks || null,
+            request_status: 'PL',
+            last_update: now,
+            updateby: effectiveUserId,
+          }).execute();
+
+          return { success: true, id, controlNo, message: 'Schedule created' };
+        });
+      } catch (error) {
+        if (!this.isDuplicateControlNoError(error) || attempt === 2) {
+          throw error;
+        }
+
+        minimumSequence = this.getControlNoSequence(
+          this.extractDuplicateControlNo(error),
+          `P-${year}-`,
+        );
+      }
+    }
+
+    throw new ConflictError('Unable to generate a unique QMQA schedule control number.');
   }
 
   async updateSchedule(id: string, payload: QMQAScheduleUpdateInput, userId: string) {
@@ -279,121 +370,143 @@ export class QmqaService {
     const now = new Date();
     const effectiveUserId = userId || 'SYSTEM';
     const qmqaId = uuidv4();
+    const isLinkedToExistingSchedule = Boolean(payload.schedule_id);
+    const unscheduledAuditYear = new Date(payload.audit_date).getFullYear();
+    let minimumSequence: number | null = null;
 
-    return qmqaRepository.executeTransaction(async (trx) => {
-      let auditPlanId = payload.schedule_id;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await qmqaRepository.executeTransaction(async (trx) => {
+          let auditPlanId = payload.schedule_id;
 
-      if (!payload.from_schedule || !auditPlanId) {
-        auditPlanId = uuidv4();
-        const year = new Date(payload.audit_date).getFullYear();
-        const controlNo = await this.generateControlNo(year, false);
+          if (!isLinkedToExistingSchedule || !auditPlanId) {
+            auditPlanId = uuidv4();
+            const controlNo = await this.generateControlNoInContext(
+              unscheduledAuditYear,
+              false,
+              trx,
+              minimumSequence,
+            );
 
-        await trx.insertInto('QMQA_AUDIT_PLAN').values({
-          qmqa_audit_plan_id: auditPlanId,
-          control_no: controlNo,
-          created_date: now,
-          site_id: payload.site_id!,
-          supplier_id: payload.supplier_id!,
-          audit_category_id: payload.audit_category_id!,
-          audit_plan_date: payload.audit_plan_date || now,
-          sqe_pic_id: payload.sqe_pic_id!,
-          remarks: null,
-          request_status: 'CO',
-          last_update: now,
-          updateby: effectiveUserId,
-        }).execute();
-      } else {
-        await trx.updateTable('QMQA_AUDIT_PLAN')
-          .set({
-            request_status: 'CO',
-            last_update: now,
-            updateby: effectiveUserId,
-          })
-          .where('qmqa_audit_plan_id', '=', auditPlanId)
-          .execute();
-      }
+            await trx.insertInto('QMQA_AUDIT_PLAN').values({
+              qmqa_audit_plan_id: auditPlanId,
+              control_no: controlNo,
+              created_date: now,
+              site_id: payload.site_id!,
+              supplier_id: payload.supplier_id!,
+              audit_category_id: payload.audit_category_id!,
+              audit_plan_date: payload.audit_plan_date || now,
+              sqe_pic_id: payload.sqe_pic_id!,
+              remarks: null,
+              request_status: 'CO',
+              last_update: now,
+              updateby: effectiveUserId,
+            }).execute();
+          } else {
+            await trx.updateTable('QMQA_AUDIT_PLAN')
+              .set({
+                request_status: 'CO',
+                last_update: now,
+                updateby: effectiveUserId,
+              })
+              .where('qmqa_audit_plan_id', '=', auditPlanId)
+              .execute();
+          }
 
-      const resolvedAttentionId = await this.resolveAttentionId(payload.attention_id, trx);
+          const resolvedAttentionId = await this.resolveAttentionId(payload.attention_id, trx);
 
-      await trx.insertInto('QMQA').values({
-        qmqa_id: qmqaId,
-        qmqa_audit_plan_id: auditPlanId,
-        created_date: now,
-        audit_type_id: payload.audit_type_id,
-        attention_id: resolvedAttentionId,
-        pic_auditor_id: sanitizeUUID(payload.pic_auditor_id),
-        due_date: payload.due_date ? new Date(payload.due_date) : null,
-        audit_date: new Date(payload.audit_date),
-        issued_date: null,
-        audit_rating: payload.audit_rating ?? null,
-        auditees: payload.auditees || null,
-        auditors: payload.auditors || null,
-        attendees: payload.attendees || null,
-        remarks: payload.remarks || null,
-        encoder_id: effectiveUserId,
-        encoder_date: now,
-        issuer_id: effectiveUserId,
-        issuer_remarks: null,
-        issuer_date: null,
-        checker_id: sanitizeUUID(payload.checker_id),
-        checker_remarks: null,
-        checker_date: null,
-        approver_id: sanitizeUUID(payload.approver_id),
-        approver_remarks: null,
-        approver_date: null,
-        request_status: '2',
-        last_update: now,
-        updateby: effectiveUserId,
-      }).execute();
-
-      if (payload.cc_list?.length) {
-        for (const cc of payload.cc_list) {
-          await trx.insertInto('QMQA_CC').values({
-            qmqa_cc_id: uuidv4(),
+          await trx.insertInto('QMQA').values({
             qmqa_id: qmqaId,
-            user_id: cc.user_id,
+            qmqa_audit_plan_id: auditPlanId,
+            created_date: now,
+            audit_type_id: payload.audit_type_id,
+            attention_id: resolvedAttentionId,
+            pic_auditor_id: sanitizeUUID(payload.pic_auditor_id),
+            due_date: payload.due_date ? new Date(payload.due_date) : null,
+            audit_date: new Date(payload.audit_date),
+            issued_date: null,
+            audit_rating: payload.audit_rating ?? null,
+            auditees: payload.auditees || null,
+            auditors: payload.auditors || null,
+            attendees: payload.attendees || null,
+            remarks: payload.remarks || null,
+            encoder_id: effectiveUserId,
+            encoder_date: now,
+            issuer_id: effectiveUserId,
+            issuer_remarks: null,
+            issuer_date: null,
+            checker_id: sanitizeUUID(payload.checker_id),
+            checker_remarks: null,
+            checker_date: null,
+            approver_id: sanitizeUUID(payload.approver_id),
+            approver_remarks: null,
+            approver_date: null,
+            request_status: '2',
             last_update: now,
             updateby: effectiveUserId,
           }).execute();
+
+          if (payload.cc_list?.length) {
+            for (const cc of payload.cc_list) {
+              await trx.insertInto('QMQA_CC').values({
+                qmqa_cc_id: uuidv4(),
+                qmqa_id: qmqaId,
+                user_id: cc.user_id,
+                last_update: now,
+                updateby: effectiveUserId,
+              }).execute();
+            }
+          }
+
+          if (payload.attachments?.length) {
+            for (const attachment of payload.attachments) {
+              const originalName = attachment.file_name || attachment.fileName;
+              if (!originalName) continue;
+
+              const uploadedFile = files.find((file) => file.originalname === originalName);
+              const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
+
+              await trx.insertInto('QMQA_ATTACHMENT').values({
+                qmqa_attachment_id: attachment.id || uuidv4(),
+                qmqa_id: qmqaId,
+                file_name: diskFileName || 'Unknown',
+                file_extension: diskFileName ? diskFileName.split('.').pop()! : 'unknown',
+                remarks: attachment.remarks || null,
+                last_update: now,
+                updateby: effectiveUserId,
+              }).execute();
+            }
+          }
+
+          if (files?.length) {
+            for (const file of files) {
+              await trx.insertInto('QMQA_PLAN_ATTACHMENT').values({
+                qmqa_plan_attachment_id: uuidv4(),
+                qmqa_id: qmqaId,
+                file_name: file.filename || file.originalname,
+                file_extension: (file.originalname || '').split('.').pop() || 'unknown',
+                remarks: `(Original: ${file.originalname})`,
+                last_update: now,
+                updateby: effectiveUserId,
+              }).execute();
+            }
+          }
+
+          return { success: true, id: qmqaId, apid: auditPlanId };
+        });
+      } catch (error) {
+        if (!this.isDuplicateControlNoError(error) || attempt === 2 || isLinkedToExistingSchedule) {
+          throw error;
         }
+
+        minimumSequence = this.getControlNoSequence(
+          this.extractDuplicateControlNo(error),
+          `A-${unscheduledAuditYear}-`,
+        );
       }
+    }
 
-      if (payload.attachments?.length) {
-        for (const attachment of payload.attachments) {
-          const originalName = attachment.file_name || attachment.fileName;
-          if (!originalName) continue;
-
-          const uploadedFile = files.find((file) => file.originalname === originalName);
-          const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-
-          await trx.insertInto('QMQA_ATTACHMENT').values({
-            qmqa_attachment_id: attachment.id || uuidv4(),
-            qmqa_id: qmqaId,
-            file_name: diskFileName || 'Unknown',
-            file_extension: diskFileName ? diskFileName.split('.').pop()! : 'unknown',
-            remarks: attachment.remarks || null,
-            last_update: now,
-            updateby: effectiveUserId,
-          }).execute();
-        }
-      }
-
-      if (files?.length) {
-        for (const file of files) {
-          await trx.insertInto('QMQA_PLAN_ATTACHMENT').values({
-            qmqa_plan_attachment_id: uuidv4(),
-            qmqa_id: qmqaId,
-            file_name: file.filename || file.originalname,
-            file_extension: (file.originalname || '').split('.').pop() || 'unknown',
-            remarks: `(Original: ${file.originalname})`,
-            last_update: now,
-            updateby: effectiveUserId,
-          }).execute();
-        }
-      }
-
-      return { success: true, id: qmqaId, apid: auditPlanId };
-    });
+    throw new ConflictError('Unable to generate a unique QMQA control number.');
   }
 
   async updateRecord(id: string, payload: QMQARecordUpdateInput, userId: string) {
@@ -694,4 +807,3 @@ export class QmqaService {
 }
 
 export const qmqaService = new QmqaService();
-

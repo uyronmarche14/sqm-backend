@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { mnrController } from './mnr.controller.js';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
+import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 // We still use the robust legacy file upload middleware
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
@@ -13,14 +14,14 @@ const upload = createModuleUpload('mnr', { attachmentType: 'mnr-main' });
 router.use(requireAuth);
 
 router.post('/', requirePermission('MNR-12-01', 'add'), upload.any(), logUploads, handleUploadError, mnrController.create);
-router.get('/', mnrController.getAll);
-router.get('/:id', mnrController.getById);
+router.get('/', requireModuleAccess('MNR', 'viewlist'), mnrController.getAll);
+router.get('/:id', requireModuleAccess('MNR', 'view'), mnrController.getById);
 router.put('/:id', requirePermission('MNR-12-01', 'edit'), upload.any(), logUploads, handleUploadError, mnrController.update);
 router.delete('/:id', requirePermission('MNR-12-01', 'delete'), mnrController.delete);
 
 // Document Downloader
-router.get('/download/:attachmentId', mnrController.downloadAttachment);
-router.get('/attachments/:attachmentId', mnrController.downloadAttachment);
+router.get('/download/:attachmentId', requireModuleAccess('MNR', 'view'), mnrController.downloadAttachment);
+router.get('/attachments/:attachmentId', requireModuleAccess('MNR', 'view'), mnrController.downloadAttachment);
 
 // Workflow Action Subroutes
 router.post('/:id/submit', requirePermission('MNR-12-01', 'submit'), mnrController.submit);

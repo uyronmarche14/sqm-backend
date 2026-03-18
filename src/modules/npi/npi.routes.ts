@@ -4,6 +4,7 @@ import { requireAuth } from '../../shared/middleware/requireAuth.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
+import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 
 const router = Router();
 const upload = createModuleUpload('npi', { attachmentType: 'npi-main' });
@@ -37,14 +38,14 @@ router.get('/health', async (_req, res) => {
 // Protect all routes
 router.use(requireAuth);
 
-router.get('/stats', npiController.getStats);
-router.get('/sequence', npiController.generateSequence);
+router.get('/stats', requireModuleAccess('NEWPARTS', 'view'), npiController.getStats);
+router.get('/sequence', requireModuleAccess('NEWPARTS', 'view'), npiController.generateSequence);
 
-router.get('/', npiController.getAll);
-router.get('/:id', npiController.getById);
+router.get('/', requireModuleAccess('NEWPARTS', 'viewlist'), npiController.getAll);
+router.get('/:id', requireModuleAccess('NEWPARTS', 'view'), npiController.getById);
 
 // Document Downloader
-router.get('/download/:attachmentId', npiController.downloadAttachment);
+router.get('/download/:attachmentId', requireModuleAccess('NEWPARTS', 'view'), npiController.downloadAttachment);
 
 // Create / Update with Multer File handling
 router.post('/', requirePermission('NPILOT-09-01', 'add'), upload.any(), logUploads, handleUploadError, npiController.create);

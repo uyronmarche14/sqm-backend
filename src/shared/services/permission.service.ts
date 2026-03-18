@@ -4,6 +4,8 @@ import {
   getAssignmentRoleActions,
   getCompatibleFormCodes,
   getLegacyFormMapping,
+  getModuleFormCodes,
+  isWorkflowModule,
   type AssignmentRole,
 } from '@sqm/permissions-contract';
 import {
@@ -59,6 +61,16 @@ export interface PermissionEligibleUser {
   userId: string;
   fullName: string | null;
 }
+
+export type WorkflowPermissionModule =
+  | 'SQM_PLAN'
+  | 'NEWPARTS'
+  | 'OGI'
+  | 'MNR'
+  | 'QMQA'
+  | 'QMQA_MEDIA'
+  | 'SQPR'
+  | '5M1E';
 
 const PERMISSION_ACTION_SET: ReadonlySet<PermissionAction> = new Set([
   'view',
@@ -269,7 +281,12 @@ export class PermissionService {
       return false;
     }
 
-    return this.normalizePermissionActions(getAssignmentActions(grantedFormId)).includes(action);
+    const grantedActions = this.normalizePermissionActions(getAssignmentActions(grantedFormId));
+    if (grantedActions.length === 0 && (action === 'view' || action === 'viewlist')) {
+      return true;
+    }
+
+    return grantedActions.includes(action) || (action === 'viewlist' && grantedActions.includes('view'));
   }
 
   private getPermissionColumn(action: PermissionAction) {
@@ -347,6 +364,59 @@ export class PermissionService {
 
   async checkRolePermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
     return this.hasRolePermission(userId, formId, action);
+  }
+
+  async checkModulePermission(
+    userId: string,
+    module: WorkflowPermissionModule,
+    action: PermissionAction = 'viewlist',
+  ): Promise<boolean> {
+    const user = await this.resolveUserRole(userId);
+
+    if (!user) {
+      return false;
+    }
+
+    const roleName = user.role_name.toUpperCase();
+    if (roleName.includes('ADMIN')) {
+      return true;
+    }
+
+    if (isWorkflowModule(module)) {
+      for (const formCode of getModuleFormCodes(module)) {
+        if (await this.hasRolePermission(userId, formCode, action)) {
+          return true;
+        }
+
+        if (action === 'viewlist' && await this.hasRolePermission(userId, formCode, 'view')) {
+          return true;
+        }
+      }
+    }
+
+    const fetchAssignedForms = getAssignedWorkflowFormFetcher(module);
+    if (!fetchAssignedForms) {
+      return false;
+    }
+
+    const assignedForms = await fetchAssignedForms(userId);
+    return assignedForms.some((formId) => {
+      const actions = this.normalizePermissionActions(getAssignmentActions(formId));
+
+      if (actions.length === 0 && (action === 'view' || action === 'viewlist')) {
+        return true;
+      }
+
+      if (actions.includes(action)) {
+        return true;
+      }
+
+      if (action === 'view' || action === 'viewlist') {
+        return actions.includes('view');
+      }
+
+      return false;
+    });
   }
 
   async findUsersWithRolePermission(formId: string, action: PermissionAction): Promise<PermissionEligibleUser[]> {

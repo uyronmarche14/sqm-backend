@@ -9,6 +9,7 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
 import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
+import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
@@ -44,6 +45,7 @@ router.use(requireAuth);
  */
 router.get(
   '/', 
+  requireModuleAccess('5M1E', 'viewlist'),
   fiveM1EController.getAllApplications
 );
 
@@ -68,6 +70,7 @@ router.post(
  */
 router.get(
   '/:id', 
+  requireModuleAccess('5M1E', 'view'),
   fiveM1EController.getApplication
 );
 
@@ -108,7 +111,7 @@ router.post('/:id/release', requireFiveM1EWorkflowAccess('release'), fiveM1ECont
 /**
  * Attachment Downloader
  */
-router.get('/attachments/:attachmentId', fiveM1EController.downloadAttachment);
-router.get('/download/:attachmentId', fiveM1EController.downloadAttachment);
+router.get('/attachments/:attachmentId', requireModuleAccess('5M1E', 'view'), fiveM1EController.downloadAttachment);
+router.get('/download/:attachmentId', requireModuleAccess('5M1E', 'view'), fiveM1EController.downloadAttachment);
 
 export default router;

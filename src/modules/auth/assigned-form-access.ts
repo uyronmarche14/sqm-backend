@@ -3,6 +3,7 @@ import { authRepository } from './auth.repository.js';
 const ASSIGNED_WORKFLOW_FORM_FETCHERS = {
   SQM_PLAN: (userId: string) => authRepository.findAssignedSqmpAccessibleForms(userId),
   NEWPARTS: (userId: string) => authRepository.findAssignedNpiAccessibleForms(userId),
+  OGI: (userId: string) => authRepository.findAssignedOgiAccessibleForms(userId),
   MNR: (userId: string) => authRepository.findAssignedMnrAccessibleForms(userId),
   QMQA: (userId: string) => authRepository.findAssignedQmqaAccessibleForms(userId),
   QMQA_MEDIA: (userId: string) => authRepository.findAssignedQmqaMediaAccessibleForms(userId),

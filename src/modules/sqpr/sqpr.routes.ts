@@ -3,6 +3,7 @@ import { sqprController } from './sqpr.controller.js';
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
+import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 
 const router = Router();
 const upload = createModuleUpload('sqpr', { attachmentType: 'sqpr-main' });
@@ -10,11 +11,11 @@ const upload = createModuleUpload('sqpr', { attachmentType: 'sqpr-main' });
 // Protect all routes
 router.use(requireAuth);
 
-router.get('/', sqprController.getAll);
-router.get('/:id', sqprController.getById);
+router.get('/', requireModuleAccess('SQPR', 'viewlist'), sqprController.getAll);
+router.get('/:id', requireModuleAccess('SQPR', 'view'), sqprController.getById);
 
 // Document Downloader
-router.get('/download/:attachmentId', sqprController.downloadAttachment);
+router.get('/download/:attachmentId', requireModuleAccess('SQPR', 'view'), sqprController.downloadAttachment);
 
 // Create / Update with Multer File handling
 router.post('/', requirePermission('SQPR-03-01', 'add'), upload.any(), logUploads, handleUploadError, sqprController.create);

@@ -3,12 +3,13 @@ import { mainSqmpController } from './main.controller.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../../middleware/upload.middleware.js';
 import { requirePermission } from '../../../shared/middleware/requirePermission.js';
+import { requireModuleAccess } from '../../../shared/middleware/requireModuleAccess.js';
 
 const router = Router();
 const upload = createModuleUpload('sqmp', { attachmentType: 'sqmp-main' });
 
-router.get('/', mainSqmpController.getAll);
-router.get('/:id', mainSqmpController.getById);
+router.get('/', requireModuleAccess('SQM_PLAN', 'viewlist'), mainSqmpController.getAll);
+router.get('/:id', requireModuleAccess('SQM_PLAN', 'view'), mainSqmpController.getById);
 
 // Create / Update with Multer File handling
 router.post('/', requirePermission('SQMP-09-01', 'add'), upload.any(), logUploads, handleUploadError, mainSqmpController.create);

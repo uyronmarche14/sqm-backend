@@ -4,72 +4,167 @@ import { requireAuth } from '../../shared/middleware/requireAuth.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
+import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 
-const router = Router();
-const uploadRecord = createModuleUpload('qmqa', { attachmentType: 'qmqa-record' });
-const uploadInitial = createModuleUpload('qmqa', { attachmentType: 'qmqa-response-initial' });
-const uploadFinal = createModuleUpload('qmqa', { attachmentType: 'qmqa-response-final' });
+type QmqaRouteVariant = 'QMQA' | 'QMQA_MEDIA';
 
-// Protect all routes
-router.use(requireAuth);
+function getQmqaFormCodes(variant: QmqaRouteVariant) {
+  if (variant === 'QMQA_MEDIA') {
+    return {
+      schedule: 'QMQA-MEDIA-15',
+      scheduleCancel: 'QMQA-MEDIA-16',
+      new: 'QMQA-MEDIA-01',
+      draft: 'QMQA-MEDIA-02',
+      awaitingApproval: 'QMQA-MEDIA-03',
+      approved: 'QMQA-MEDIA-06',
+      cancelled: 'QMQA-MEDIA-07',
+      issued: 'QMQA-MEDIA-05',
+      withFinalReport: 'QMQA-MEDIA-08',
+      responseAwaitingApproval: 'QMQA-MEDIA-09',
+    } as const;
+  }
 
-// Document Downloader
-router.get('/download/:moduleType/:attachmentId', qmqaController.downloadAttachment);
-router.get('/attachments/:moduleType/:attachmentId', qmqaController.downloadAttachment);
+  return {
+    schedule: 'QMQA-05-15',
+    scheduleCancel: 'QMQA-05-16',
+    new: 'QMQA-05-01',
+    draft: 'QMQA-05-02',
+    awaitingApproval: 'QMQA-05-03',
+    approved: 'QMQA-05-06',
+    cancelled: 'QMQA-05-07',
+    issued: 'QMQA-05-05',
+    withFinalReport: 'QMQA-05-08',
+    responseAwaitingApproval: 'QMQA-05-09',
+  } as const;
+}
 
-// ==========================================
-// SCHEDULES (Audit Plan)
-// ==========================================
-router.get('/schedules', qmqaController.getAllSchedules);
-router.post('/schedules', requirePermission('QMQA-05-15', 'add'), qmqaController.createSchedule);
-router.get('/schedules/:id', qmqaController.getScheduleById);
-router.put('/schedules/:id', requirePermission('QMQA-05-15', 'edit'), qmqaController.updateSchedule);
-router.delete('/schedules/:id', requirePermission('QMQA-05-16', 'delete'), qmqaController.deleteSchedule);
+export function createQmqaRoutes(variant: QmqaRouteVariant = 'QMQA') {
+  const router = Router();
+  const uploadRecord = createModuleUpload('qmqa', { attachmentType: 'qmqa-record' });
+  const uploadInitial = createModuleUpload('qmqa', { attachmentType: 'qmqa-response-initial' });
+  const uploadFinal = createModuleUpload('qmqa', { attachmentType: 'qmqa-response-final' });
+  const formCodes = getQmqaFormCodes(variant);
 
-// ==========================================
-// RECORDS (Execution)
-// ==========================================
-router.get('/records', qmqaController.getAllRecords);
-router.post('/records', requirePermission('QMQA-05-01', 'add'), uploadRecord.any(), logUploads, handleUploadError, qmqaController.createRecord);
-router.get('/records/:id', qmqaController.getRecordById);
-router.put('/records/:id', requirePermission('QMQA-05-02', 'edit'), uploadRecord.any(), logUploads, handleUploadError, qmqaController.updateRecord);
-router.delete('/records/:id', requirePermission('QMQA-05-02', 'delete'), qmqaController.deleteRecord);
+  // Protect all routes
+  router.use(requireAuth);
 
-// ==========================================
-// WORKFLOW ACTIONS
-// ==========================================
-router.post('/records/:id/submit', requirePermission('QMQA-05-01', 'submit'), qmqaController.submit);
-router.post('/records/:id/check', requirePermission('QMQA-05-03', 'check'), qmqaController.check);
-router.post('/records/:id/approve', requirePermission('QMQA-05-03', 'approve'), qmqaController.approve);
-router.post('/records/:id/reject', requirePermission('QMQA-05-03', 'reject'), qmqaController.reject);
-router.post('/records/:id/issue', requirePermission('QMQA-05-06', 'issue'), qmqaController.issue);
-router.post('/records/:id/cancel', requirePermission('QMQA-05-07', 'delete'), qmqaController.cancel);
-router.post('/records/:id/verify', requirePermission('QMQA-05-08', 'submit'), qmqaController.verify);
+  // Document Downloader
+  router.get(
+    '/download/:moduleType/:attachmentId',
+    requireModuleAccess(variant, 'view'),
+    qmqaController.downloadAttachment,
+  );
+  router.get(
+    '/attachments/:moduleType/:attachmentId',
+    requireModuleAccess(variant, 'view'),
+    qmqaController.downloadAttachment,
+  );
 
-router.post('/records/:id/save-response', requirePermission('QMQA-05-08', 'edit'), uploadFinal.any(), logUploads, handleUploadError, qmqaController.saveResponse);
-router.post('/records/:id/submit-initial-response', requirePermission('QMQA-05-05', 'submit'), uploadInitial.any(), logUploads, handleUploadError, qmqaController.submitInitialResponse);
-router.post('/records/:id/submit-final-response', requirePermission('QMQA-05-08', 'submit'), uploadFinal.any(), logUploads, handleUploadError, qmqaController.submitFinalResponse);
-router.post('/records/:id/save-response-review', requirePermission('QMQA-05-08', 'edit'), qmqaController.saveResponseReview);
-router.post('/records/:id/submit-response-review', requirePermission('QMQA-05-08', 'submit'), qmqaController.submitResponseReview);
-router.post('/records/:id/check-response', requirePermission('QMQA-05-09', 'check'), qmqaController.checkResponse);
-router.post('/records/:id/approve-response', requirePermission('QMQA-05-09', 'approve'), qmqaController.approveResponse);
-router.post('/records/:id/reject-response', requirePermission('QMQA-05-09', 'reject'), qmqaController.rejectResponse);
-router.post('/records/:id/accept-response', requirePermission('QMQA-05-09', 'approve'), qmqaController.acceptResponse);
-router.post('/records/:id/not-accept-response', requirePermission('QMQA-05-09', 'reject'), qmqaController.notAcceptResponse);
+  // ==========================================
+  // SCHEDULES (Audit Plan)
+  // ==========================================
+  router.get('/schedules', requireModuleAccess(variant, 'viewlist'), qmqaController.getAllSchedules);
+  router.post('/schedules', requirePermission(formCodes.schedule, 'add'), qmqaController.createSchedule);
+  router.get('/schedules/:id', requireModuleAccess(variant, 'view'), qmqaController.getScheduleById);
+  router.put('/schedules/:id', requirePermission(formCodes.schedule, 'edit'), qmqaController.updateSchedule);
+  router.delete('/schedules/:id', requirePermission(formCodes.scheduleCancel, 'delete'), qmqaController.deleteSchedule);
 
-// ==========================================
-// BATCH OPERATIONS
-// ==========================================
-router.post('/batch/submit', requirePermission('QMQA-05-02', 'submit'), qmqaController.batchSubmit);
-router.post('/batch/check', requirePermission('QMQA-05-03', 'check'), qmqaController.batchCheck);
-router.post('/batch/approve', requirePermission('QMQA-05-03', 'approve'), qmqaController.batchApprove);
-router.post('/batch/reject', requirePermission('QMQA-05-03', 'reject'), qmqaController.batchReject);
-router.post('/batch/issue', requirePermission('QMQA-05-06', 'issue'), qmqaController.batchIssue);
+  // ==========================================
+  // RECORDS (Execution)
+  // ==========================================
+  router.get('/records', requireModuleAccess(variant, 'viewlist'), qmqaController.getAllRecords);
+  router.post(
+    '/records',
+    requirePermission(formCodes.new, 'add'),
+    uploadRecord.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.createRecord,
+  );
+  router.get('/records/:id', requireModuleAccess(variant, 'view'), qmqaController.getRecordById);
+  router.put(
+    '/records/:id',
+    requirePermission(formCodes.draft, 'edit'),
+    uploadRecord.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.updateRecord,
+  );
+  router.delete('/records/:id', requirePermission(formCodes.draft, 'delete'), qmqaController.deleteRecord);
 
-// ==========================================
-// SUPPLIER RESPONSE (Initial & Final Reports)
-// ==========================================
-router.post('/records/:id/initial-report', requirePermission('QMQA-05-05', 'edit'), uploadInitial.any(), logUploads, handleUploadError, qmqaController.saveInitialReport);
-router.post('/records/:id/final-report', requirePermission('QMQA-05-08', 'submit'), uploadFinal.any(), logUploads, handleUploadError, qmqaController.submitFinalReport);
+  // ==========================================
+  // WORKFLOW ACTIONS
+  // ==========================================
+  router.post('/records/:id/submit', requirePermission(formCodes.new, 'submit'), qmqaController.submit);
+  router.post('/records/:id/check', requirePermission(formCodes.awaitingApproval, 'check'), qmqaController.check);
+  router.post('/records/:id/approve', requirePermission(formCodes.awaitingApproval, 'approve'), qmqaController.approve);
+  router.post('/records/:id/reject', requirePermission(formCodes.awaitingApproval, 'reject'), qmqaController.reject);
+  router.post('/records/:id/issue', requirePermission(formCodes.approved, 'issue'), qmqaController.issue);
+  router.post('/records/:id/cancel', requirePermission(formCodes.cancelled, 'delete'), qmqaController.cancel);
+  router.post('/records/:id/verify', requirePermission(formCodes.withFinalReport, 'submit'), qmqaController.verify);
 
-export default router;
+  router.post(
+    '/records/:id/save-response',
+    requirePermission(formCodes.withFinalReport, 'edit'),
+    uploadFinal.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.saveResponse,
+  );
+  router.post(
+    '/records/:id/submit-initial-response',
+    requirePermission(formCodes.issued, 'submit'),
+    uploadInitial.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.submitInitialResponse,
+  );
+  router.post(
+    '/records/:id/submit-final-response',
+    requirePermission(formCodes.withFinalReport, 'submit'),
+    uploadFinal.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.submitFinalResponse,
+  );
+  router.post('/records/:id/save-response-review', requirePermission(formCodes.withFinalReport, 'edit'), qmqaController.saveResponseReview);
+  router.post('/records/:id/submit-response-review', requirePermission(formCodes.withFinalReport, 'submit'), qmqaController.submitResponseReview);
+  router.post('/records/:id/check-response', requirePermission(formCodes.responseAwaitingApproval, 'check'), qmqaController.checkResponse);
+  router.post('/records/:id/approve-response', requirePermission(formCodes.responseAwaitingApproval, 'approve'), qmqaController.approveResponse);
+  router.post('/records/:id/reject-response', requirePermission(formCodes.responseAwaitingApproval, 'reject'), qmqaController.rejectResponse);
+  router.post('/records/:id/accept-response', requirePermission(formCodes.responseAwaitingApproval, 'approve'), qmqaController.acceptResponse);
+  router.post('/records/:id/not-accept-response', requirePermission(formCodes.responseAwaitingApproval, 'reject'), qmqaController.notAcceptResponse);
+
+  // ==========================================
+  // BATCH OPERATIONS
+  // ==========================================
+  router.post('/batch/submit', requirePermission(formCodes.draft, 'submit'), qmqaController.batchSubmit);
+  router.post('/batch/check', requirePermission(formCodes.awaitingApproval, 'check'), qmqaController.batchCheck);
+  router.post('/batch/approve', requirePermission(formCodes.awaitingApproval, 'approve'), qmqaController.batchApprove);
+  router.post('/batch/reject', requirePermission(formCodes.awaitingApproval, 'reject'), qmqaController.batchReject);
+  router.post('/batch/issue', requirePermission(formCodes.approved, 'issue'), qmqaController.batchIssue);
+
+  // ==========================================
+  // SUPPLIER RESPONSE (Initial & Final Reports)
+  // ==========================================
+  router.post(
+    '/records/:id/initial-report',
+    requirePermission(formCodes.issued, 'edit'),
+    uploadInitial.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.saveInitialReport,
+  );
+  router.post(
+    '/records/:id/final-report',
+    requirePermission(formCodes.withFinalReport, 'submit'),
+    uploadFinal.any(),
+    logUploads,
+    handleUploadError,
+    qmqaController.submitFinalReport,
+  );
+
+  return router;
+}
+
+export default createQmqaRoutes('QMQA');
