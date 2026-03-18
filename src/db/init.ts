@@ -35,6 +35,9 @@ const GENERATED_PRIORITY = [
 ];
 
 const SEED_PRIORITY = [
+  '5m1e_forms_seed.sql',
+  'npi_forms_seed.sql',
+  'ogi_forms_seed.sql',
   'mnr_forms_seed.sql',
   'sqpr_forms_seed.sql',
   'sqmp_forms_seed.sql',
