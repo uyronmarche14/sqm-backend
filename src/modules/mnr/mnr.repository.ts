@@ -1,5 +1,6 @@
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
+import { sql } from 'kysely';
 
 export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
   constructor() {
@@ -31,11 +32,13 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
         'l.request_status as status',
         'l.date_created',
         'l.site_id', 'st.site_name',
+        sql<string | null>`${sql.ref('st.site_code')}`.as('site_code'),
         'l.supplier_id', 's.supplier_name',
         'l.model_id', 'm.model_name', 'm.model_no',
         'l.product_id', 'p.product_name',
         'l.mfg_area_id', 'ma.mfg_area_name',
         'l.defectcategory_id', 'dc.defectcategory_name as category_name',
+        sql<string | null>`${sql.ref('dc.defectcategory_acronym')}`.as('defectcategory_acronym'),
         'l.mnrtype_id', 'mt.mnrtype_name as mnr_type_name',
         'l.attention_id', 'attn.full_name as attention_name',
         'l.encoder_id',
@@ -118,8 +121,11 @@ export class MnrRepository extends BaseRepository<'MNR_LOTS'> {
       .leftJoin('USERS as app', 'l.approver_id', 'app.user_id')
       .selectAll('l')
       .select([
-        'st.site_name', 's.supplier_name', 'm.model_name', 'm.model_no',
+        'st.site_name',
+        sql<string | null>`${sql.ref('st.site_code')}`.as('site_code'),
+        's.supplier_name', 'm.model_name', 'm.model_no',
         'p.product_name', 'ma.mfg_area_name', 'dc.defectcategory_name as category_name',
+        sql<string | null>`${sql.ref('dc.defectcategory_acronym')}`.as('defectcategory_acronym'),
         'mt.mnrtype_name as mnr_type_name', 'attn.full_name as attention_name',
         'enc.full_name as encoder_name', 'iss.full_name as issuer_name',
         'chk.full_name as checker_name', 'app.full_name as approver_name'

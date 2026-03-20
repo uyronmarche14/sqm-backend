@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FiveM1EWorkflowService } from '../../src/modules/fiveM1E/workflow/fiveM1E-workflow.service.js';
+import { controlNumberService } from '../../src/shared/services/control-number.service.js';
+import { BadRequestError } from '../../src/shared/errors/AppError.js';
 
 function createRecord(overrides: Record<string, unknown> = {}) {
   return {
@@ -28,6 +30,7 @@ describe('FiveM1EWorkflowService', () => {
     findWithApproval: vi.fn(),
     updateApprovalStatus: vi.fn(),
     insertStatusRemark: vi.fn(),
+    renameControlNo: vi.fn(),
   };
   const permissions = {
     checkRolePermission: vi.fn(),
@@ -38,6 +41,7 @@ describe('FiveM1EWorkflowService', () => {
     vi.clearAllMocks();
     repository.updateApprovalStatus.mockResolvedValue(undefined);
     repository.insertStatusRemark.mockResolvedValue(undefined);
+    repository.renameControlNo.mockResolvedValue(undefined);
     permissions.checkRolePermission.mockImplementation(async (userId: string, formId: string, action: string) => {
       if (userId === 'creator-1') {
         return formId === '5M1EMAIN-11-01' && action === 'submit';
@@ -107,8 +111,87 @@ describe('FiveM1EWorkflowService', () => {
     );
     expect(result.data).toEqual(expect.objectContaining({
       controlNo: '5M-001',
+      controlNoState: 'final',
       status: 'SUBMITTED',
       workflowStageCode: '1',
+    }));
+  });
+
+  it('finalizes temporary control numbers during the supplier submit step', async () => {
+    vi.spyOn(controlNumberService, 'buildFiveM1EFinal').mockResolvedValue('IQA-PT-PROD-00001');
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        ControlNo: 'TMP_20260320-11-42-36-600',
+        SiteID: 'site-1',
+        CommodityID: 'part-type-1',
+        Attribute03: 'product-1',
+      }),
+    );
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.submitApplication('TMP_20260320-11-42-36-600', 'creator-1', 'submit');
+
+    expect(controlNumberService.buildFiveM1EFinal).toHaveBeenCalledWith({
+      siteId: 'site-1',
+      siteCode: undefined,
+      partTypeId: 'part-type-1',
+      partTypeCode: undefined,
+      productId: 'product-1',
+      productCode: undefined,
+    });
+    expect(repository.renameControlNo).toHaveBeenCalledWith(
+      'TMP_20260320-11-42-36-600',
+      'IQA-PT-PROD-00001',
+    );
+    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
+      'IQA-PT-PROD-00001',
+      'SUBMITTED',
+      expect.objectContaining({
+        ApprovalSeq: 1,
+        ModifiedDate: expect.any(Date),
+      }),
+    );
+    expect(result.data).toEqual(expect.objectContaining({
+      controlNo: 'IQA-PT-PROD-00001',
+      controlNoState: 'final',
+      status: 'SUBMITTED',
+    }));
+  });
+
+  it('falls back to a stable 5M control number when supplier submit lacks resolvable legacy codes', async () => {
+    vi.spyOn(controlNumberService, 'buildFiveM1EFinal').mockRejectedValue(
+      new BadRequestError('Unable to resolve site code for control number generation.'),
+    );
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        ID: 123,
+        ControlNo: 'TMP_20260320-12-05-18-197',
+      }),
+    );
+
+    const expectedControlNo = controlNumberService.buildFiveM1ESubmitted({
+      recordId: '123',
+      currentControlNo: 'TMP_20260320-12-05-18-197',
+    });
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.submitApplication('TMP_20260320-12-05-18-197', 'creator-1', 'submit');
+
+    expect(repository.renameControlNo).toHaveBeenCalledWith(
+      'TMP_20260320-12-05-18-197',
+      expectedControlNo,
+    );
+    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
+      expectedControlNo,
+      'SUBMITTED',
+      expect.objectContaining({
+        ApprovalSeq: 1,
+      }),
+    );
+    expect(result.data).toEqual(expect.objectContaining({
+      controlNo: expectedControlNo,
+      controlNoState: 'final',
+      status: 'SUBMITTED',
     }));
   });
 
@@ -200,6 +283,46 @@ describe('FiveM1EWorkflowService', () => {
     expect(result.data).toEqual(expect.objectContaining({
       status: 'FOR APPROVAL',
       workflowStageCode: '4',
+    }));
+  });
+
+  it('finalizes temporary control numbers when the MPD stage submits procurement data', async () => {
+    vi.spyOn(controlNumberService, 'buildFiveM1EFinal').mockResolvedValue('IQA-PT-PROD-00001');
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        ControlNo: 'TMP_20260320-11-42-36-600',
+        approval_status: 'SUBMITTED',
+        approval_seq: 1,
+        SiteID: 'site-1',
+        CommodityID: 'part-type-1',
+        Attribute03: 'product-1',
+      }),
+    );
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+    const result = await service.submitApplication('TMP_20260320-11-42-36-600', 'mpd-checker-1', 'procurement complete');
+
+    expect(controlNumberService.buildFiveM1EFinal).toHaveBeenCalledWith({
+      siteId: 'site-1',
+      siteCode: undefined,
+      partTypeId: 'part-type-1',
+      partTypeCode: undefined,
+      productId: 'product-1',
+      productCode: undefined,
+    });
+    expect(repository.renameControlNo).toHaveBeenCalledWith('TMP_20260320-11-42-36-600', 'IQA-PT-PROD-00001');
+    expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
+      'IQA-PT-PROD-00001',
+      'FOR APPROVAL',
+      expect.objectContaining({
+        ApprovalSeq: 4,
+        ModifiedDate: expect.any(Date),
+      }),
+    );
+    expect(result.data).toEqual(expect.objectContaining({
+      controlNo: 'IQA-PT-PROD-00001',
+      controlNoState: 'final',
+      status: 'FOR APPROVAL',
     }));
   });
 

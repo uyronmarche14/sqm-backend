@@ -217,6 +217,8 @@ export interface CreateRecordResponse {
 export interface WorkflowActionResponse {
   id: string;
   status?: string;
+  controlNo?: string;
+  controlNoState?: 'temporary' | 'draft' | 'final' | 'manual' | 'inherited';
 }
 
 // ============================================================================

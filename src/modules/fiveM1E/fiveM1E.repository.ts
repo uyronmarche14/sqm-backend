@@ -133,11 +133,14 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         'sup.supplier_name as supplier_name',
         'vendorSup.supplier_name as vendor_name',
         'site.site_name as site_name',
+        'site.site_code as site_code',
         'part.part_code as part_code',
         'part.part_name as item_name',
         'mdl.model_name as model_name',
         'pt.parttype_name as part_type_name',
+        'pt.parttype_code as part_type_code',
         'prod.product_name as attribute_03_name',
+        'prod.product_code as product_code',
         sql<string>`COALESCE(partClass.partclass_desc, partClass.partclass_name)`.as('class_name'),
         'partClass.partclass_desc as class_desc',
         'classCategory.Category_name as class_type_name',
@@ -242,6 +245,7 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         // Human-readable names from joined tables
         'sup.supplier_name as supplier_name',
         'site.site_name as site_name',
+        'site.site_code as site_code',
         'reviewerUser.full_name as reviewer_full_name',
         'checkerUser.full_name as checker_full_name',
         'approverUser.full_name as approver_full_name',
@@ -257,6 +261,8 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
         'part.part_name as item_name',
         'mdl.model_name as model_name',
         'pt.parttype_name as part_type_name',
+        'pt.parttype_code as part_type_code',
+        'prod.product_code as product_code',
         sql<string>`COALESCE(partClass.partclass_desc, partClass.partclass_name)`.as('class_name'),
         'partClass.partclass_desc as class_desc',
         'classCategory.Category_name as class_type_name',
@@ -415,6 +421,62 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
       .set(updateData)
       .where('ControlNo', '=', controlNo)
       .execute();
+  }
+
+  async renameControlNo(oldControlNo: string, newControlNo: string) {
+    if (!oldControlNo || !newControlNo || oldControlNo === newControlNo) {
+      return;
+    }
+
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('TBL_5M1E_Application')
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_Approval')
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_PartsPerReport')
+        .set({ PartsTag: newControlNo })
+        .where('PartsTag', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_Attachment')
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_ActionItems')
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_CheckItems')
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_Status_Remarks')
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+
+      await trx
+        .updateTable('TBL_5M1E_CC' as any)
+        .set({ ControlNo: newControlNo })
+        .where('ControlNo', '=', oldControlNo)
+        .execute();
+    });
   }
 
   // =========================================================================
@@ -694,6 +756,18 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
   // =========================================================================
   // CC Notification
   // =========================================================================
+  async findCCUsers(controlNo: string) {
+    const result = await sql`
+      SELECT cc.ID as id, cc.ControlNo as control_no, cc.UserID as user_id,
+             u.full_name, u.email
+      FROM TBL_5M1E_CC cc
+      LEFT JOIN USERS u ON cc.UserID = u.user_id
+      WHERE cc.ControlNo = ${controlNo}
+    `.execute(db);
+
+    return result.rows;
+  }
+
   async replaceCCUsers(controlNo: string, ccList: any[], userId: string = 'SYSTEM') {
     // 1. Delete existing
     await db.deleteFrom('TBL_5M1E_CC' as any).where('ControlNo', '=', controlNo).execute();

@@ -1,12 +1,13 @@
 import { fiveM1ERepository } from './fiveM1E.repository.js';
-import { db } from '../../shared/infrastructure/db.js';
-import { sql } from 'kysely';
 import { SmartMapper } from '../../shared/infrastructure/SmartMapper.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
-import { v4 as uuidv4 } from 'uuid';
 import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
-import { FIVE_M1E_WORKFLOW_STAGE } from './workflow/fiveM1E-workflow.constants.js';
+import { FIVE_M1E_WORKFLOW_STAGE, } from './workflow/fiveM1E-workflow.constants.js';
+import { getFiveM1EWorkflowStageFormIds } from './workflow/fiveM1E-workflow.utils.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { permissionService } from '../../shared/services/permission.service.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 /**
  * 5M1E Domain Service
  * Encapsulates core business logic and mapping.
@@ -62,12 +63,20 @@ function normalizeInput(data) {
     return normalized;
 }
 export class FiveM1EService {
+    repository;
+    permissions;
+    attachments;
+    constructor(repository = fiveM1ERepository, permissions = permissionService, attachments = attachmentService) {
+        this.repository = repository;
+        this.permissions = permissions;
+        this.attachments = attachments;
+    }
     isAdminActor(actor) {
         return (actor?.roleName || '').toUpperCase().includes('ADMIN');
     }
     isParticipant(record, userId) {
         if (!userId) {
-            return true;
+            return false;
         }
         return [
             record.CreatedBy,
@@ -84,13 +93,77 @@ export class FiveM1EService {
             record.FinalApprover,
         ].includes(userId);
     }
+    async hasReadableRolePermission(userId, formId) {
+        return ((await this.permissions.checkRolePermission(userId, formId, 'viewlist')) ||
+            (await this.permissions.checkRolePermission(userId, formId, 'view')));
+    }
+    async hasStageReadAccess(userId, stage, cache) {
+        const cacheKey = String(stage || '');
+        const resolver = async () => {
+            const formIds = getFiveM1EWorkflowStageFormIds(stage);
+            for (const formId of formIds) {
+                if (await this.hasReadableRolePermission(userId, formId)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (!cache) {
+            return resolver();
+        }
+        if (!cache.has(cacheKey)) {
+            cache.set(cacheKey, resolver());
+        }
+        return cache.get(cacheKey);
+    }
+    async hasSearchReadAccess(userId, cache) {
+        if (!cache) {
+            return this.hasReadableRolePermission(userId, '5M1ESEARCH-11-01');
+        }
+        if (!cache.value) {
+            cache.value = this.hasReadableRolePermission(userId, '5M1ESEARCH-11-01');
+        }
+        return cache.value;
+    }
+    async resolveReadAccess(record, actor) {
+        const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actor?.userId);
+        const isMine = this.isParticipant(record, actor?.userId);
+        const hasWorkflowAccess = Boolean(actor?.userId) &&
+            Array.isArray(workflow.availableActions) &&
+            workflow.availableActions.length > 0;
+        let canSearchView = false;
+        let canStageView = false;
+        if (!this.isAdminActor(actor) && actor?.userId && !isMine && !hasWorkflowAccess) {
+            canStageView = await this.hasStageReadAccess(actor.userId, workflow.workflowStage);
+            if (!canStageView) {
+                canSearchView = await this.hasSearchReadAccess(actor.userId);
+            }
+        }
+        return {
+            workflow,
+            allowed: this.isAdminActor(actor) ||
+                canSearchView ||
+                canStageView ||
+                isMine ||
+                hasWorkflowAccess,
+        };
+    }
+    async assertReadableRecord(record, actor) {
+        const access = await this.resolveReadAccess(record, actor);
+        assertWorkflowRecordAccess({
+            allowed: access.allowed,
+            action: 'view',
+            moduleName: '5M1E',
+        });
+        return access.workflow;
+    }
     /**
      * Creates a new 5M1E Application and its initial Approval state
      */
     async createApplication(data, userId, files = []) {
         console.log('[5M1E Service] Create Application Payload:', JSON.stringify(data, null, 2));
         console.log(`[5M1E Service] Attached files count: ${files.length}`);
-        const controlNo = '5M-' + uuidv4().split('-')[0].toUpperCase();
+        const controlNo = controlNumberService.buildFiveM1ETemporary();
         // Normalize field aliases (class → class_id, class_type → class_type_id)
         const normalized = normalizeInput(data);
         // Automap Frontend Fields to DB Columns using SmartMapper
@@ -176,11 +249,11 @@ export class FiveM1EService {
             approvalData.ApproverDtAprd = data.approver_dt_aprd;
         console.log('[5M1E Service] Approval data built:', Object.keys(approvalData));
         // Transactional Insert: Application + Approval + Child Tables
-        const newRecord = await fiveM1ERepository.createWithApproval(dbData, data.status || 'DRAFT', approvalData);
+        const newRecord = await this.repository.createWithApproval(dbData, data.status || 'DRAFT', approvalData);
         // Insert child tables
         const cn = newRecord.ControlNo;
         if (data.parts && data.parts.length > 0) {
-            await fiveM1ERepository.insertParts(cn, data.parts);
+            await this.repository.insertParts(cn, data.parts);
         }
         // Process attachments with file uploads
         if (data.attachments && data.attachments.length > 0) {
@@ -188,7 +261,7 @@ export class FiveM1EService {
             await this.processAttachments(cn, data.attachments, files);
         }
         if (data.action_items && data.action_items.length > 0) {
-            await fiveM1ERepository.replaceActionItems(cn, data.action_items);
+            await this.repository.replaceActionItems(cn, data.action_items);
         }
         if (data.check_items && data.check_items.length > 0) {
             if (files && files.length > 0) {
@@ -202,20 +275,23 @@ export class FiveM1EService {
                     }
                 });
             }
-            await fiveM1ERepository.replaceCheckItems(cn, data.check_items);
+            await this.repository.replaceCheckItems(cn, data.check_items);
         }
         if (data.status_remarks && data.status_remarks.length > 0) {
-            await fiveM1ERepository.replaceStatusRemarks(cn, data.status_remarks);
+            await this.repository.replaceStatusRemarks(cn, data.status_remarks);
         }
         // Insert CC Notification List
         if (data.cc_list && data.cc_list.length > 0) {
-            await fiveM1ERepository.replaceCCUsers(cn, data.cc_list, userId);
+            await this.repository.replaceCCUsers(cn, data.cc_list, userId);
         }
         return {
             success: true,
             message: 'Application created successfully',
             data: {
                 id: newRecord.ID,
+                recordId: newRecord.ID,
+                controlNo: newRecord.ControlNo,
+                controlNoState: controlNumberService.getControlNoState(newRecord.ControlNo),
                 control_no: newRecord.ControlNo,
             }
         };
@@ -224,14 +300,30 @@ export class FiveM1EService {
      * Retrieves all 5M1E Applications
      */
     async getAllApplications(status, actor, scope = 'history') {
-        const records = await fiveM1ERepository.findAllWithApproval(status);
+        const records = await this.repository.findAllWithApproval(status);
+        const isAdmin = this.isAdminActor(actor);
+        const requestedStatuses = new Set(String(status || '')
+            .split(',')
+            .map((value) => value.trim().toUpperCase())
+            .filter(Boolean));
+        const allowRoleVisibleAssignedQueue = requestedStatuses.has('FAPPROVED');
+        const stageReadAccessCache = new Map();
+        const searchReadAccessCache = {};
         const decoratedRecords = await Promise.all(records.map(async (record) => {
             const dto = SmartMapper.toDTO(record, applicationSchema);
             const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actor?.userId);
+            const isMine = this.isParticipant(record, actor?.userId);
+            const hasWorkflowAccess = Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
+            const canViewByRole = actor?.userId && !isAdmin && !isMine && !hasWorkflowAccess
+                ? await this.hasStageReadAccess(actor.userId, workflow.workflowStage, stageReadAccessCache)
+                : false;
             const normalizedStatus = workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
             return {
                 source: record,
                 workflow,
+                isMine,
+                hasWorkflowAccess,
+                canViewByRole,
                 data: {
                     ...dto,
                     id: record.ID,
@@ -271,15 +363,26 @@ export class FiveM1EService {
                 },
             };
         }));
-        const visibleRecords = this.isAdminActor(actor)
+        const canSearchHistory = actor?.userId &&
+            !isAdmin &&
+            decoratedRecords.some((entry) => !entry.isMine && !entry.hasWorkflowAccess && !entry.canViewByRole)
+            ? await this.hasSearchReadAccess(actor.userId, searchReadAccessCache)
+            : false;
+        const visibleRecords = isAdmin
             ? decoratedRecords
             : filterWorkflowRecordsByScope(decoratedRecords, scope, {
                 isAssigned: (entry) => Boolean(actor?.userId &&
-                    (entry.workflow.ownerMode === 'assigned' || entry.workflow.ownerMode === 'role-fallback') &&
-                    entry.workflow.nextApproverId === actor.userId),
-                isMine: (entry) => this.isParticipant(entry.source, actor?.userId),
-                isHistoryVisible: (entry) => this.isParticipant(entry.source, actor?.userId) ||
-                    (Array.isArray(entry.workflow.availableActions) && entry.workflow.availableActions.length > 0),
+                    (((entry.workflow.ownerMode === 'assigned' || entry.workflow.ownerMode === 'role-fallback') &&
+                        entry.workflow.nextApproverId === actor.userId) ||
+                        (entry.workflow.ownerMode === 'shared-queue' &&
+                            (entry.canViewByRole || entry.hasWorkflowAccess)) ||
+                        (allowRoleVisibleAssignedQueue &&
+                            entry.canViewByRole))),
+                isMine: (entry) => entry.isMine,
+                isHistoryVisible: (entry) => canSearchHistory ||
+                    entry.canViewByRole ||
+                    entry.isMine ||
+                    entry.hasWorkflowAccess,
             });
         return visibleRecords.map((entry) => entry.data);
     }
@@ -287,36 +390,23 @@ export class FiveM1EService {
      * Retrieves a 5M1E Application with its full Approval + Child Tables
      */
     async getApplication(controlNo, actor) {
-        const record = await fiveM1ERepository.findWithApproval(controlNo);
+        const record = await this.repository.findWithApproval(controlNo);
         if (!record) {
             throw new NotFoundError(`5M1E Application ${controlNo} not found`);
         }
+        const workflow = await this.assertReadableRecord(record, actor);
         // SmartMap back to frontend standard DTO payload
         const dto = SmartMapper.toDTO(record, applicationSchema);
         // Fetch child tables
         const cn = record.ControlNo;
-        const [parts, attachments, actionItems, checkItems, statusRemarks] = await Promise.all([
-            fiveM1ERepository.findParts(cn),
-            fiveM1ERepository.findAttachments(cn),
-            fiveM1ERepository.findActionItems(cn),
-            fiveM1ERepository.findCheckItems(cn),
-            fiveM1ERepository.findStatusRemarks(cn),
+        const [parts, attachments, actionItems, checkItems, statusRemarks, ccList] = await Promise.all([
+            this.repository.findParts(cn),
+            this.repository.findAttachments(cn),
+            this.repository.findActionItems(cn),
+            this.repository.findCheckItems(cn),
+            this.repository.findStatusRemarks(cn),
+            this.repository.findCCUsers(cn),
         ]);
-        // Fetch CC list with user names
-        const ccResult = await sql `
-      SELECT cc.ID as id, cc.ControlNo as control_no, cc.UserID as user_id,
-             u.full_name, u.email
-      FROM TBL_5M1E_CC cc
-      LEFT JOIN USERS u ON cc.UserID = u.user_id
-      WHERE cc.ControlNo = ${cn}
-    `.execute(db);
-        const ccList = ccResult.rows;
-        const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actor?.userId);
-        assertWorkflowRecordAccess({
-            allowed: this.isAdminActor(actor) || this.isParticipant(record, actor?.userId) || workflow.availableActions.length > 0,
-            action: 'view',
-            moduleName: '5M1E',
-        });
         const normalizedStatus = workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
         return {
             ...dto,
@@ -415,20 +505,40 @@ export class FiveM1EService {
             })),
         };
     }
+    async downloadAttachment(attachmentId, actor) {
+        const attachment = await this.attachments.getAttachmentInfo('5m1e-main', attachmentId);
+        const controlNo = String(attachment.ControlNo || attachment.control_no || '');
+        if (!controlNo) {
+            throw new NotFoundError(`5M1E attachment ${attachmentId} is missing its owning record.`);
+        }
+        const record = await this.repository.findWithApproval(controlNo);
+        if (!record) {
+            throw new NotFoundError(`5M1E Application ${controlNo} not found`);
+        }
+        await this.assertReadableRecord(record, actor);
+        return this.attachments.downloadAttachment('5m1e-main', attachmentId);
+    }
     /**
      * Updates an Application intelligently picking valid fields
      */
-    async updateApplication(controlNo, data, files = [], _userId = 'SYSTEM') {
+    async updateApplication(controlNo, data, files = [], actor = {}) {
         console.log('[5M1E Service] Update Application Payload:', JSON.stringify(data, null, 2));
         console.log(`[5M1E Service] Attached files count: ${files.length}`);
-        const existing = await fiveM1ERepository.findWithApproval(controlNo);
+        const existing = await this.repository.findWithApproval(controlNo);
         if (!existing) {
             throw new NotFoundError(`5M1E Application ${controlNo} not found`);
         }
+        const canUpdate = Boolean(actor.userId) &&
+            await fiveM1EWorkflowService.canUserUpdateRecord(existing.ControlNo, actor.userId);
+        assertWorkflowRecordAccess({
+            allowed: canUpdate,
+            action: 'update',
+            moduleName: '5M1E',
+        });
         const normalized = normalizeInput(data);
         const updateDbData = SmartMapper.toDB(normalized, applicationSchema);
         if (Object.keys(updateDbData).length > 0) {
-            await fiveM1ERepository.updateByControlNo(controlNo, updateDbData);
+            await this.repository.updateByControlNo(controlNo, updateDbData);
         }
         // Update Approval table fields (status + any approval workflow data)
         const approvalUpdates = {};
@@ -511,20 +621,20 @@ export class FiveM1EService {
         console.log('[5M1E Service] Approval updates built:', Object.keys(approvalUpdates));
         if (Object.keys(approvalUpdates).length > 0) {
             approvalUpdates.ModifiedDate = new Date();
-            await fiveM1ERepository.updateApprovalStatus(existing.ControlNo, existing.approval_status || 'DRAFT', approvalUpdates);
+            await this.repository.updateApprovalStatus(existing.ControlNo, existing.approval_status || 'DRAFT', approvalUpdates);
         }
         // Sync child tables (replace strategy)
         const cn = existing.ControlNo;
         if (data.parts) {
-            await fiveM1ERepository.replaceParts(cn, data.parts);
+            await this.repository.replaceParts(cn, data.parts);
         }
         if (data.attachments) {
             console.log(`[5M1E Service] Update - Processing ${data.attachments.length} attachment(s) with ${files.length} file(s)`);
-            await fiveM1ERepository.replaceAttachments(cn, []); // Clear existing
+            await this.repository.replaceAttachments(cn, []); // Clear existing
             await this.processAttachments(cn, data.attachments, files); // Insert new with files
         }
         if (data.action_items) {
-            await fiveM1ERepository.replaceActionItems(cn, data.action_items);
+            await this.repository.replaceActionItems(cn, data.action_items);
         }
         if (data.check_items) {
             if (files && files.length > 0) {
@@ -538,14 +648,14 @@ export class FiveM1EService {
                     }
                 });
             }
-            await fiveM1ERepository.replaceCheckItems(cn, data.check_items);
+            await this.repository.replaceCheckItems(cn, data.check_items);
         }
         if (data.status_remarks) {
-            await fiveM1ERepository.replaceStatusRemarks(cn, data.status_remarks);
+            await this.repository.replaceStatusRemarks(cn, data.status_remarks);
         }
         // Replace CC Notification List (delete & re-insert)
         if (data.cc_list !== undefined) {
-            await fiveM1ERepository.replaceCCUsers(cn, data.cc_list, _userId);
+            await this.repository.replaceCCUsers(cn, data.cc_list, actor.userId || 'SYSTEM');
         }
         return {
             success: true,
@@ -573,7 +683,7 @@ export class FiveM1EService {
                 ? `${baseRemarks} (Original: ${originalName})`.slice(0, 200)
                 : `Original: ${originalName}`.slice(0, 200);
             console.log(`[5M1E Service] Processing attachment: ${originalName} -> ${diskFileName}`);
-            await fiveM1ERepository.insertAttachments(controlNo, [{
+            await this.repository.insertAttachments(controlNo, [{
                     id: att.id || undefined,
                     file_name: diskFileName || 'Unknown',
                     attribute_1: uploadedFile ? uploadedFile.path : (att.attribute_1 || null), // Store file path or URL
@@ -584,21 +694,28 @@ export class FiveM1EService {
     /**
      * Deletes a 5M1E Application and all child tables
      */
-    async deleteApplication(controlNo) {
-        const existing = await fiveM1ERepository.findWithApproval(controlNo);
+    async deleteApplication(controlNo, actor = {}) {
+        const existing = await this.repository.findWithApproval(controlNo);
         if (!existing) {
             throw new NotFoundError(`5M1E Application ${controlNo} not found`);
         }
+        const canDelete = Boolean(actor.userId) &&
+            await fiveM1EWorkflowService.canUserDeleteRecord(existing.ControlNo, actor.userId, actor.roleName);
+        assertWorkflowRecordAccess({
+            allowed: canDelete,
+            action: 'delete',
+            moduleName: '5M1E',
+        });
         const cn = existing.ControlNo;
         // Delete child tables first, then approval, then application
-        await fiveM1ERepository.replaceParts(cn, []);
-        await fiveM1ERepository.replaceAttachments(cn, []);
-        await fiveM1ERepository.replaceActionItems(cn, []);
-        await fiveM1ERepository.replaceCheckItems(cn, []);
-        await fiveM1ERepository.replaceStatusRemarks(cn, []);
-        await fiveM1ERepository.replaceCCUsers(cn, []);
-        await fiveM1ERepository.deleteApproval(cn);
-        await fiveM1ERepository.deleteByControlNo(cn);
+        await this.repository.replaceParts(cn, []);
+        await this.repository.replaceAttachments(cn, []);
+        await this.repository.replaceActionItems(cn, []);
+        await this.repository.replaceCheckItems(cn, []);
+        await this.repository.replaceStatusRemarks(cn, []);
+        await this.repository.replaceCCUsers(cn, []);
+        await this.repository.deleteApproval(cn);
+        await this.repository.deleteByControlNo(cn);
         return { success: true, message: 'Application deleted successfully', data: { controlNo } };
     }
     /**

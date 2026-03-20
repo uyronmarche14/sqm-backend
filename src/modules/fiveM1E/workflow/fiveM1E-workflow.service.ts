@@ -11,6 +11,7 @@ import {
   type FiveM1EWorkflowOwnerMode,
 } from './fiveM1E-workflow.utils.js';
 import { FIVE_M1E_WORKFLOW_ACTION, FIVE_M1E_WORKFLOW_STAGE } from './fiveM1E-workflow.constants.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 type FiveM1EWorkflowRecord = Record<string, unknown>;
 
@@ -274,6 +275,28 @@ export class FiveM1EWorkflowService {
     return false;
   }
 
+  async canUserDeleteRecord(controlNo: string, userId: string, roleName?: string | null) {
+    const normalizedRole = String(roleName || '').toUpperCase();
+    if (normalizedRole.includes('ADMIN')) {
+      return true;
+    }
+
+    const record = await this.getRecordOrThrow(controlNo);
+    const stage = normalizeFiveM1EWorkflowStage(record);
+    const createdBy = getString(record, 'CreatedBy', 'created_by');
+
+    return Boolean(
+      userId &&
+      createdBy &&
+      createdBy === userId &&
+      (
+        stage === FIVE_M1E_WORKFLOW_STAGE.DRAFT ||
+        stage === FIVE_M1E_WORKFLOW_STAGE.RAR ||
+        stage === FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE
+      ),
+    );
+  }
+
   async canUserPerformAction(
     controlNo: string,
     userId: string,
@@ -306,6 +329,37 @@ export class FiveM1EWorkflowService {
     });
   }
 
+  private async finalizeTemporaryControlNo(record: FiveM1EWorkflowRecord, controlNo: string) {
+    if (!controlNo.toUpperCase().startsWith('TMP_')) {
+      return controlNo;
+    }
+
+    let nextControlNo: string;
+
+    try {
+      nextControlNo = await controlNumberService.buildFiveM1EFinal({
+        siteId: getString(record, 'SiteID', 'site_id'),
+        siteCode: getString(record, 'site_code'),
+        partTypeId: getString(record, 'CommodityID', 'commodity_id'),
+        partTypeCode: getString(record, 'part_type_code', 'parttype_code'),
+        productId: getString(record, 'Attribute03', 'attribute_03'),
+        productCode: getString(record, 'product_code'),
+      });
+    } catch (error) {
+      if (!(error instanceof BadRequestError)) {
+        throw error;
+      }
+
+      nextControlNo = controlNumberService.buildFiveM1ESubmitted({
+        recordId: getString(record, 'ID', 'id'),
+        currentControlNo: controlNo,
+      });
+    }
+
+    await this.repository.renameControlNo(controlNo, nextControlNo);
+    return nextControlNo;
+  }
+
   private async buildResult(record: FiveM1EWorkflowRecord, controlNo: string, actorUserId?: string) {
     const metadata = await this.getWorkflowMetadata(record, actorUserId);
     const normalizedStatus =
@@ -315,7 +369,9 @@ export class FiveM1EWorkflowService {
     return {
       success: true,
       data: {
+        recordId: getString(record, 'ID', 'id'),
         controlNo,
+        controlNoState: controlNumberService.getControlNoState(controlNo),
         status: normalizedStatus,
         ...metadata,
       },
@@ -330,7 +386,7 @@ export class FiveM1EWorkflowService {
 
   async submitApplication(controlNo: string, userId: string, remarks?: string) {
     const record = await this.getRecordOrThrow(controlNo);
-    const canonicalControlNo = getCanonicalControlNo(record, controlNo);
+    let canonicalControlNo = getCanonicalControlNo(record, controlNo);
     const stage = normalizeFiveM1EWorkflowStage(record);
     const createdBy = getString(record, 'CreatedBy', 'created_by');
 
@@ -354,6 +410,7 @@ export class FiveM1EWorkflowService {
         throw new ForbiddenError('Only the creator can submit this 5M1E application.');
       }
 
+      canonicalControlNo = await this.finalizeTemporaryControlNo(record, canonicalControlNo);
       await this.repository.updateApprovalStatus(canonicalControlNo, 'SUBMITTED', {
         ApprovalSeq: 1,
         ModifiedDate: new Date(),
@@ -363,6 +420,7 @@ export class FiveM1EWorkflowService {
       const result = await this.buildResult(
           {
             ...record,
+            ControlNo: canonicalControlNo,
             approval_status: 'SUBMITTED',
             approval_seq: 1,
           },
@@ -384,6 +442,8 @@ export class FiveM1EWorkflowService {
     );
 
     if (stage === FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER) {
+      canonicalControlNo = await this.finalizeTemporaryControlNo(record, canonicalControlNo);
+
       await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
         ApprovalSeq: 4,
         ModifiedDate: new Date(),

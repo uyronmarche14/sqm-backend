@@ -112,7 +112,8 @@ export class MnrController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
             const remarks = parsed?.remarks || parsed?.updates?.remarks;
-            const result = await mnrWorkflowService.submitMain(id, userId, remarks);
+            const roleId = req.user?.roleId || req.user?.role_id;
+            const result = await mnrWorkflowService.submitMain(id, userId, roleId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -129,7 +130,8 @@ export class MnrController {
             const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
             const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.checkMain(id, userId, remarks);
+            const roleId = req.user?.roleId || req.user?.role_id;
+            const result = await mnrWorkflowService.checkMain(id, userId, roleId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -146,7 +148,8 @@ export class MnrController {
             const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
             const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.approveMain(id, userId, remarks);
+            const roleId = req.user?.roleId || req.user?.role_id;
+            const result = await mnrWorkflowService.approveMain(id, userId, roleId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -163,7 +166,8 @@ export class MnrController {
             const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
             const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.rejectMain(id, userId, remarks);
+            const roleId = req.user?.roleId || req.user?.role_id;
+            const result = await mnrWorkflowService.rejectMain(id, userId, roleId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -180,7 +184,8 @@ export class MnrController {
             const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
             const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.issueMain(id, userId, remarks);
+            const roleId = req.user?.roleId || req.user?.role_id;
+            const result = await mnrWorkflowService.issueMain(id, userId, roleId, remarks);
             res.json(result);
         }
         catch (error) {
@@ -210,7 +215,8 @@ export class MnrController {
             const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
             const remarks = parsed?.remarks || parsed?.updates?.remarks;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.cancelMain(id, userId, remarks);
+            const roleId = req.user?.roleId || req.user?.role_id;
+            const result = await mnrWorkflowService.cancelMain(id, userId, roleId, remarks);
             res.json(result);
         }
         catch (error) {

@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const repositoryMock = vi.hoisted(() => ({
+  createWithApproval: vi.fn(),
   findAllWithApproval: vi.fn(),
   findWithApproval: vi.fn(),
+  insertParts: vi.fn(),
+  findParts: vi.fn(),
+  findAttachments: vi.fn(),
+  findActionItems: vi.fn(),
+  findCheckItems: vi.fn(),
+  findStatusRemarks: vi.fn(),
+  findCCUsers: vi.fn(),
   updateApprovalStatus: vi.fn(),
   updateByControlNo: vi.fn(),
   replaceParts: vi.fn(),
@@ -17,11 +25,18 @@ const repositoryMock = vi.hoisted(() => ({
 
 const workflowServiceMock = vi.hoisted(() => ({
   getWorkflowMetadata: vi.fn(),
+  canUserUpdateRecord: vi.fn(),
+  canUserDeleteRecord: vi.fn(),
   submitApplication: vi.fn(),
   checkApplication: vi.fn(),
   approveApplication: vi.fn(),
   rejectApplication: vi.fn(),
   releaseApplication: vi.fn(),
+}));
+
+const attachmentServiceMock = vi.hoisted(() => ({
+  getAttachmentInfo: vi.fn(),
+  downloadAttachment: vi.fn(),
 }));
 
 vi.mock('../../src/modules/fiveM1E/fiveM1E.repository.js', () => ({
@@ -34,6 +49,7 @@ vi.mock('../../src/modules/fiveM1E/workflow/fiveM1E-workflow.service.js', () => 
 
 import { FiveM1EService } from '../../src/modules/fiveM1E/fiveM1E.service.js';
 import { FIVE_M1E_WORKFLOW_STAGE } from '../../src/modules/fiveM1E/workflow/fiveM1E-workflow.constants.js';
+import { ForbiddenError, NotFoundError } from '../../src/shared/errors/AppError.js';
 
 describe('FiveM1EService', () => {
   const permissionServiceMock = {
@@ -43,6 +59,20 @@ describe('FiveM1EService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    repositoryMock.findParts.mockResolvedValue([]);
+    repositoryMock.findAttachments.mockResolvedValue([]);
+    repositoryMock.findActionItems.mockResolvedValue([]);
+    repositoryMock.findCheckItems.mockResolvedValue([]);
+    repositoryMock.findStatusRemarks.mockResolvedValue([]);
+    repositoryMock.findCCUsers.mockResolvedValue([]);
+    workflowServiceMock.canUserUpdateRecord.mockResolvedValue(true);
+    workflowServiceMock.canUserDeleteRecord.mockResolvedValue(true);
+    attachmentServiceMock.getAttachmentInfo.mockResolvedValue({ ID: 'att-1', ControlNo: '5M-001' });
+    attachmentServiceMock.downloadAttachment.mockResolvedValue({
+      filePath: '/tmp/file.pdf',
+      fileName: 'file.pdf',
+      mimeType: 'application/pdf',
+    });
     workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
       workflowStage: FIVE_M1E_WORKFLOW_STAGE.DRAFT,
       workflowStageCode: 'DRAFT',
@@ -109,6 +139,70 @@ describe('FiveM1EService', () => {
         attribute_06_name: 'Category One',
       }),
     );
+  });
+
+  it('defaults legacy non-null create fields to empty strings for draft saves', async () => {
+    repositoryMock.createWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-TEMP',
+    });
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
+    await service.createApplication(
+      {
+        title: 'Draft 5M1E',
+        vendor_id: 'UNKNOWN',
+        item_id: 'item-1',
+        reviewer: 'reviewer-1',
+        status: 'DRAFT',
+      } as any,
+      'creator-1',
+      [],
+    );
+
+    expect(repositoryMock.createWithApproval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Title: 'Draft 5M1E',
+        SupplierCN: '',
+        VendorID: 'UNKNOWN',
+        ItemID: 'item-1',
+        ImpactDate: '',
+        CreatedBy: 'creator-1',
+        CreateDate: expect.any(Date),
+        ModifiedDate: expect.any(Date),
+      }),
+      'DRAFT',
+      expect.any(Object),
+    );
+  });
+
+  it('hides unrelated records on assigned scope', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-LOCKED',
+        CreatedBy: 'creator-1',
+        approval_status: 'FOR APPROVAL',
+      },
+    ]);
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER,
+      workflowStageCode: '6',
+      workflowStageLabel: 'Awaiting SQE Approver',
+      availableActions: [],
+      nextApproverId: 'assigned-approver',
+      nextApproverName: 'Assigned Approver',
+      ownerMode: 'assigned',
+    });
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const records = await service.getAllApplications(
+      'FOR APPROVAL',
+      { userId: 'outsider-1', roleName: 'USER' },
+      'assigned',
+    );
+
+    expect(records).toEqual([]);
   });
 
   it('returns released records to users with release queue role access even when they are not record participants', async () => {
@@ -316,6 +410,91 @@ describe('FiveM1EService', () => {
     expect(records.map((record) => record.control_no)).toEqual(['5M-001', '5M-002']);
   });
 
+  it('denies detail read to unrelated users without stage or search visibility', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      approval_status: 'FOR APPROVAL',
+    });
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER,
+      workflowStageCode: '7',
+      workflowStageLabel: 'Awaiting Final Approver',
+      availableActions: [],
+      nextApproverId: 'approver-1',
+      nextApproverName: 'Approver One',
+      ownerMode: 'assigned',
+    });
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+
+    await expect(
+      service.getApplication('5M-001', { userId: 'outsider-1', roleName: 'USER' }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(repositoryMock.findParts).not.toHaveBeenCalled();
+  });
+
+  it('allows detail read to stage-visible users', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      approval_status: 'FOR APPROVAL',
+      supplier_name: 'Supplier One',
+    });
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.REVIEWER,
+      workflowStageCode: '4',
+      workflowStageLabel: 'Awaiting Reviewer',
+      availableActions: [],
+      nextApproverId: 'reviewer-1',
+      nextApproverName: 'Reviewer One',
+      ownerMode: 'assigned',
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecEnvi-06-17' && (action === 'view' || action === 'viewlist'),
+    );
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const record = await service.getApplication('5M-001', { userId: 'stage-reader-1', roleName: 'USER' });
+
+    expect(record).toEqual(
+      expect.objectContaining({
+        control_no: '5M-001',
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.REVIEWER,
+      }),
+    );
+  });
+
+  it('allows detail read to search-visible users', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-002',
+      CreatedBy: 'creator-1',
+      approval_status: 'RELEASE',
+    });
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.RELEASED,
+      workflowStageCode: 'RELEASE',
+      workflowStageLabel: 'Released',
+      availableActions: [],
+      nextApproverId: null,
+      nextApproverName: null,
+      ownerMode: 'assigned',
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1ESEARCH-11-01' && (action === 'view' || action === 'viewlist'),
+    );
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const record = await service.getApplication('5M-002', { userId: 'search-user-1', roleName: 'USER' });
+
+    expect(record.control_no).toBe('5M-002');
+  });
+
   it('delegates submit to the workflow service', async () => {
     workflowServiceMock.submitApplication.mockResolvedValue({ success: true });
 
@@ -375,7 +554,7 @@ describe('FiveM1EService', () => {
     repositoryMock.updateApprovalStatus.mockResolvedValue(undefined);
 
     const service = new FiveM1EService();
-    await service.updateApplication('5M-001', { reviewer: 'reviewer-1' } as any, [], 'user-1');
+    await service.updateApplication('5M-001', { reviewer: 'reviewer-1' } as any, [], { userId: 'user-1' });
 
     expect(repositoryMock.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
@@ -387,6 +566,21 @@ describe('FiveM1EService', () => {
     );
   });
 
+  it('denies updates to unrelated users even if route middleware is bypassed', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      approval_status: 'FOR APPROVAL',
+    });
+    workflowServiceMock.canUserUpdateRecord.mockResolvedValue(false);
+
+    const service = new FiveM1EService();
+
+    await expect(
+      service.updateApplication('5M-001', { reviewer: 'reviewer-1' } as any, [], { userId: 'outsider-1' }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(repositoryMock.updateApprovalStatus).not.toHaveBeenCalled();
+  });
+
   it('cleans status remarks and cc rows when deleting an application', async () => {
     repositoryMock.findWithApproval.mockResolvedValue({
       ControlNo: '5M-001',
@@ -394,11 +588,93 @@ describe('FiveM1EService', () => {
     });
 
     const service = new FiveM1EService();
-    await service.deleteApplication('5M-001');
+    await service.deleteApplication('5M-001', { userId: 'creator-1' });
 
     expect(repositoryMock.replaceStatusRemarks).toHaveBeenCalledWith('5M-001', []);
     expect(repositoryMock.replaceCCUsers).toHaveBeenCalledWith('5M-001', []);
     expect(repositoryMock.deleteApproval).toHaveBeenCalledWith('5M-001');
     expect(repositoryMock.deleteByControlNo).toHaveBeenCalledWith('5M-001');
+  });
+
+  it('denies delete to unrelated users even if they hold delete permission upstream', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      approval_status: 'DRAFT',
+    });
+    workflowServiceMock.canUserDeleteRecord.mockResolvedValue(false);
+
+    const service = new FiveM1EService();
+
+    await expect(
+      service.deleteApplication('5M-001', { userId: 'outsider-1', roleName: 'USER' }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(repositoryMock.deleteByControlNo).not.toHaveBeenCalled();
+  });
+
+  it('allows readable actors to download attachments', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      approval_status: 'DRAFT',
+    });
+
+    const service = new FiveM1EService(
+      undefined as any,
+      permissionServiceMock as any,
+      attachmentServiceMock as any,
+    );
+    const result = await service.downloadAttachment('att-1', { userId: 'creator-1', roleName: 'USER' });
+
+    expect(attachmentServiceMock.getAttachmentInfo).toHaveBeenCalledWith('5m1e-main', 'att-1');
+    expect(attachmentServiceMock.downloadAttachment).toHaveBeenCalledWith('5m1e-main', 'att-1');
+    expect(result).toEqual(
+      expect.objectContaining({
+        fileName: 'file.pdf',
+      }),
+    );
+  });
+
+  it('denies attachment download to unrelated users', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      approval_status: 'FOR APPROVAL',
+    });
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER,
+      workflowStageCode: '7',
+      workflowStageLabel: 'Awaiting Final Approver',
+      availableActions: [],
+      nextApproverId: 'approver-1',
+      nextApproverName: 'Approver One',
+      ownerMode: 'assigned',
+    });
+
+    const service = new FiveM1EService(
+      undefined as any,
+      permissionServiceMock as any,
+      attachmentServiceMock as any,
+    );
+
+    await expect(
+      service.downloadAttachment('att-1', { userId: 'outsider-1', roleName: 'USER' }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(attachmentServiceMock.downloadAttachment).not.toHaveBeenCalled();
+  });
+
+  it('returns not found for missing attachments', async () => {
+    attachmentServiceMock.getAttachmentInfo.mockRejectedValue(new NotFoundError('Attachment not found'));
+
+    const service = new FiveM1EService(
+      undefined as any,
+      permissionServiceMock as any,
+      attachmentServiceMock as any,
+    );
+
+    await expect(
+      service.downloadAttachment('missing-att', { userId: 'creator-1', roleName: 'USER' }),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });

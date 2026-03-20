@@ -3,6 +3,7 @@ import { ogiRepository } from './ogi.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 const OGI_DB_STATUS = {
     DRAFT: 'DR',
     SUBMITTED: 'SB',
@@ -41,20 +42,7 @@ export class OgiService {
         return record.incharge_id === actor.userId;
     }
     async generateSequence(siteId) {
-        const d = new Date();
-        const year = d.getFullYear().toString().slice(-2);
-        const month = (d.getMonth() + 1).toString().padStart(2, '0');
-        const prefix = `OGI-${siteId}-${year}-${month}-`;
-        const lastSeq = await ogiRepository.getNextSequence(prefix);
-        let nextNum = 1;
-        if (lastSeq) {
-            const parts = lastSeq.split('-');
-            const numPart = parseInt(parts[parts.length - 1], 10);
-            if (!isNaN(numPart)) {
-                nextNum = numPart + 1;
-            }
-        }
-        return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+        return controlNumberService.buildOgiDraft({ siteId });
     }
     async getAllRecords(actor, scope = 'history') {
         const records = await ogiRepository.findAllDetailed();
@@ -128,7 +116,7 @@ export class OgiService {
         const dbStatus = mapOgiStatusToDB(payload.status || 'DRAFT');
         const dbPayload = {
             ogi_id: recordId,
-            control_no: payload.controlNo,
+            control_no: '',
             upload_date: now,
             site_id: payload.siteId,
             supplier_id: payload.supplierId,
@@ -141,8 +129,15 @@ export class OgiService {
             updateby: effectiveUserId
         };
         return await ogiRepository.executeTransaction(async (trx) => {
+            const controlNo = await controlNumberService.buildOgiDraft({
+                siteId: payload.siteId,
+                date: now,
+            }, trx);
             // 1. Insert Main Record
-            await trx.insertInto('OGI').values(dbPayload).execute();
+            await trx.insertInto('OGI').values({
+                ...dbPayload,
+                control_no: controlNo,
+            }).execute();
             // 2. Insert Lots
             if (payload.lots && payload.lots.length > 0) {
                 for (const lot of payload.lots) {
@@ -177,7 +172,16 @@ export class OgiService {
                     }).execute();
                 }
             }
-            return { success: true, data: { id: recordId }, message: 'OGI Record created successfully' };
+            return {
+                success: true,
+                data: {
+                    id: recordId,
+                    recordId,
+                    controlNo,
+                    controlNoState: controlNumberService.getControlNoState(controlNo),
+                },
+                message: 'OGI Record created successfully'
+            };
         });
     }
     async updateRecord(id, payload, actor, files = []) {
@@ -211,6 +215,13 @@ export class OgiService {
             }
         }
         return await ogiRepository.executeTransaction(async (trx) => {
+            if (dbUpdates.request_status === 'SB' && existing.record.request_status !== 'SB') {
+                dbUpdates.control_no = await controlNumberService.finalizeOgi({
+                    siteId: dbUpdates.site_id || existing.record.site_id,
+                    siteCode: existing.record.site_code,
+                    date: now,
+                }, trx);
+            }
             // 1. Update Base Record
             if (Object.keys(dbUpdates).length > 2) {
                 await trx.updateTable('OGI')
@@ -254,7 +265,17 @@ export class OgiService {
                     }).execute();
                 }
             }
-            return { success: true, data: { id }, message: 'OGI Record updated successfully' };
+            const controlNo = String(dbUpdates.control_no || existing.record.control_no || '');
+            return {
+                success: true,
+                data: {
+                    id,
+                    recordId: existing.record.ogi_id,
+                    controlNo,
+                    controlNoState: controlNumberService.getControlNoState(controlNo),
+                },
+                message: 'OGI Record updated successfully'
+            };
         });
     }
     /**
@@ -270,9 +291,16 @@ export class OgiService {
             throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
         }
         const now = new Date();
+        let controlNo = String(existing.record.control_no || '');
         return await ogiRepository.executeTransaction(async (trx) => {
+            controlNo = await controlNumberService.finalizeOgi({
+                siteId: existing.record.site_id,
+                siteCode: existing.record.site_code,
+                date: now,
+            }, trx);
             await trx.updateTable('OGI')
                 .set({
+                control_no: controlNo,
                 request_status: OGI_DB_STATUS.SUBMITTED,
                 submit_date: now,
                 last_update: now,
@@ -280,7 +308,16 @@ export class OgiService {
             })
                 .where('ogi_id', '=', existing.record.ogi_id)
                 .execute();
-            return { success: true, data: { id: existing.record.ogi_id }, message: 'OGI Record submitted successfully' };
+            return {
+                success: true,
+                data: {
+                    id: existing.record.ogi_id,
+                    recordId: existing.record.ogi_id,
+                    controlNo,
+                    controlNoState: controlNumberService.getControlNoState(controlNo),
+                },
+                message: 'OGI Record submitted successfully'
+            };
         });
     }
     /**

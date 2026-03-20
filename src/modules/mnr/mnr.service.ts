@@ -10,6 +10,7 @@ import {
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 
 export class MnrService {
   private isAdminActor(actor?: MnrWorkflowActorContext) {
@@ -70,18 +71,6 @@ export class MnrService {
     }
 
     return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
-  }
-
-  /**
-   * Helper: Generate Control No
-   */
-  private async generateControlNo(): Promise<string> {
-    const date = new Date();
-    const year = date.getFullYear().toString().slice(-2);
-    // In production, this should query the DB for the MAX(control_no) and increment it.
-    // Keeping legacy logic for now: random 3-digit.
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `MNR-${year}-${random}`;
   }
 
   /**
@@ -509,7 +498,6 @@ export class MnrService {
 
   async createRecord(payload: MNRCreationInput, userId: string, files: any[] = []) {
     const mnrId = uuidv4();
-    const controlNo = await this.generateControlNo();
     const now = new Date();
 
     // Extract main details from the standardized payload (snake_case _id keys)
@@ -552,7 +540,7 @@ export class MnrService {
 
     const dbLotsPayload = {
       mnr_id: mnrId,
-      control_no: controlNo,
+      control_no: '',
       request_status: dbStatus,
       date_created: now,
       
@@ -608,6 +596,14 @@ export class MnrService {
     };
 
     return await mnrRepository.executeTransaction(async (trx) => {
+      const controlNo = await controlNumberService.buildMnrDraft(
+        {
+          siteId: main.mfgSites,
+          date: now,
+        },
+        trx,
+      );
+      dbLotsPayload.control_no = controlNo;
       dbLotsPayload.attention_id = await this.resolveAttentionId(
         trx,
         dbLotsPayload.attention_id,
@@ -774,7 +770,17 @@ export class MnrService {
         }
       }
 
-      return { success: true, mnr_id: mnrId, message: 'Record created successfully' };
+      return {
+        success: true,
+        data: {
+          id: mnrId,
+          recordId: mnrId,
+          controlNo,
+          controlNoState: controlNumberService.getControlNoState(controlNo),
+        },
+        mnr_id: mnrId,
+        message: 'Record created successfully'
+      };
     });
   }
 

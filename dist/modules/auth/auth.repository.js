@@ -5,8 +5,7 @@ import { SQMP_STAGE_CODE } from '../sqmp/workflow/workflow.constants.js';
 import { NPI_STAGE_DEFINITIONS, NPI_WORKFLOW_STAGE } from '../npi/workflow/npi-workflow.constants.js';
 import { MNR_STAGE_TO_DB_STATUS, MNR_WORKFLOW_STAGE } from '../mnr/workflow/mnr-workflow.constants.js';
 import { QMQA_LEGACY_STAGE_CODE, QMQA_WORKFLOW_STAGE } from '../qmqa/workflow/qmqa-workflow.constants.js';
-import { buildFiveM1EWorkflowMetadata } from '../fiveM1E/workflow/fiveM1E-workflow.utils.js';
-import { FIVE_M1E_WORKFLOW_STAGE } from '../fiveM1E/workflow/fiveM1E-workflow.constants.js';
+import { resolveAssignedFiveM1EForms } from './fiveM1E-assignment-access.js';
 export class AuthRepository extends BaseRepository {
     constructor() {
         super('USERS');
@@ -907,61 +906,9 @@ export class AuthRepository extends BaseRepository {
         OR approval.QACheckerID = ${userId}
     `.execute(db);
         for (const row of rows.rows) {
-            const metadata = buildFiveM1EWorkflowMetadata(row, { actorUserId: userId });
-            const stage = metadata.workflowStage;
-            const isSupplierOwner = String(row.created_by || '') === userId;
-            const isStageOwner = metadata.nextApproverId === userId;
-            const hasWorkflowActions = metadata.availableActions.length > 0;
-            if (!hasWorkflowActions &&
-                !((stage === FIVE_M1E_WORKFLOW_STAGE.DRAFT && isSupplierOwner) ||
-                    (stage === FIVE_M1E_WORKFLOW_STAGE.RAR && isSupplierOwner) ||
-                    (stage === FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE && isSupplierOwner) ||
-                    (stage === FIVE_M1E_WORKFLOW_STAGE.APPROVED && isStageOwner) ||
-                    (stage === FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION && isStageOwner) ||
-                    (stage === FIVE_M1E_WORKFLOW_STAGE.RELEASED && isStageOwner))) {
-                continue;
-            }
-            switch (stage) {
-                case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
-                case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
-                    accessibleForms.add('5M1ESupplier_Submition');
-                    break;
-                case FIVE_M1E_WORKFLOW_STAGE.RAR:
-                    accessibleForms.add('5M1ERAR-06-17');
-                    accessibleForms.add('5M1ESupplier_Submition');
-                    break;
-                case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
-                case FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER:
-                    accessibleForms.add('5M1EApprovalSecDes-06-17');
-                    break;
-                case FIVE_M1E_WORKFLOW_STAGE.REVIEWER:
-                case FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC:
-                case FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER:
-                case FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER:
-                case FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER:
-                case FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER:
-                case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
-                case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
-                    accessibleForms.add('5M1EApprovalSecEnvi-06-17');
-                    accessibleForms.add('5M1EApprovalSecQA-06-17');
-                    break;
-                case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
-                    accessibleForms.add('5M1ERELEASE-06-17');
-                    accessibleForms.add('5M1EApprovalSecSQE-06-17');
-                    accessibleForms.add('5M1EJudgementSec-06-17');
-                    break;
-                case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
-                case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
-                    accessibleForms.add('5M1ERELEASE-06-17');
-                    accessibleForms.add('5M1EApprovalSecSQE-06-17');
-                    accessibleForms.add('5M1EJudgementSec-06-17');
-                    break;
-                case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
-                    accessibleForms.add('5M1ERELEASE-06-17');
-                    accessibleForms.add('5M1EJudgementSec-06-17');
-                    break;
-                default:
-                    break;
+            const assignedForms = resolveAssignedFiveM1EForms(row, userId);
+            for (const formId of assignedForms) {
+                accessibleForms.add(formId);
             }
         }
         return Array.from(accessibleForms);

@@ -1,4 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const controlNumberServiceMock = vi.hoisted(() => ({
+  finalizeNpi: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
+
+vi.mock('../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
+}));
+
 import { NpiWorkflowService } from '../../src/modules/npi/services/NpiWorkflowService.js';
 
 function createTransactionMock() {
@@ -19,7 +29,10 @@ function createTransactionMock() {
 function createRecord(overrides: Record<string, unknown> = {}) {
   return {
     npi_lot_id: 'npi-1',
+    control_no: 'DRF-2026-3-1-SITE',
     request_status: 'DR',
+    site_id: 'site-1',
+    site_code: 'SITE',
     inspector_id: 'originator-1',
     checker_id: 'checker-1',
     approver_id: 'approver-1',
@@ -35,6 +48,8 @@ describe('NpiWorkflowService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    controlNumberServiceMock.finalizeNpi.mockResolvedValue('IQC-2026-3-1-SITE');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('final');
   });
 
   it('submits draft/rejected records to checker stage', async () => {
@@ -50,6 +65,7 @@ describe('NpiWorkflowService', () => {
     expect(tx.updateTable).toHaveBeenCalledWith('NPI_LOTS');
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
+        control_no: 'IQC-2026-3-1-SITE',
         request_status: 'SU',
         updateby: 'originator-1',
       }),
@@ -57,6 +73,8 @@ describe('NpiWorkflowService', () => {
     expect(result.data).toEqual({
       id: 'npi-1',
       status: 'SU',
+      controlNo: 'IQC-2026-3-1-SITE',
+      controlNoState: 'final',
     });
   });
 
@@ -68,7 +86,7 @@ describe('NpiWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new NpiWorkflowService(repository as any);
-    const result = await service.checkRecord('npi-1', 'checker-1', 'looks good');
+    const result = await service.checkRecord('npi-1', 'checker-1', undefined, 'looks good');
 
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -91,7 +109,7 @@ describe('NpiWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new NpiWorkflowService(repository as any);
-    const result = await service.approveRecord('npi-1', 'approver-1', 'approved');
+    const result = await service.approveRecord('npi-1', 'approver-1', undefined, 'approved');
 
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -114,7 +132,7 @@ describe('NpiWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new NpiWorkflowService(repository as any);
-    const result = await service.rejectRecord('npi-1', 'checker-1', 'defect found');
+    const result = await service.rejectRecord('npi-1', 'checker-1', undefined, 'defect found');
 
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({

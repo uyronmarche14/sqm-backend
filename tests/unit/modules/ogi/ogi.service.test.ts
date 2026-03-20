@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const controlNumberServiceMock = vi.hoisted(() => ({
+  finalizeOgi: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
+
 const ogiRepositoryMock = vi.hoisted(() => ({
   findByIdDetailed: vi.fn(),
   findAllDetailed: vi.fn(),
@@ -13,11 +18,17 @@ vi.mock('../../../../src/modules/ogi/ogi.repository.js', () => ({
   ogiRepository: ogiRepositoryMock,
 }));
 
+vi.mock('../../../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
+}));
+
 import { OgiService } from '../../../../src/modules/ogi/ogi.service.js';
 
 describe('OgiService legacy workflow alignment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    controlNumberServiceMock.finalizeOgi.mockResolvedValue('OGI-2026-3-1-SITE');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('final');
   });
 
   it('maps SB database records back to SUBMITTED in list reads', async () => {
@@ -45,6 +56,9 @@ describe('OgiService legacy workflow alignment', () => {
     ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
       record: {
         ogi_id: 'ogi-1',
+        control_no: 'DRF-2026-3-1-SITE',
+        site_id: 'site-1',
+        site_code: 'SITE',
         request_status: 'DR',
       },
     });
@@ -68,7 +82,10 @@ describe('OgiService legacy workflow alignment', () => {
     const service = new OgiService();
     const result = await service.submitRecord('ogi-1', 'user-1');
 
-    expect(updatedValues?.request_status).toBe('SB');
+    expect(updatedValues).toEqual(expect.objectContaining({
+      control_no: 'OGI-2026-3-1-SITE',
+      request_status: 'SB',
+    }));
     expect(result.message).toBe('OGI Record submitted successfully');
   });
 });

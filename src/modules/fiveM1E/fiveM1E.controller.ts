@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { fiveM1EService } from './fiveM1E.service.js';
 import { successResponse } from '../../shared/utils/api-response.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class FiveM1EController {
@@ -89,15 +88,15 @@ export class FiveM1EController {
     try {
       const id = req.params.id as string;
       const files = (req as any).files || [];
-      const userId = req.user!.userId;
+      const actor = this.getActor(req);
       
-      console.log(`[5M1E Controller] Update [${id}] - ${files.length} file(s) received for user ${userId}`);
+      console.log(`[5M1E Controller] Update [${id}] - ${files.length} file(s) received for user ${actor.userId}`);
       
       // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
       console.log(`🚀 [BACKEND E2E VERIFICATION] Received Update Payload for ${id}:`);
       console.log(JSON.stringify(req.body, null, 2));
 
-      const result = await fiveM1EService.updateApplication(id, req.body, files, userId);
+      const result = await fiveM1EService.updateApplication(id, req.body, files, actor);
       
       res.status(200).json(successResponse(result.data, result.message));
     } catch (error) {
@@ -111,7 +110,7 @@ export class FiveM1EController {
   async deleteApplication(req: Request, res: Response, next: NextFunction) {
     try {
       const id = req.params.id as string;
-      const result = await fiveM1EService.deleteApplication(id);
+      const result = await fiveM1EService.deleteApplication(id, this.getActor(req));
       res.status(200).json(successResponse({ id }, result.message));
     } catch (error) {
       next(error);
@@ -191,7 +190,10 @@ export class FiveM1EController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = req.params;
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('5m1e-main', attachmentId as string);
+      const { filePath, fileName, mimeType } = await fiveM1EService.downloadAttachment(
+        attachmentId as string,
+        this.getActor(req),
+      );
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

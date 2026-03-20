@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const saveResponseContentMock = vi.hoisted(() => vi.fn());
+const controlNumberServiceMock = vi.hoisted(() => ({
+  finalizeMnr: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
 
 vi.mock('../../src/modules/mnr/mnr.service.js', () => ({
   mnrService: {
     saveResponseContent: saveResponseContentMock,
   },
+}));
+
+vi.mock('../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
 }));
 
 import { MnrWorkflowService } from '../../src/modules/mnr/workflow/mnr-workflow.service.js';
@@ -26,7 +34,12 @@ function createTransactionMock() {
 function createRecord(overrides: Record<string, unknown> = {}) {
   return {
     mnr_id: 'mnr-1',
+    control_no: 'DRF-2026-3-1-SITE',
     request_status: 'DR',
+    site_id: 'site-1',
+    site_code: 'SITE',
+    defectcategory_id: 'defect-cat-1',
+    defectcategory_acronym: 'MNR',
     encoder_id: 'encoder-1',
     issuer_id: 'issuer-1',
     checker_id: 'checker-1',
@@ -43,6 +56,8 @@ describe('MnrWorkflowService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    controlNumberServiceMock.finalizeMnr.mockResolvedValue('MNR-2026-3-1-SITE');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('final');
     saveResponseContentMock.mockResolvedValue({
       success: true,
       data: { id: 'mnr-1' },
@@ -56,11 +71,12 @@ describe('MnrWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new MnrWorkflowService(repository as any);
-    const result = await service.submitMain('mnr-1', 'issuer-1', 'submit');
+    const result = await service.submitMain('mnr-1', 'issuer-1', undefined, 'submit');
 
     expect(tx.updateTable).toHaveBeenCalledWith('MNR_LOTS');
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
+        control_no: 'MNR-2026-3-1-SITE',
         request_status: 'SU',
         issuer_remarks: 'submit',
         updateby: 'issuer-1',
@@ -69,6 +85,8 @@ describe('MnrWorkflowService', () => {
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
       status: 'SU',
+      controlNo: 'MNR-2026-3-1-SITE',
+      controlNoState: 'final',
       workflowStageCode: '3',
     }));
   });
@@ -81,7 +99,7 @@ describe('MnrWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new MnrWorkflowService(repository as any);
-    const result = await service.checkMain('mnr-1', 'checker-1', 'checked');
+    const result = await service.checkMain('mnr-1', 'checker-1', undefined, 'checked');
 
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -116,7 +134,7 @@ describe('MnrWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new MnrWorkflowService(repository as any);
-    const result = await service.approveMain('mnr-1', 'approver-1', 'approved');
+    const result = await service.approveMain('mnr-1', 'approver-1', undefined, 'approved');
 
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -140,7 +158,7 @@ describe('MnrWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new MnrWorkflowService(repository as any);
-    const result = await service.issueMain('mnr-1', 'issuer-1', 'issued');
+    const result = await service.issueMain('mnr-1', 'issuer-1', undefined, 'issued');
 
     expect(tx.set).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -162,7 +180,7 @@ describe('MnrWorkflowService', () => {
     });
 
     const service = new MnrWorkflowService(repository as any);
-    const result = await service.saveInitialResponse('mnr-1', 'supplier-attn-1', { d1: 'team' });
+    const result = await service.saveInitialResponse('mnr-1', 'supplier-attn-1', undefined, { d1: 'team' });
 
     expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, 'supplier-attn-1');
     expect(result.data).toEqual(expect.objectContaining({

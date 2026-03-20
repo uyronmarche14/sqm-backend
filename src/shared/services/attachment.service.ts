@@ -8,6 +8,8 @@ export interface AttachmentConfig {
   idColumn: string;
   fileNameColumn: string;
   uploadPath: string;
+  extensionColumn?: string | null;
+  pathColumn?: string;
   subFolder?: string;  // NEW: Optional subfolder for organization
 }
 
@@ -59,8 +61,16 @@ export class AttachmentService {
       throw new Error(`Unknown module type: ${moduleType}`);
     }
 
+    const columns = [config.fileNameColumn];
+    if (config.extensionColumn !== null) {
+      columns.push(config.extensionColumn || 'file_extension');
+    }
+    if (config.pathColumn) {
+      columns.push(config.pathColumn);
+    }
+
     const attachment = await db.selectFrom(config.tableName as any)
-      .select([config.fileNameColumn, 'file_extension'])
+      .select(columns as any)
       .where(config.idColumn as any, '=', attachmentId)
       .executeTakeFirst();
 
@@ -69,6 +79,14 @@ export class AttachmentService {
     }
 
     const fileName = attachment[config.fileNameColumn as keyof typeof attachment] as string;
+    const storedPath = config.pathColumn
+      ? attachment[config.pathColumn as keyof typeof attachment] as string | null | undefined
+      : undefined;
+    const extensionColumn = config.extensionColumn === undefined ? 'file_extension' : config.extensionColumn;
+    const extension =
+      extensionColumn
+        ? attachment[extensionColumn as keyof typeof attachment] as string | null | undefined
+        : path.extname(fileName).replace('.', '');
     
     // Try new structure first (with subfolder)
     const newPath = config.subFolder 
@@ -78,31 +96,35 @@ export class AttachmentService {
     // Fallback to old structure (flat)
     const oldPath = path.join(config.uploadPath, fileName);
 
-    let filePath: string;
+    const candidatePaths = [
+      storedPath ? path.resolve(storedPath) : null,
+      newPath,
+      oldPath,
+    ].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+
+    let filePath: string | undefined;
     let stats: any;
 
-    try {
-      // Try new structure first
-      await fs.access(newPath);
-      stats = await fs.stat(newPath);
-      filePath = newPath;
-      console.log(`📁 [Attachment] Found in new structure: ${newPath}`);
-    } catch {
-      // Fallback to old structure
+    for (const candidatePath of candidatePaths) {
       try {
-        await fs.access(oldPath);
-        stats = await fs.stat(oldPath);
-        filePath = oldPath;
-        console.log(`📁 [Attachment] Found in old structure (fallback): ${oldPath}`);
+        await fs.access(candidatePath);
+        stats = await fs.stat(candidatePath);
+        filePath = candidatePath;
+        console.log(`📁 [Attachment] Found attachment on disk: ${candidatePath}`);
+        break;
       } catch {
-        throw new NotFoundError('File not found on disk');
+        // Try next candidate path.
       }
+    }
+
+    if (!filePath) {
+      throw new NotFoundError('File not found on disk');
     }
 
     return {
       filePath: path.resolve(filePath),
       fileName,
-      mimeType: this.getMimeType(attachment.file_extension as string),
+      mimeType: this.getMimeType(extension || ''),
       fileSize: stats.size
     };
   }
@@ -262,6 +284,15 @@ export class AttachmentService {
       fileNameColumn: 'file_name',
       uploadPath: './uploads/ogi',
       subFolder: 'attachments'
+    });
+
+    this.configs.set('5m1e-main', {
+      tableName: 'TBL_5M1E_Attachment',
+      idColumn: 'ID',
+      fileNameColumn: 'FileName',
+      pathColumn: 'Attribute1',
+      extensionColumn: null,
+      uploadPath: './uploads/5m1e'
     });
 
     // ========================================

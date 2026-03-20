@@ -6,6 +6,7 @@ import { NotFoundError, ForbiddenError } from '../../../shared/errors/AppError.j
 import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 import { SQMP_STAGE_CODE } from '../workflow/workflow.constants.js';
 import { buildSqmpWorkflowMetadata } from '../workflow/workflow.utils.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import {
   assertWorkflowRecordAccess,
   filterWorkflowRecordsByScope,
@@ -104,13 +105,6 @@ export class MainSqmpService {
     }
   }
 
-  private async generateControlNo(fiscalYear?: number, semester?: string | number): Promise<string> {
-    const fy = fiscalYear || new Date().getFullYear();
-    const sem = semester?.toString().toUpperCase() || '1ST';
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    return `SQMP-${fy}-${sem}-C${random}`;
-  }
-
   private parseDate(d?: Date | string | null): Date | null {
       if (!d || d === '') return null;
       const parsed = new Date(d);
@@ -130,6 +124,29 @@ export class MainSqmpService {
   private sanitizeUuid(val?: string | null): string | null {
       if (!val || val.trim() === '') return null;
       return val;
+  }
+
+  async previewControlNo(query: {
+    fiscalYear: number;
+    siteId?: string;
+    siteCode?: string;
+    semester: string | number;
+    series?: number;
+    revision?: number;
+  }) {
+    const controlNo = await controlNumberService.previewSqmp({
+      fiscalYear: query.fiscalYear,
+      siteId: query.siteId,
+      siteCode: query.siteCode,
+      semester: query.semester,
+      series: query.series,
+      revision: query.revision,
+    });
+
+    return {
+      controlNo,
+      controlNoState: controlNumberService.getControlNoState(controlNo),
+    };
   }
 
   private async resolveAttentionId(
@@ -244,9 +261,15 @@ export class MainSqmpService {
   async createRecord(payload: SQMPCreationInput, userId: string, files: any[] = []) {
     const sqmpId = uuidv4();
     const now = new Date();
-    const controlNo = await this.generateControlNo(payload.fiscal_year, payload.semester);
 
     return await sqmpRepository.executeTransaction(async (trx) => {
+      const controlNo = await controlNumberService.previewSqmp({
+        fiscalYear: payload.fiscal_year,
+        siteId: payload.site_id,
+        semester: payload.semester,
+        series: (payload as any).control_series,
+        revision: payload.revision,
+      }, trx);
       const resolvedAttentionId = await this.resolveAttentionId(trx, payload.attention_id);
 
       const dbPayload = {
@@ -326,7 +349,16 @@ export class MainSqmpService {
         }
       }
 
-      return { success: true, sqmp_id: sqmpId, message: 'SQM Plan created successfully' };
+      return {
+        success: true,
+        data: {
+          id: sqmpId,
+          recordId: sqmpId,
+          controlNo,
+          controlNoState: controlNumberService.getControlNoState(controlNo),
+        },
+        message: 'SQM Plan created successfully',
+      };
     });
   }
 
@@ -374,6 +406,22 @@ export class MainSqmpService {
       const recordId = record.sqmp_id;
       if (payload.attention_id !== undefined) {
         dbUpdates.attention_id = await this.resolveAttentionId(trx, payload.attention_id);
+      }
+
+      if (
+        payload.site_id !== undefined ||
+        payload.fiscal_year !== undefined ||
+        payload.semester !== undefined ||
+        payload.revision !== undefined ||
+        (payload as any).control_series !== undefined
+      ) {
+        dbUpdates.control_no = await controlNumberService.previewSqmp({
+          fiscalYear: payload.fiscal_year ?? record.fiscal_year,
+          siteId: payload.site_id ?? record.site_id,
+          semester: payload.semester ?? record.semester,
+          series: (payload as any).control_series,
+          revision: payload.revision ?? record.revision,
+        }, trx);
       }
 
       if (Object.keys(dbUpdates).length > 2) {
@@ -431,7 +479,16 @@ export class MainSqmpService {
         }
       }
 
-      return { success: true, data: { id: recordId }, message: 'SQM Plan updated successfully' };
+      return {
+        success: true,
+        data: {
+          id: recordId,
+          recordId,
+          controlNo: dbUpdates.control_no || record.control_no,
+          controlNoState: controlNumberService.getControlNoState(dbUpdates.control_no || record.control_no),
+        },
+        message: 'SQM Plan updated successfully',
+      };
     });
   }
 

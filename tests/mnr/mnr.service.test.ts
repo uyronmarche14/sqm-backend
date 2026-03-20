@@ -77,7 +77,7 @@ describe('MnrService workflow metadata hydration', () => {
       responseAttachments: [],
     });
 
-    const result = await mnrService.getRecordById('mnr-1', 'checker-1');
+    const result = await mnrService.getRecordById('mnr-1', { userId: 'checker-1' });
 
     expect(result.workflow).toEqual(expect.objectContaining({
       workflowStage: 'CHECKER',
@@ -136,7 +136,7 @@ describe('MnrService workflow metadata hydration', () => {
       },
     ]);
 
-    const result = await mnrService.getAllRecords('SUBMITTED', 'checker-1');
+    const result = await mnrService.getAllRecords({ status: 'SUBMITTED' }, { userId: 'checker-1' });
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual(expect.objectContaining({
@@ -201,7 +201,10 @@ describe('MnrService workflow metadata hydration', () => {
       },
     ]);
 
-    const result = await mnrService.getAllRecords('RESPONSE_AWAITING_CHECKED', 'cycle2-checker');
+    const result = await mnrService.getAllRecords(
+      { status: 'RESPONSE_AWAITING_CHECKED' },
+      { userId: 'cycle2-checker' },
+    );
 
     expect(result[0]).toEqual(expect.objectContaining({
       status: 'RESPONSE_AWAITING_CHECKED',
@@ -258,7 +261,10 @@ describe('MnrService workflow metadata hydration', () => {
       },
     ]);
 
-    const result = await mnrService.getAllRecords('RESPONSE_RECEIVED', 'issuer-1');
+    const result = await mnrService.getAllRecords(
+      { status: 'RESPONSE_RECEIVED' },
+      { userId: 'issuer-1' },
+    );
 
     expect(result[0]).toEqual(expect.objectContaining({
       status: 'RESPONSE_RECEIVED',
@@ -313,7 +319,10 @@ describe('MnrService workflow metadata hydration', () => {
       },
     ]);
 
-    const result = await mnrService.getAllRecords('ISSUED', 'supplier-user-1');
+    const result = await mnrService.getAllRecords(
+      { status: 'ISSUED' },
+      { userId: 'supplier-user-1' },
+    );
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual(expect.objectContaining({

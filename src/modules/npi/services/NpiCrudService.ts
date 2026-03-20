@@ -37,6 +37,7 @@ import {
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 export class NpiCrudService implements INpiService {
   constructor(
@@ -182,23 +183,22 @@ export class NpiCrudService implements INpiService {
     
     const defaultInspector = await this.repository.findDefaultInspector();
     
-    // Generate control number if not provided
-    let controlNo = payload.controlNo;
-    if (!controlNo && payload.siteId) {
-      controlNo = await this.generateSequence(payload.siteId);
-    } else if (!controlNo) {
-      controlNo = `NPI-DRAFT-${Date.now()}`;
-    }
-
-    const dbPayload = this.buildCreatePayload(payload, {
-      npiId,
-      controlNo,
-      now,
-      effectiveUserId,
-      defaultInspector
-    });
-
     return await this.repository.executeTransaction(async (trx) => {
+      const controlNo = await controlNumberService.buildNpiDraft(
+        {
+          siteId: payload.siteId,
+          date: now,
+        },
+        trx,
+      );
+      const dbPayload = this.buildCreatePayload(payload, {
+        npiId,
+        controlNo,
+        now,
+        effectiveUserId,
+        defaultInspector
+      });
+
       // 1. Insert Main Record
       await trx.insertInto('NPI_LOTS').values(dbPayload).execute();
 
@@ -213,7 +213,12 @@ export class NpiCrudService implements INpiService {
 
       return { 
         success: true, 
-        data: { id: npiId }, 
+        data: {
+          id: npiId,
+          recordId: npiId,
+          controlNo,
+          controlNoState: controlNumberService.getControlNoState(controlNo),
+        }, 
         message: 'Record created successfully' 
       };
     });
@@ -341,23 +346,7 @@ export class NpiCrudService implements INpiService {
    * Generate sequence number for control_no
    */
   async generateSequence(siteId: string): Promise<string> {
-    const d = new Date();
-    const year = d.getFullYear().toString().slice(-2);
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const prefix = `NPI-${siteId}-${year}-${month}-`;
-
-    const lastSeq = await this.repository.getNextSequence(prefix);
-    let nextNum = 1;
-    
-    if (lastSeq) {
-      const parts = lastSeq.split('-');
-      const numPart = parseInt(parts[parts.length - 1], 10);
-      if (!isNaN(numPart)) {
-        nextNum = numPart + 1;
-      }
-    }
-    
-    return `${prefix}${nextNum.toString().padStart(4, '0')}`;
+    return controlNumberService.buildNpiDraft({ siteId });
   }
 
   // ============================================================================

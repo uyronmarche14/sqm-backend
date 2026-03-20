@@ -4,6 +4,7 @@ import { NotFoundError } from '../../shared/errors/AppError.js';
 import { buildSqprWorkflowMetadata, getSqprStageOwnerId, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, normalizeSqprWorkflowStage, } from './workflow/sqpr-workflow.utils.js';
 import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 export class SqprService {
     isAdminActor(actor) {
         return (actor?.roleName || '').toUpperCase().includes('ADMIN');
@@ -29,18 +30,6 @@ export class SqprService {
             return true;
         }
         return record.incharge_id === actor.userId;
-    }
-    /**
-     * Legacy SQPR draft control numbers stay in DRF form until submit.
-     */
-    buildLegacyDraftControlNo(fiscalYear, reportType, month, siteCode) {
-        const normalizedSiteCode = String(siteCode || '').trim().toUpperCase();
-        const controlPeriod = reportType === 1
-            ? String(month || 1)
-            : Number(month || 1) === 1
-                ? 'A'
-                : 'B';
-        return `DRF-${fiscalYear}-${controlPeriod}-${normalizedSiteCode}`;
     }
     /**
      * Safe Date Parser
@@ -105,7 +94,12 @@ export class SqprService {
         if (!site?.site_code) {
             throw new NotFoundError('Manufacturing site not found');
         }
-        const controlNo = this.buildLegacyDraftControlNo(payload.fiscal_year, payload.report_type, payload.month, site.site_code);
+        const controlNo = controlNumberService.buildSqprDraft({
+            fiscalYear: payload.fiscal_year,
+            reportType: payload.report_type,
+            month: payload.month,
+            siteCode: site.site_code,
+        });
         const dbPayload = {
             sqpr_id: sqprId,
             control_no: controlNo,

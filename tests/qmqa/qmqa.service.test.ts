@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const controlNumberServiceMock = vi.hoisted(() => ({
+  buildQmqaAuditPlan: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
+
 const repositoryMock = vi.hoisted(() => ({
   findAllRecordsDetailed: vi.fn(),
   findRecordByIdDetailed: vi.fn(),
@@ -19,6 +24,10 @@ vi.mock('../../src/modules/qmqa/qmqa.repository.js', () => ({
   qmqaRepository: repositoryMock,
 }));
 
+vi.mock('../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
+}));
+
 import { qmqaService } from '../../src/modules/qmqa/qmqa.service.js';
 
 describe('QmqaService workflow metadata hydration', () => {
@@ -33,6 +42,8 @@ describe('QmqaService workflow metadata hydration', () => {
     repositoryMock.findResponseInitialAttachments.mockResolvedValue([]);
     repositoryMock.findResponseFinalAttachments.mockResolvedValue([]);
     repositoryMock.findResponseVerificationAttachments.mockResolvedValue([]);
+    controlNumberServiceMock.buildQmqaAuditPlan.mockResolvedValue('AUDIT-2026-3-1-SITE');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('final');
   });
 
   it('includes workflow metadata on detail reads', async () => {
@@ -122,6 +133,7 @@ describe('QmqaService workflow metadata hydration', () => {
       actorContext: {
         userId: 'checker-1',
         supplierIds: [],
+        roleName: null,
       },
     }));
     expect(result[0]).toEqual(expect.objectContaining({
@@ -227,6 +239,9 @@ describe('QmqaService workflow metadata hydration', () => {
 
   it('retries schedule control number generation after a duplicate-key collision', async () => {
     const insertedControlNos: string[] = [];
+    controlNumberServiceMock.buildQmqaAuditPlan
+      .mockResolvedValueOnce('AUD-2026-3-2-SITE')
+      .mockResolvedValueOnce('AUD-2026-3-3-SITE');
 
     repositoryMock.executeTransaction
       .mockImplementationOnce(async (callback: any) => callback({
@@ -278,10 +293,10 @@ describe('QmqaService workflow metadata hydration', () => {
       remarks: 'Plan remarks',
     } as any, 'admin-1');
 
-    expect(insertedControlNos).toEqual(['P-2026-0002', 'P-2026-0003']);
+    expect(insertedControlNos).toEqual(['AUD-2026-3-2-SITE', 'AUD-2026-3-3-SITE']);
     expect(result).toEqual(expect.objectContaining({
       success: true,
-      controlNo: 'P-2026-0003',
+      controlNo: 'AUD-2026-3-3-SITE',
     }));
   });
 
@@ -303,7 +318,7 @@ describe('QmqaService workflow metadata hydration', () => {
       selectFrom: () => ({
         select: () => ({
           where: () => ({
-            executeTakeFirst: async () => undefined,
+            executeTakeFirst: async () => ({ control_no: 'AUD-2026-3-9-SITE' }),
           }),
         }),
       }),
@@ -331,6 +346,8 @@ describe('QmqaService workflow metadata hydration', () => {
     expect(result).toEqual(expect.objectContaining({
       success: true,
       apid: 'plan-1',
+      controlNo: 'AUD-2026-3-9-SITE',
+      controlNoState: 'final',
     }));
   });
 });

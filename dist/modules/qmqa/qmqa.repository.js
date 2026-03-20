@@ -1,6 +1,7 @@
 // @ts-ignore
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
+import { sql } from 'kysely';
 export class QmqaRepository extends BaseRepository {
     constructor() {
         super('QMQA');
@@ -17,9 +18,11 @@ export class QmqaRepository extends BaseRepository {
             .leftJoin('QMQA as q', 'ap.qmqa_audit_plan_id', 'q.qmqa_audit_plan_id')
             .selectAll('ap')
             .select([
+            sql `${sql.ref('site.site_code')}`.as('site_code'),
             'site.site_name',
             'supp.supplier_name',
             'cat.audit_category_name as category_name',
+            sql `${sql.ref('cat.audit_category_code')}`.as('audit_category_code'),
             'sqe.full_name as sqe_pic_name',
             'q.qmqa_id as record_id',
             'q.request_status as record_status'
@@ -37,9 +40,11 @@ export class QmqaRepository extends BaseRepository {
             .leftJoin('QMQA as q', 'ap.qmqa_audit_plan_id', 'q.qmqa_audit_plan_id')
             .selectAll('ap')
             .select([
+            sql `${sql.ref('site.site_code')}`.as('site_code'),
             'site.site_name',
             'supp.supplier_name',
             'cat.audit_category_name as category_name',
+            sql `${sql.ref('cat.audit_category_code')}`.as('audit_category_code'),
             'sqe.full_name as sqe_pic_name',
             'q.qmqa_id as record_id',
             'q.request_status as record_status'
@@ -83,11 +88,13 @@ export class QmqaRepository extends BaseRepository {
             'ap.control_no',
             'ap.audit_plan_date',
             'ap.site_id',
+            sql `${sql.ref('site.site_code')}`.as('site_code'),
             'site.site_name',
             'ap.supplier_id',
             'supp.supplier_name',
             'ap.audit_category_id',
             'cat.audit_category_name as category_name',
+            sql `${sql.ref('cat.audit_category_code')}`.as('audit_category_code'),
             'ap.sqe_pic_id',
             'sqe.full_name as sqe_pic_name',
             'q.audit_type_id',
@@ -148,11 +155,13 @@ export class QmqaRepository extends BaseRepository {
             'ap.audit_plan_date',
             'ap.remarks as plan_remarks',
             'ap.site_id',
+            sql `${sql.ref('site.site_code')}`.as('site_code'),
             'site.site_name',
             'ap.supplier_id',
             'supp.supplier_name',
             'ap.audit_category_id',
             'cat.audit_category_name as category_name',
+            sql `${sql.ref('cat.audit_category_code')}`.as('audit_category_code'),
             'ap.sqe_pic_id',
             'sqe.full_name as sqe_pic_name',
             'q.audit_type_id',

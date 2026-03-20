@@ -1,6 +1,7 @@
 import { masterDataService, mappers } from './master-data.service.js';
 import * as schemas from './master-data.schema.js';
 import * as repos from './master-data.repository.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 /**
  * Higher-Order Function to generate boilerplate Express CRUD controllers.
  * Dramatically reduces controller size while maintaining type safety and validation.
@@ -188,6 +189,42 @@ export const getSupplierInfoBySupplier = async (req, res, next) => {
         // In a prod env we'd add `findBySupplier` to the repo, but this maintains 100% route compatibility
         const filtered = rows.filter(r => r.supplier_id === supplierId);
         res.json(filtered.map(mappers.supplierInfo));
+    }
+    catch (e) {
+        next(e);
+    }
+};
+export const getSqmpControlNoPreview = async (req, res, next) => {
+    try {
+        const controlNo = await controlNumberService.previewSqmp({
+            fiscalYear: req.query.fiscalYear,
+            siteId: req.query.siteId,
+            siteCode: req.query.siteCode,
+            semester: req.query.semester,
+            series: req.query.series,
+            revision: req.query.revision,
+        });
+        res.json({
+            controlNo,
+            controlNoState: controlNumberService.getControlNoState(controlNo),
+        });
+    }
+    catch (e) {
+        next(e);
+    }
+};
+export const getSfrControlNoPreview = async (req, res, next) => {
+    try {
+        const controlNo = await controlNumberService.previewSfr({
+            fiscalYear: req.query.fiscalYear,
+            frequency: req.query.frequency,
+            supplierCode: req.query.supplierCode,
+            series: req.query.series,
+        });
+        res.json({
+            controlNo,
+            controlNoState: controlNumberService.getControlNoState(controlNo),
+        });
     }
     catch (e) {
         next(e);

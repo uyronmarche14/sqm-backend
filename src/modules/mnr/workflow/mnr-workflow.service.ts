@@ -19,6 +19,7 @@ import {
   logRolePermissionGrant,
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 export class MnrWorkflowService {
   private isSupplierResponseActor(
@@ -248,12 +249,31 @@ export class MnrWorkflowService {
     await this.ensureActor(record, userId, roleId, 'submit', assignedUserId, 'Only the issuer or originator can submit this MNR.');
 
     const now = new Date();
-    await this.updateLotsWorkflow(record.mnr_id, {
-      request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER),
-      issuer_date: now,
-      issuer_remarks: remarks || null,
-      last_update: now,
-      updateby: userId,
+    let controlNo = String(record.control_no || '');
+    await this.repository.executeTransaction(async (trx) => {
+      controlNo = await controlNumberService.finalizeMnr(
+        {
+          siteId: record.site_id,
+          siteCode: record.site_code,
+          defectCategoryId: record.defectcategory_id,
+          defectCategoryAcronym: record.defectcategory_acronym,
+          date: now,
+        },
+        trx,
+      );
+
+      await trx
+        .updateTable('MNR_LOTS')
+        .set({
+          control_no: controlNo,
+          request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER),
+          issuer_date: now,
+          issuer_remarks: remarks || null,
+          last_update: now,
+          updateby: userId,
+        } as never)
+        .where('mnr_id', '=', record.mnr_id)
+        .execute();
     });
 
     return {
@@ -261,8 +281,11 @@ export class MnrWorkflowService {
       data: {
         id: record.mnr_id,
         status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER),
+        controlNo: controlNo,
+        controlNoState: controlNumberService.getControlNoState(controlNo),
         ...this.getActorNames({
           ...record,
+          control_no: controlNo,
           request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER),
         }, undefined, userId),
       },

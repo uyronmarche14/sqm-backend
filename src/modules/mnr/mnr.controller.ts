@@ -128,7 +128,8 @@ export class MnrController {
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
       const remarks = parsed?.remarks || parsed?.updates?.remarks;
-      const result = await mnrWorkflowService.submitMain(id, userId, remarks);
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id;
+      const result = await mnrWorkflowService.submitMain(id, userId, roleId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] SUBMIT error:', error);
@@ -146,7 +147,8 @@ export class MnrController {
       const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
       const remarks = parsed?.remarks || parsed?.updates?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
-      const result = await mnrWorkflowService.checkMain(id, userId, remarks);
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id;
+      const result = await mnrWorkflowService.checkMain(id, userId, roleId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] CHECK error:', error);
@@ -164,7 +166,8 @@ export class MnrController {
       const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
       const remarks = parsed?.remarks || parsed?.updates?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
-      const result = await mnrWorkflowService.approveMain(id, userId, remarks);
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id;
+      const result = await mnrWorkflowService.approveMain(id, userId, roleId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] APPROVE error:', error);
@@ -182,7 +185,8 @@ export class MnrController {
       const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
       const remarks = parsed?.remarks || parsed?.updates?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
-      const result = await mnrWorkflowService.rejectMain(id, userId, remarks);
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id;
+      const result = await mnrWorkflowService.rejectMain(id, userId, roleId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] REJECT error:', error);
@@ -200,7 +204,8 @@ export class MnrController {
       const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
       const remarks = parsed?.remarks || parsed?.updates?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
-      const result = await mnrWorkflowService.issueMain(id, userId, remarks);
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id;
+      const result = await mnrWorkflowService.issueMain(id, userId, roleId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] ISSUE error:', error);
@@ -231,7 +236,8 @@ export class MnrController {
       const parsed = MnrWorkflowActionSchema.parse({ body: req.body }).body;
       const remarks = parsed?.remarks || parsed?.updates?.remarks;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
-      const result = await mnrWorkflowService.cancelMain(id, userId, remarks);
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id;
+      const result = await mnrWorkflowService.cancelMain(id, userId, roleId, remarks);
       res.json(result);
     } catch (error) {
       console.error('[MNR] CANCEL error:', error);

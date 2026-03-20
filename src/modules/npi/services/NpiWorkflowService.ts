@@ -16,6 +16,7 @@ import {
   logRolePermissionGrant,
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 type DetailedRecord = Record<string, any>;
 
@@ -180,10 +181,21 @@ export class NpiWorkflowService {
     }
 
     const now = new Date();
+    let controlNo = String(record.control_no || '');
     await this.repository.executeTransaction(async (trx) => {
+      controlNo = await controlNumberService.finalizeNpi(
+        {
+          siteId: record.site_id,
+          siteCode: record.site_code,
+          date: now,
+        },
+        trx,
+      );
+
       await trx
         .updateTable('NPI_LOTS')
         .set({
+          control_no: controlNo,
           request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER),
           submitted_date: now,
           last_update: now,
@@ -198,6 +210,8 @@ export class NpiWorkflowService {
       data: {
         id: record.npi_lot_id,
         status: getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER),
+        controlNo,
+        controlNoState: controlNumberService.getControlNoState(controlNo),
       },
       message: 'Record submitted for checker approval',
     };

@@ -5,6 +5,7 @@ import { mapStatusToDB, mapStatusFromDB } from '../../shared/utils/status-mapper
 import { buildMnrWorkflowMetadata } from './workflow/mnr-workflow.utils.js';
 import { MNR_WORKFLOW_STAGE } from './workflow/mnr-workflow.constants.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 export class MnrService {
     isAdminActor(actor) {
         return (actor?.roleName || '').toUpperCase().includes('ADMIN');
@@ -52,17 +53,6 @@ export class MnrService {
             return true;
         }
         return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
-    }
-    /**
-     * Helper: Generate Control No
-     */
-    async generateControlNo() {
-        const date = new Date();
-        const year = date.getFullYear().toString().slice(-2);
-        // In production, this should query the DB for the MAX(control_no) and increment it.
-        // Keeping legacy logic for now: random 3-digit.
-        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        return `MNR-${year}-${random}`;
     }
     /**
      * Helper: Format Date consistently
@@ -447,7 +437,6 @@ export class MnrService {
     }
     async createRecord(payload, userId, files = []) {
         const mnrId = uuidv4();
-        const controlNo = await this.generateControlNo();
         const now = new Date();
         // Extract main details from the standardized payload (snake_case _id keys)
         const main = {
@@ -485,7 +474,7 @@ export class MnrService {
         const otherSelected = disp.other && typeof disp.other === 'object' ? disp.other.selected : !!disp.other;
         const dbLotsPayload = {
             mnr_id: mnrId,
-            control_no: controlNo,
+            control_no: '',
             request_status: dbStatus,
             date_created: now,
             site_id: main.mfgSites,
@@ -533,6 +522,11 @@ export class MnrService {
             updateby: userId
         };
         return await mnrRepository.executeTransaction(async (trx) => {
+            const controlNo = await controlNumberService.buildMnrDraft({
+                siteId: main.mfgSites,
+                date: now,
+            }, trx);
+            dbLotsPayload.control_no = controlNo;
             dbLotsPayload.attention_id = await this.resolveAttentionId(trx, dbLotsPayload.attention_id);
             // 1. Insert Main Record
             await trx.insertInto('MNR_LOTS').values(dbLotsPayload).execute();
@@ -692,7 +686,17 @@ export class MnrService {
                     }).execute();
                 }
             }
-            return { success: true, mnr_id: mnrId, message: 'Record created successfully' };
+            return {
+                success: true,
+                data: {
+                    id: mnrId,
+                    recordId: mnrId,
+                    controlNo,
+                    controlNoState: controlNumberService.getControlNoState(controlNo),
+                },
+                mnr_id: mnrId,
+                message: 'Record created successfully'
+            };
         });
     }
     // Update and delete omitted for brevity, will be similar to execution loop

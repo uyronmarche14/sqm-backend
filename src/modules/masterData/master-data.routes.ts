@@ -34,6 +34,8 @@ router.get('/lookup/parts-catalog', ctrl.partsCatalogCtrl.getAll);
 router.get('/lookup/supplier-incharges', ctrl.supplierInchargesCtrl.getAll);
 router.get('/lookup/supplier-information', ctrl.supplierInfoCtrl.getAll);
 router.get('/lookup/supplier-information/by-supplier/:supplierId', ctrl.getSupplierInfoBySupplier);
+router.get('/lookup/control-no-preview/sqmp', ctrl.getSqmpControlNoPreview);
+router.get('/lookup/control-no-preview/sfr', ctrl.getSfrControlNoPreview);
 router.get('/lookup/audit-categories', ctrl.auditCatsCtrl.getAll);
 router.get('/lookup/audit-types', ctrl.auditTypesCtrl.getAll);
 router.get('/lookup/five-m1e-categories', ctrl.fiveM1ECatsCtrl.getAll);

@@ -16,6 +16,7 @@ import {
   logRolePermissionGrant,
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 type DetailedRecord = Record<string, any>;
 
@@ -158,9 +159,7 @@ export class SqprWorkflowService {
     await this.ensureActor(record, userId, roleId, 'submit', 'Only the assigned incharge can submit this SQPR record.');
 
     const now = new Date();
-    const nextControlNo = String(record.control_no || '').startsWith('DRF-')
-      ? String(record.control_no).replace(/^DRF-/, 'SQPR-')
-      : record.control_no;
+    const nextControlNo = controlNumberService.finalizeSqpr(String(record.control_no || ''), 'SQPR');
 
     await this.repository.executeTransaction(async (trx: any) => {
       await trx.updateTable('SQPR')

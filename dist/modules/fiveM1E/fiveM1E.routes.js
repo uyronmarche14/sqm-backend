@@ -8,6 +8,7 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
 import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
+import { requireFiveM1EDeleteAccess } from './requireFiveM1EDeleteAccess.js';
 import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
@@ -59,7 +60,7 @@ router.put('/:id', requireFiveM1EEditAccess, upload.any(), logUploads, handleUpl
  * @route   DELETE /api/5m1e/:id
  * @desc    Delete 5M1E Record and all child data
  */
-router.delete('/:id', requirePermission('5M1E', 'delete'), fiveM1EController.deleteApplication);
+router.delete('/:id', requirePermission('5M1E', 'delete'), requireFiveM1EDeleteAccess, fiveM1EController.deleteApplication);
 /**
  * Workflow Action Subroutes
  */

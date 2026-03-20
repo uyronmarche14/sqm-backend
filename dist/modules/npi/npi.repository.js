@@ -26,6 +26,7 @@ export class NpiRepository extends BaseRepository {
             .selectAll('n')
             .select([
             's.site_name',
+            sql `${sql.ref('s.site_code')}`.as('site_code'),
             'sup.supplier_name',
             'p.part_name',
             'p.part_code',
@@ -86,6 +87,7 @@ export class NpiRepository extends BaseRepository {
             .selectAll('n')
             .select([
             's.site_name',
+            sql `${sql.ref('s.site_code')}`.as('site_code'),
             'sup.supplier_name',
             'p.part_name',
             'p.part_code',

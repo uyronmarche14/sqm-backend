@@ -9,6 +9,7 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
 import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
+import { requireFiveM1EDeleteAccess } from './requireFiveM1EDeleteAccess.js';
 import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 
 const router = express.Router();
@@ -96,6 +97,7 @@ router.put(
 router.delete(
   '/:id',
   requirePermission('5M1E', 'delete'),
+  requireFiveM1EDeleteAccess,
   fiveM1EController.deleteApplication
 );
 

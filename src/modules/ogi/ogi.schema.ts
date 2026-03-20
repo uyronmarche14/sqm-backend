@@ -49,7 +49,7 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
 
 export const OgiCreateSchema = z.object({
   body: z.object({
-    controlNo: z.string(),
+    controlNo: z.string().optional(),
     status: z.nativeEnum(WorkflowStatusEnum).optional(),
     siteId: z.string().uuid('Valid Site ID is required'),
     supplierId: z.string().uuid(),

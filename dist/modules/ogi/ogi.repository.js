@@ -1,6 +1,7 @@
 // @ts-ignore
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
+import { sql } from 'kysely';
 export class OgiRepository extends BaseRepository {
     constructor() {
         super('OGI');
@@ -12,6 +13,7 @@ export class OgiRepository extends BaseRepository {
             .leftJoin('PARTS as p', 'o.part_id', 'p.part_id')
             .selectAll('o')
             .select([
+            sql `${sql.ref('s.site_code')}`.as('site_code'),
             's.site_name',
             'sup.supplier_name',
             'p.part_code',
@@ -27,6 +29,7 @@ export class OgiRepository extends BaseRepository {
             .leftJoin('PARTS as p', 'o.part_id', 'p.part_id')
             .selectAll('o')
             .select([
+            sql `${sql.ref('s.site_code')}`.as('site_code'),
             's.site_name',
             'sup.supplier_name',
             'p.part_code',

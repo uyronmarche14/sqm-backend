@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { mainSqmpService } from './main.service.js';
-import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema } from './main.schema.js';
-import { successResponse, createResponse } from '../../../shared/utils/api-response.js';
+import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema, SqmpControlNoPreviewSchema } from './main.schema.js';
+import { successResponse } from '../../../shared/utils/api-response.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { sqmpWorkflowService } from '../workflow/workflow.service.js';
 import { resolveWorkflowListScope } from '../../../shared/utils/workflow-access.js';
@@ -36,6 +36,17 @@ export class MainSqmpController {
     }
   }
 
+  async previewControlNo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const parsed = SqmpControlNoPreviewSchema.parse({ query: req.query });
+      const preview = await mainSqmpService.previewControlNo(parsed.query);
+      return res.json(successResponse(preview));
+    } catch (error) {
+      console.error('[SQMP-MAIN] PREVIEW CONTROL NO error:', error);
+      return next(error);
+    }
+  }
+
   async create(req: Request, res: Response, next: NextFunction) {
     try {
       const payload = SqmpCreateSchema.parse({ body: req.body }).body;
@@ -43,7 +54,7 @@ export class MainSqmpController {
       const files = (req as any).files || [];
       
       const result = await mainSqmpService.createRecord(payload, userId, files);
-      return res.status(201).json(createResponse({ id: (result as any).sqmp_id || "new" }, result.message));
+      return res.status(201).json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] CREATE error:', error);
       return next(error);

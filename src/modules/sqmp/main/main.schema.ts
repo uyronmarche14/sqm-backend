@@ -41,6 +41,7 @@ export const SqmpCreateSchema = z.object({
     attention_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
     fiscal_year: z.coerce.number().int().min(2000).max(2100).optional(),
     semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()).optional(), 
+    control_series: z.coerce.number().int().min(0).optional(),
     issued_date: z.string().or(z.date()).nullable().optional(),
     due_date: z.string().or(z.date()).nullable().optional(),
     model_id: z.string().uuid().or(z.string().length(0)).optional(),
@@ -72,6 +73,7 @@ export const SqmpUpdateSchema = z.object({
     site_id: z.string().uuid().optional(),
     fiscal_year: z.coerce.number().int().optional(),
     semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()).optional(), 
+    control_series: z.coerce.number().int().min(0).optional(),
     issued_date: z.string().or(z.date()).nullable().optional(),
     due_date: z.string().or(z.date()).nullable().optional(),
     supplier_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
@@ -122,6 +124,17 @@ export const SqmpActionSchema = z.object({
   body: z.object({
     remarks: z.string().optional()
   }).optional()
+});
+
+export const SqmpControlNoPreviewSchema = z.object({
+  query: z.object({
+    fiscalYear: z.coerce.number().int().min(2000).max(2100),
+    siteId: z.string().uuid().optional(),
+    siteCode: z.string().optional(),
+    semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()),
+    series: z.coerce.number().int().min(0).optional(),
+    revision: z.coerce.number().int().min(0).optional(),
+  }),
 });
 
 export type SQMPCreationInput = z.infer<typeof SqmpCreateSchema>['body'];

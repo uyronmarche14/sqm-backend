@@ -9,6 +9,7 @@ const router = Router();
 const upload = createModuleUpload('sqmp', { attachmentType: 'sqmp-main' });
 
 router.get('/', requireModuleAccess('SQM_PLAN', 'viewlist'), mainSqmpController.getAll);
+router.get('/control-no-preview', requireModuleAccess('SQM_PLAN', 'view'), mainSqmpController.previewControlNo);
 router.get('/:id', requireModuleAccess('SQM_PLAN', 'view'), mainSqmpController.getById);
 
 // Create / Update with Multer File handling

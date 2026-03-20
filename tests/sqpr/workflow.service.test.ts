@@ -51,7 +51,7 @@ describe('SqprWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new SqprWorkflowService(repository as any);
-    const result = await service.submit('sqpr-1', 'issuer-1', 'submit');
+    const result = await service.submit('sqpr-1', 'issuer-1', undefined, 'submit');
 
     expect(tx.updateTable).toHaveBeenCalledWith('SQPR');
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
@@ -76,7 +76,7 @@ describe('SqprWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new SqprWorkflowService(repository as any);
-    const result = await service.check('sqpr-1', 'checker-1', 'checked');
+    const result = await service.check('sqpr-1', 'checker-1', undefined, 'checked');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: '4',
@@ -99,7 +99,7 @@ describe('SqprWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new SqprWorkflowService(repository as any);
-    const result = await service.reject('sqpr-1', 'approver-1', 'revise');
+    const result = await service.reject('sqpr-1', 'approver-1', undefined, 'revise');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: '6',
@@ -141,6 +141,6 @@ describe('SqprWorkflowService', () => {
 
     const service = new SqprWorkflowService(repository as any);
 
-    await expect(service.check('sqpr-1', 'someone-else', 'checked')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(service.check('sqpr-1', 'someone-else', undefined, 'checked')).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

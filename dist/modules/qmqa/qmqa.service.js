@@ -1,28 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'kysely';
 import { db } from '../../shared/infrastructure/db.js';
 import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
 import { qmqaRepository } from './qmqa.repository.js';
 import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, resolveWorkflowListScope, } from '../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 const sanitizeUUID = (value) => {
     return value && value.trim() !== '' ? value : null;
 };
 const QMQA_DUPLICATE_KEY_NUMBERS = new Set([2601, 2627]);
 export class QmqaService {
-    extractDuplicateControlNo(error) {
-        const message = String(error?.message || '');
-        const match = message.match(/duplicate key value is \(([^)]+)\)/i);
-        return match?.[1] || null;
-    }
-    getControlNoSequence(controlNo, prefix) {
-        if (!controlNo || !controlNo.startsWith(prefix)) {
-            return null;
-        }
-        const sequence = Number(controlNo.slice(prefix.length));
-        return Number.isNaN(sequence) ? null : sequence;
-    }
     getDbErrorNumber(error) {
         const candidates = [
             error?.number,
@@ -44,33 +32,6 @@ export class QmqaService {
         const errorNumber = this.getDbErrorNumber(error);
         return ((errorNumber !== undefined && QMQA_DUPLICATE_KEY_NUMBERS.has(errorNumber)) ||
             (message.includes('UNIQUE KEY constraint') && message.includes('duplicate key value')));
-    }
-    async generateControlNoInContext(year, isSchedule = false, trxOrDb = db, minimumSequence) {
-        const prefix = isSchedule ? `P-${year}-` : `A-${year}-`;
-        const canExecuteRawSql = typeof trxOrDb?.getExecutor === 'function';
-        const lastControlNo = canExecuteRawSql
-            ? (await sql `
-            SELECT TOP 1 control_no
-            FROM QMQA_AUDIT_PLAN WITH (UPDLOCK, HOLDLOCK)
-            WHERE control_no LIKE ${`${prefix}%`}
-            ORDER BY control_no DESC
-          `.execute(trxOrDb)).rows[0]?.control_no
-            : (await trxOrDb.selectFrom('QMQA_AUDIT_PLAN')
-                .select('control_no')
-                .where('control_no', 'like', `${prefix}%`)
-                .orderBy('control_no', 'desc')
-                .executeTakeFirst())?.control_no;
-        let nextNum = 1;
-        if (lastControlNo) {
-            const numPart = this.getControlNoSequence(lastControlNo, prefix);
-            if (numPart !== null) {
-                nextNum = numPart + 1;
-            }
-        }
-        if (minimumSequence !== undefined && minimumSequence !== null) {
-            nextNum = Math.max(nextNum, minimumSequence + 1);
-        }
-        return `${prefix}${nextNum.toString().padStart(4, '0')}`;
     }
     async resolveAttentionId(userIdOrSupplierUserId, trxOrDb = db) {
         const cleanAttentionId = sanitizeUUID(userIdOrSupplierUserId);
@@ -164,7 +125,12 @@ export class QmqaService {
         };
     }
     async generateControlNo(year, isSchedule = false) {
-        return this.generateControlNoInContext(year, isSchedule, db);
+        const date = new Date(`${year}-01-01T00:00:00.000Z`);
+        return controlNumberService.buildQmqaAuditPlan({
+            auditCategoryCode: isSchedule ? 'PLAN' : 'AUDIT',
+            siteCode: 'SITE',
+            auditPlanDate: date,
+        });
     }
     async getAllSchedules() {
         const schedules = await qmqaRepository.findAllSchedules();
@@ -193,12 +159,14 @@ export class QmqaService {
         const id = uuidv4();
         const now = new Date();
         const effectiveUserId = userId || 'SYSTEM';
-        const year = new Date(payload.audit_plan_date).getFullYear();
-        let minimumSequence = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
                 return await qmqaRepository.executeTransaction(async (trx) => {
-                    const controlNo = await this.generateControlNoInContext(year, true, trx, minimumSequence);
+                    const controlNo = await controlNumberService.buildQmqaAuditPlan({
+                        siteId: payload.site_id,
+                        auditCategoryId: payload.audit_category_id,
+                        auditPlanDate: payload.audit_plan_date,
+                    }, trx);
                     await trx.insertInto('QMQA_AUDIT_PLAN').values({
                         qmqa_audit_plan_id: id,
                         control_no: controlNo,
@@ -213,14 +181,19 @@ export class QmqaService {
                         last_update: now,
                         updateby: effectiveUserId,
                     }).execute();
-                    return { success: true, id, controlNo, message: 'Schedule created' };
+                    return {
+                        success: true,
+                        id,
+                        controlNo,
+                        controlNoState: controlNumberService.getControlNoState(controlNo),
+                        message: 'Schedule created',
+                    };
                 });
             }
             catch (error) {
                 if (!this.isDuplicateControlNoError(error) || attempt === 2) {
                     throw error;
                 }
-                minimumSequence = this.getControlNoSequence(this.extractDuplicateControlNo(error), `P-${year}-`);
             }
         }
         throw new ConflictError('Unable to generate a unique QMQA schedule control number.');
@@ -346,15 +319,18 @@ export class QmqaService {
         const effectiveUserId = userId || 'SYSTEM';
         const qmqaId = uuidv4();
         const isLinkedToExistingSchedule = Boolean(payload.schedule_id);
-        const unscheduledAuditYear = new Date(payload.audit_date).getFullYear();
-        let minimumSequence = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
                 return await qmqaRepository.executeTransaction(async (trx) => {
                     let auditPlanId = payload.schedule_id;
+                    let controlNo = null;
                     if (!isLinkedToExistingSchedule || !auditPlanId) {
                         auditPlanId = uuidv4();
-                        const controlNo = await this.generateControlNoInContext(unscheduledAuditYear, false, trx, minimumSequence);
+                        controlNo = await controlNumberService.buildQmqaAuditPlan({
+                            siteId: payload.site_id,
+                            auditCategoryId: payload.audit_category_id,
+                            auditPlanDate: payload.audit_plan_date || payload.audit_date,
+                        }, trx);
                         await trx.insertInto('QMQA_AUDIT_PLAN').values({
                             qmqa_audit_plan_id: auditPlanId,
                             control_no: controlNo,
@@ -371,6 +347,12 @@ export class QmqaService {
                         }).execute();
                     }
                     else {
+                        const existingPlan = await trx
+                            .selectFrom('QMQA_AUDIT_PLAN')
+                            .select(['control_no'])
+                            .where('qmqa_audit_plan_id', '=', auditPlanId)
+                            .executeTakeFirst();
+                        controlNo = String(existingPlan?.control_no || '');
                         await trx.updateTable('QMQA_AUDIT_PLAN')
                             .set({
                             request_status: 'CO',
@@ -453,14 +435,20 @@ export class QmqaService {
                             }).execute();
                         }
                     }
-                    return { success: true, id: qmqaId, apid: auditPlanId };
+                    return {
+                        success: true,
+                        id: qmqaId,
+                        recordId: qmqaId,
+                        apid: auditPlanId,
+                        controlNo,
+                        controlNoState: controlNumberService.getControlNoState(controlNo, true),
+                    };
                 });
             }
             catch (error) {
                 if (!this.isDuplicateControlNoError(error) || attempt === 2 || isLinkedToExistingSchedule) {
                     throw error;
                 }
-                minimumSequence = this.getControlNoSequence(this.extractDuplicateControlNo(error), `A-${unscheduledAuditYear}-`);
             }
         }
         throw new ConflictError('Unable to generate a unique QMQA control number.');

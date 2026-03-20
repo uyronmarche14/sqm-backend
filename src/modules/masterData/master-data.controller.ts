@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { masterDataService, mappers } from './master-data.service.js';
 import * as schemas from './master-data.schema.js';
 import * as repos from './master-data.repository.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 
 type ControllerOptions = {
   repo: any;
@@ -216,6 +217,40 @@ export const getSupplierInfoBySupplier = async (req: Request, res: Response, nex
     // In a prod env we'd add `findBySupplier` to the repo, but this maintains 100% route compatibility
     const filtered = (rows as any[]).filter(r => r.supplier_id === supplierId);
     res.json(filtered.map(mappers.supplierInfo));
+  } catch (e) { next(e); }
+};
+
+export const getSqmpControlNoPreview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const controlNo = await controlNumberService.previewSqmp({
+      fiscalYear: req.query.fiscalYear as string | undefined,
+      siteId: req.query.siteId as string | undefined,
+      siteCode: req.query.siteCode as string | undefined,
+      semester: req.query.semester as string | undefined,
+      series: req.query.series as string | undefined,
+      revision: req.query.revision as string | undefined,
+    });
+
+    res.json({
+      controlNo,
+      controlNoState: controlNumberService.getControlNoState(controlNo),
+    });
+  } catch (e) { next(e); }
+};
+
+export const getSfrControlNoPreview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const controlNo = await controlNumberService.previewSfr({
+      fiscalYear: req.query.fiscalYear as string | undefined,
+      frequency: req.query.frequency as string | undefined,
+      supplierCode: req.query.supplierCode as string | undefined,
+      series: req.query.series as string | undefined,
+    });
+
+    res.json({
+      controlNo,
+      controlNoState: controlNumberService.getControlNoState(controlNo),
+    });
   } catch (e) { next(e); }
 };
 

@@ -1,11 +1,8 @@
 import { fiveM1ERepository } from './fiveM1E.repository.js';
-import { db } from '../../shared/infrastructure/db.js';
-import { sql } from 'kysely';
 import { CreateFiveM1EInput, UpdateFiveM1EInput } from './fiveM1E.schema.js';
 import { SmartMapper, MapperSchema } from '../../shared/infrastructure/SmartMapper.js';
 import { FiveM1EApplicationTable, NewFiveM1EApp, FiveM1EAppUpdate } from './fiveM1E.db.types.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
-import { v4 as uuidv4 } from 'uuid';
 import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
 import {
   FIVE_M1E_WORKFLOW_STAGE,
@@ -18,6 +15,13 @@ import {
   type WorkflowListScope,
 } from '../../shared/utils/workflow-access.js';
 import { permissionService } from '../../shared/services/permission.service.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
+
+type WorkflowActor = {
+  userId?: string;
+  roleName?: string | null;
+};
 
 /**
  * 5M1E Domain Service
@@ -76,10 +80,19 @@ function normalizeInput(data: any): any {
   return normalized;
 }
 
+function toRequiredLegacyString(value: unknown, fallback = ''): string {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
 export class FiveM1EService {
   constructor(
     private readonly repository = fiveM1ERepository,
     private readonly permissions = permissionService,
+    private readonly attachments = attachmentService,
   ) {}
 
   private isAdminActor(actor?: { roleName?: string | null }) {
@@ -88,7 +101,7 @@ export class FiveM1EService {
 
   private isParticipant(record: Record<string, any>, userId?: string) {
     if (!userId) {
-      return true;
+      return false;
     }
 
     return [
@@ -154,6 +167,45 @@ export class FiveM1EService {
     return cache.value;
   }
 
+  private async resolveReadAccess(record: Record<string, any>, actor?: WorkflowActor) {
+    const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record as any, actor?.userId);
+    const isMine = this.isParticipant(record as any, actor?.userId);
+    const hasWorkflowAccess =
+      Boolean(actor?.userId) &&
+      Array.isArray(workflow.availableActions) &&
+      workflow.availableActions.length > 0;
+    let canSearchView = false;
+    let canStageView = false;
+
+    if (!this.isAdminActor(actor) && actor?.userId && !isMine && !hasWorkflowAccess) {
+      canStageView = await this.hasStageReadAccess(actor.userId, workflow.workflowStage);
+      if (!canStageView) {
+        canSearchView = await this.hasSearchReadAccess(actor.userId);
+      }
+    }
+
+    return {
+      workflow,
+      allowed:
+        this.isAdminActor(actor) ||
+        canSearchView ||
+        canStageView ||
+        isMine ||
+        hasWorkflowAccess,
+    };
+  }
+
+  private async assertReadableRecord(record: Record<string, any>, actor?: WorkflowActor) {
+    const access = await this.resolveReadAccess(record, actor);
+    assertWorkflowRecordAccess({
+      allowed: access.allowed,
+      action: 'view',
+      moduleName: '5M1E',
+    });
+
+    return access.workflow;
+  }
+
   
   /**
    * Creates a new 5M1E Application and its initial Approval state
@@ -162,17 +214,39 @@ export class FiveM1EService {
     console.log('[5M1E Service] Create Application Payload:', JSON.stringify(data, null, 2));
     console.log(`[5M1E Service] Attached files count: ${files.length}`);
     
-    const controlNo = '5M-' + uuidv4().split('-')[0].toUpperCase(); 
+    const controlNo = controlNumberService.buildFiveM1ETemporary();
 
     // Normalize field aliases (class → class_id, class_type → class_type_id)
     const normalized = normalizeInput(data);
 
     // Automap Frontend Fields to DB Columns using SmartMapper
     const dbData = SmartMapper.toDB(normalized, applicationSchema) as NewFiveM1EApp;
-    
+    const now = new Date();
+
+    // Legacy table contract: drafts may be partially filled, but non-null legacy
+    // text columns must still receive empty strings instead of NULL.
+    dbData.Title = toRequiredLegacyString(dbData.Title);
+    dbData.SupplierCN = toRequiredLegacyString(
+      dbData.SupplierCN,
+      toRequiredLegacyString(normalized.supplier_cn ?? normalized.supplierCN),
+    );
+    dbData.VendorID = toRequiredLegacyString(
+      dbData.VendorID,
+      toRequiredLegacyString(normalized.vendor_id ?? normalized.vendorId, 'UNKNOWN'),
+    );
+    dbData.ItemID = toRequiredLegacyString(
+      dbData.ItemID,
+      toRequiredLegacyString(normalized.item_id ?? normalized.itemId),
+    );
+    dbData.ImpactDate = toRequiredLegacyString(
+      dbData.ImpactDate,
+      toRequiredLegacyString(normalized.impact_date ?? normalized.impactDate),
+    );
+
     dbData.ControlNo = controlNo;
     dbData.CreatedBy = userId;
-    dbData.CreateDate = new Date();
+    dbData.CreateDate = now;
+    dbData.ModifiedDate = now;
 
     // Build approval data from frontend payload
     const approvalData: Record<string, unknown> = {};
@@ -276,6 +350,9 @@ export class FiveM1EService {
       message: 'Application created successfully',
       data: {
         id: newRecord.ID,
+        recordId: newRecord.ID,
+        controlNo: newRecord.ControlNo,
+        controlNoState: controlNumberService.getControlNoState(newRecord.ControlNo),
         control_no: newRecord.ControlNo,
       }
     };
@@ -322,6 +399,7 @@ export class FiveM1EService {
         ...dto,
         id: record.ID,
         control_no: record.ControlNo,
+        controlNoState: controlNumberService.getControlNoState(record.ControlNo),
         status: normalizedStatus,
         workflowStage: workflow.workflowStage,
         workflowStageCode: workflow.workflowStageCode,
@@ -402,59 +480,28 @@ export class FiveM1EService {
   /**
    * Retrieves a 5M1E Application with its full Approval + Child Tables
    */
-  async getApplication(controlNo: string, actor?: { userId?: string; roleName?: string | null }) {
+  async getApplication(controlNo: string, actor?: WorkflowActor) {
     const record = await this.repository.findWithApproval(controlNo);
     
     if (!record) {
       throw new NotFoundError(`5M1E Application ${controlNo} not found`);
     }
 
+    const workflow = await this.assertReadableRecord(record as any, actor);
+
     // SmartMap back to frontend standard DTO payload
     const dto = SmartMapper.toDTO(record as unknown as FiveM1EApplicationTable, applicationSchema);
     
     // Fetch child tables
     const cn = record.ControlNo;
-    const [parts, attachments, actionItems, checkItems, statusRemarks] = await Promise.all([
+    const [parts, attachments, actionItems, checkItems, statusRemarks, ccList] = await Promise.all([
       this.repository.findParts(cn),
       this.repository.findAttachments(cn),
       this.repository.findActionItems(cn),
       this.repository.findCheckItems(cn),
       this.repository.findStatusRemarks(cn),
+      this.repository.findCCUsers(cn),
     ]);
-
-    // Fetch CC list with user names
-    const ccResult = await sql`
-      SELECT cc.ID as id, cc.ControlNo as control_no, cc.UserID as user_id,
-             u.full_name, u.email
-      FROM TBL_5M1E_CC cc
-      LEFT JOIN USERS u ON cc.UserID = u.user_id
-      WHERE cc.ControlNo = ${cn}
-    `.execute(db);
-    const ccList = ccResult.rows;
-    const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record as any, actor?.userId);
-    const isMine = this.isParticipant(record as any, actor?.userId);
-    const hasWorkflowAccess =
-      Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
-    let canSearchView = false;
-    let canStageView = false;
-
-    if (!this.isAdminActor(actor) && actor?.userId && !isMine && !hasWorkflowAccess) {
-      canStageView = await this.hasStageReadAccess(actor.userId, workflow.workflowStage);
-      if (!canStageView) {
-        canSearchView = await this.hasSearchReadAccess(actor.userId);
-      }
-    }
-
-    assertWorkflowRecordAccess({
-      allowed:
-        this.isAdminActor(actor) ||
-        canSearchView ||
-        canStageView ||
-        isMine ||
-        hasWorkflowAccess,
-      action: 'view',
-      moduleName: '5M1E',
-    });
     const normalizedStatus =
       workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
 
@@ -462,6 +509,7 @@ export class FiveM1EService {
       ...dto,
       id: record.ID,
       control_no: record.ControlNo,
+      controlNoState: controlNumberService.getControlNoState(record.ControlNo),
       status: normalizedStatus,
       workflowStage: workflow.workflowStage,
       workflowStageCode: workflow.workflowStageCode,
@@ -556,10 +604,32 @@ export class FiveM1EService {
     };
   }
 
+  async downloadAttachment(attachmentId: string, actor?: WorkflowActor) {
+    const attachment = await this.attachments.getAttachmentInfo('5m1e-main', attachmentId) as Record<string, any>;
+    const controlNo = String(attachment.ControlNo || attachment.control_no || '');
+
+    if (!controlNo) {
+      throw new NotFoundError(`5M1E attachment ${attachmentId} is missing its owning record.`);
+    }
+
+    const record = await this.repository.findWithApproval(controlNo);
+    if (!record) {
+      throw new NotFoundError(`5M1E Application ${controlNo} not found`);
+    }
+
+    await this.assertReadableRecord(record as any, actor);
+    return this.attachments.downloadAttachment('5m1e-main', attachmentId);
+  }
+
   /**
    * Updates an Application intelligently picking valid fields
    */
-  async updateApplication(controlNo: string, data: UpdateFiveM1EInput, files: any[] = [], _userId: string = 'SYSTEM') {
+  async updateApplication(
+    controlNo: string,
+    data: UpdateFiveM1EInput,
+    files: any[] = [],
+    actor: WorkflowActor = {},
+  ) {
     console.log('[5M1E Service] Update Application Payload:', JSON.stringify(data, null, 2));
     console.log(`[5M1E Service] Attached files count: ${files.length}`);
     
@@ -567,6 +637,15 @@ export class FiveM1EService {
     if (!existing) {
       throw new NotFoundError(`5M1E Application ${controlNo} not found`);
     }
+
+    const canUpdate =
+      Boolean(actor.userId) &&
+      await fiveM1EWorkflowService.canUserUpdateRecord(existing.ControlNo, actor.userId!);
+    assertWorkflowRecordAccess({
+      allowed: canUpdate,
+      action: 'update',
+      moduleName: '5M1E',
+    });
 
     const normalized = normalizeInput(data);
     const updateDbData = SmartMapper.toDB(normalized, applicationSchema) as FiveM1EAppUpdate;
@@ -672,7 +751,7 @@ export class FiveM1EService {
 
     // Replace CC Notification List (delete & re-insert)
     if (data.cc_list !== undefined) {
-      await this.repository.replaceCCUsers(cn, data.cc_list, _userId);
+      await this.repository.replaceCCUsers(cn, data.cc_list, actor.userId || 'SYSTEM');
     }
     
     return {
@@ -722,11 +801,20 @@ export class FiveM1EService {
   /**
    * Deletes a 5M1E Application and all child tables
    */
-  async deleteApplication(controlNo: string) {
+  async deleteApplication(controlNo: string, actor: WorkflowActor = {}) {
     const existing = await this.repository.findWithApproval(controlNo);
     if (!existing) {
       throw new NotFoundError(`5M1E Application ${controlNo} not found`);
     }
+
+    const canDelete =
+      Boolean(actor.userId) &&
+      await fiveM1EWorkflowService.canUserDeleteRecord(existing.ControlNo, actor.userId!, actor.roleName);
+    assertWorkflowRecordAccess({
+      allowed: canDelete,
+      action: 'delete',
+      moduleName: '5M1E',
+    });
 
     const cn = existing.ControlNo;
 

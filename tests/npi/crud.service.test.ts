@@ -1,4 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const controlNumberServiceMock = vi.hoisted(() => ({
+  buildNpiDraft: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
+
+vi.mock('../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
+}));
+
 import { NpiCrudService } from '../../src/modules/npi/services/NpiCrudService.js';
 import { NpiMapper } from '../../src/modules/npi/services/NpiMapper.js';
 
@@ -55,6 +65,8 @@ describe('NpiCrudService legacy child-table parity', () => {
     vi.clearAllMocks();
     repository.findDefaultInspector.mockResolvedValue('inspector-default');
     repository.getNextSequence.mockResolvedValue(null);
+    controlNumberServiceMock.buildNpiDraft.mockResolvedValue('DRF-2026-3-1-SITE');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('draft');
   });
 
   it('persists restored noise categories and material certificates on create', async () => {
@@ -130,7 +142,7 @@ describe('NpiCrudService legacy child-table parity', () => {
   it('replaces restored noise/material rows on update', async () => {
     const tx = createTransactionRecorder();
     repository.findByIdDetailed.mockResolvedValue({
-      record: { npi_lot_id: 'npi-1' },
+      record: { npi_lot_id: 'npi-1', inspector_id: 'originator-1' },
     });
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
@@ -174,7 +186,7 @@ describe('NpiCrudService legacy child-table parity', () => {
   it('updates checker and approver when the frontend sends snake_case approval fields', async () => {
     const tx = createTransactionRecorder();
     repository.findByIdDetailed.mockResolvedValue({
-      record: { npi_lot_id: 'npi-1' },
+      record: { npi_lot_id: 'npi-1', inspector_id: 'originator-1' },
     });
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 

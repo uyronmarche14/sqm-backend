@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const controlNumberServiceMock = vi.hoisted(() => ({
+  previewSqmp: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
+
 const repositoryMock = vi.hoisted(() => ({
   executeTransaction: vi.fn(),
   findByIdDetailed: vi.fn(),
@@ -19,6 +24,10 @@ vi.mock('../../src/modules/sqmp/sqmp.repository.js', () => ({
 
 vi.mock('../../src/modules/users/user.repository.js', () => ({
   userRepository: userRepositoryMock,
+}));
+
+vi.mock('../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
 }));
 
 import { MainSqmpService } from '../../src/modules/sqmp/main/main.service';
@@ -75,6 +84,8 @@ const makeTransactionHarness = (resolvedAttentionUserId?: string) => {
 describe('MainSqmpService attention resolution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    controlNumberServiceMock.previewSqmp.mockResolvedValue('SQMP-2026-SITE-0-1ST');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('manual');
   });
 
   it('resolves SUPPLIERSUSER.Id to USERS.user_id during create', async () => {

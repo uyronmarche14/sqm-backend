@@ -17,6 +17,7 @@ import {
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../shared/utils/workflow-access.js';
+import { controlNumberService } from '../../shared/services/control-number.service.js';
 
 export class SqprService {
   private isAdminActor(actor?: SqprWorkflowActorContext) {
@@ -49,25 +50,6 @@ export class SqprService {
     }
 
     return record.incharge_id === actor.userId;
-  }
-
-  /**
-   * Legacy SQPR draft control numbers stay in DRF form until submit.
-   */
-  private buildLegacyDraftControlNo(
-    fiscalYear: number,
-    reportType: number,
-    month: number | null | undefined,
-    siteCode: string,
-  ): string {
-    const normalizedSiteCode = String(siteCode || '').trim().toUpperCase();
-    const controlPeriod = reportType === 1
-      ? String(month || 1)
-      : Number(month || 1) === 1
-        ? 'A'
-        : 'B';
-
-    return `DRF-${fiscalYear}-${controlPeriod}-${normalizedSiteCode}`;
   }
 
   /**
@@ -145,12 +127,12 @@ export class SqprService {
       throw new NotFoundError('Manufacturing site not found');
     }
 
-    const controlNo = this.buildLegacyDraftControlNo(
-      payload.fiscal_year,
-      payload.report_type,
-      payload.month,
-      site.site_code,
-    );
+    const controlNo = controlNumberService.buildSqprDraft({
+      fiscalYear: payload.fiscal_year,
+      reportType: payload.report_type,
+      month: payload.month,
+      siteCode: site.site_code,
+    });
 
     const dbPayload = {
       sqpr_id: sqprId,
