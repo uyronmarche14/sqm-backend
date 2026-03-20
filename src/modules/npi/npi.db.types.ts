@@ -27,6 +27,7 @@ export interface NpiLotsTable {
   delivery_date: Date | string;
   rohs_verification: string | null;
   reference_mnr_no: string | null;
+  corrected_lot_verification: number;
   disposition_id: string;
   inspected_by_id: string;
   data_verified_by_id: string;

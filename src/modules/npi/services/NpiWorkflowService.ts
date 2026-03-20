@@ -158,7 +158,7 @@ export class NpiWorkflowService {
     id: string,
     userId: string,
     roleId?: string,
-    remarks?: string,
+    _remarks?: string,
   ): Promise<ServiceResponse<WorkflowActionResponse>> {
     const existing = await this.repository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('NPI Record not found');
@@ -312,6 +312,7 @@ export class NpiWorkflowService {
           .updateTable('NPI_LOTS')
           .set({
             request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER),
+            corrected_lot_verification: 0,
             checked_date: now,
             checker_remarks: remarks,
             last_update: now,
@@ -339,6 +340,7 @@ export class NpiWorkflowService {
           .updateTable('NPI_LOTS')
           .set({
             request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_APPROVER),
+            corrected_lot_verification: 0,
             approved_date: now,
             approver_remarks: remarks,
             last_update: now,

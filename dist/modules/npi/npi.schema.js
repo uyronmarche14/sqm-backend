@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 const OptionalUuidField = z.preprocess((value) => (value === '' || value == null ? undefined : value), z.string().uuid().optional());
 const OptionalStringField = z.preprocess((value) => (value === '' || value == null ? undefined : value), z.string().optional());
+const OptionalClearableStringField = z.preprocess((value) => (value == null ? undefined : String(value)), z.string().optional());
+const OptionalCounterField = z.preprocess((value) => (value === '' || value == null ? undefined : Number(value)), z.number().int().min(0).max(10).optional());
 const OptionalDateField = z.preprocess((value) => {
     if (value === '' || value == null)
         return undefined;
@@ -110,8 +112,9 @@ export const NpiCreateSchema = z.object({
         total_critical: z.preprocess((v) => Number(v) || 0, z.number().int()),
         judgment: OptionalStringField,
         rohsVerification: OptionalStringField,
-        referenceMnrNo: OptionalStringField,
-        correctedLotVerification: OptionalStringField,
+        referenceMnrNo: OptionalClearableStringField,
+        correctedLotVerification: OptionalCounterField,
+        incrementCorrectedLotVerification: z.preprocess((value) => value === 'true' || value === '1' || value === true, z.boolean().optional()),
         remarks: OptionalStringField,
         // Approval Section
         inspectorId: OptionalUuidField,
@@ -182,8 +185,9 @@ export const NpiUpdateSchema = z.object({
         total_critical: z.preprocess((v) => Number(v), z.number().int().optional()),
         judgment: OptionalStringField,
         rohsVerification: OptionalStringField,
-        referenceMnrNo: OptionalStringField,
-        correctedLotVerification: OptionalStringField,
+        referenceMnrNo: OptionalClearableStringField,
+        correctedLotVerification: OptionalCounterField,
+        incrementCorrectedLotVerification: z.preprocess((value) => value === 'true' || value === '1' || value === true, z.boolean().optional()),
         remarks: OptionalStringField,
         // Approval Section
         inspectorId: OptionalUuidField,

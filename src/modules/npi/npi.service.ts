@@ -127,6 +127,7 @@ export class NpiService {
         
         rohs_verification: payload.rohsVerification || null,
         reference_mnr_no: payload.referenceMnrNo || null,
+        corrected_lot_verification: payload.correctedLotVerification ?? 0,
         inspector_remarks: payload.inspectorRemarks || null
     };
 
@@ -275,7 +276,8 @@ export class NpiService {
     
     if (payload.judgment !== undefined) dbUpdates.judgment = payload.judgment;
     if (payload.rohsVerification !== undefined) dbUpdates.rohs_verification = payload.rohsVerification;
-    if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo;
+    if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo || null;
+    if (payload.correctedLotVerification !== undefined) dbUpdates.corrected_lot_verification = payload.correctedLotVerification;
     
     if (payload.inspectorRemarks !== undefined) dbUpdates.inspector_remarks = payload.inspectorRemarks;
     if (payload.checkerRemarks !== undefined) dbUpdates.checker_remarks = payload.checkerRemarks;
@@ -283,7 +285,7 @@ export class NpiService {
 
     // Approval Assignments
     if (payload.inspectorId || payload.inspector_id) {
-        dbUpdates.inspector_id = payload.inspectorId || payload.inspector_id;
+        dbUpdates.inspector_id = payload.inspectorId || payload.inspector_id || undefined;
     }
     if (payload.checkerId || payload.checker_id) {
         dbUpdates.checker_id = payload.checkerId || payload.checker_id;

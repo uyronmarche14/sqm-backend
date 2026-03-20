@@ -34,14 +34,18 @@ vi.mock('../../../../shared/utils/permission-audit.utils', () => ({
 describe('NpiWorkflowService', () => {
   let service: NpiWorkflowService;
   let mockRepository: any;
+  let lastUpdateSet: Record<string, unknown> | null;
 
   const createMockTrx = () => ({
     updateTable: vi.fn(() => ({
-      set: vi.fn(() => ({
-        where: vi.fn(() => ({
-          execute: vi.fn(),
-        })),
-      })),
+      set: vi.fn((value) => {
+        lastUpdateSet = value;
+        return {
+          where: vi.fn(() => ({
+            execute: vi.fn(),
+          })),
+        };
+      }),
     })),
   });
 
@@ -49,6 +53,7 @@ describe('NpiWorkflowService', () => {
     vi.clearAllMocks();
     mockIsAdminUser.mockResolvedValue(false);
     mockHasRolePermission.mockResolvedValue(false);
+    lastUpdateSet = null;
 
     mockRepository = {
       findByIdDetailed: vi.fn(),
@@ -304,6 +309,7 @@ describe('NpiWorkflowService', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toContain('rejected');
+      expect(lastUpdateSet?.corrected_lot_verification).toBe(0);
     });
 
     it('should reject record at approver stage', async () => {
@@ -319,6 +325,7 @@ describe('NpiWorkflowService', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toContain('rejected');
+      expect(lastUpdateSet?.corrected_lot_verification).toBe(0);
     });
 
     it('should throw error if remarks not provided', async () => {

@@ -28,7 +28,8 @@ export class AuthController {
         accessToken: result.tokens.accessToken,
         mustChangePassword: result.mustChangePassword,
         userMenu: result.userMenu,
-        accessibleForms: result.accessibleForms
+        accessibleForms: result.accessibleForms,
+        roleAccessRecords: result.roleAccessRecords,
       });
       return;
     } catch (error) {

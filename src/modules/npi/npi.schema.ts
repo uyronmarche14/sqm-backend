@@ -11,6 +11,16 @@ const OptionalStringField = z.preprocess(
   z.string().optional(),
 );
 
+const OptionalClearableStringField = z.preprocess(
+  (value) => (value == null ? undefined : String(value)),
+  z.string().optional(),
+);
+
+const OptionalCounterField = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : Number(value)),
+  z.number().int().min(0).max(10).optional(),
+);
+
 const OptionalDateField = z.preprocess((value) => {
   if (value === '' || value == null) return undefined;
   if (value instanceof Date) return value;
@@ -138,8 +148,12 @@ export const NpiCreateSchema = z.object({
     
     judgment: OptionalStringField,
     rohsVerification: OptionalStringField,
-    referenceMnrNo: OptionalStringField,
-    correctedLotVerification: OptionalStringField,
+    referenceMnrNo: OptionalClearableStringField,
+    correctedLotVerification: OptionalCounterField,
+    incrementCorrectedLotVerification: z.preprocess(
+      (value) => value === 'true' || value === '1' || value === true,
+      z.boolean().optional(),
+    ),
     remarks: OptionalStringField,
     
     // Approval Section
@@ -223,8 +237,12 @@ export const NpiUpdateSchema = z.object({
     
     judgment: OptionalStringField,
     rohsVerification: OptionalStringField,
-    referenceMnrNo: OptionalStringField,
-    correctedLotVerification: OptionalStringField,
+    referenceMnrNo: OptionalClearableStringField,
+    correctedLotVerification: OptionalCounterField,
+    incrementCorrectedLotVerification: z.preprocess(
+      (value) => value === 'true' || value === '1' || value === true,
+      z.boolean().optional(),
+    ),
     remarks: OptionalStringField,
     
     // Approval Section

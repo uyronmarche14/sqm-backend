@@ -40,6 +40,7 @@ export const NpiLotSchema = {
         updateby: { type: sql.VarChar },
         rohs_verification: { type: sql.NVarChar },
         reference_mnr_no: { type: sql.NVarChar },
+        corrected_lot_verification: { type: sql.Int },
         inspector_remarks: { type: sql.NVarChar },
         checker_remarks: { type: sql.NVarChar },
         approver_remarks: { type: sql.NVarChar }

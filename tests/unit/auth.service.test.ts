@@ -4,6 +4,7 @@ const authRepositoryMock = vi.hoisted(() => ({
   findByEmail: vi.fn(),
   findUserById: vi.fn(),
   findRoleBasedAccessibleForms: vi.fn(),
+  findCurrentUserRoleAccessRecords: vi.fn(),
   findAssignedSqmpAccessibleForms: vi.fn(),
   findAssignedNpiAccessibleForms: vi.fn(),
   findAssignedOgiAccessibleForms: vi.fn(),
@@ -63,6 +64,7 @@ describe('AuthService login SQMP assignment access', () => {
     authRepositoryMock.findByEmail.mockResolvedValue(mockUser);
     authRepositoryMock.findUserById.mockResolvedValue(mockUser);
     authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findCurrentUserRoleAccessRecords.mockResolvedValue([]);
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedOgiAccessibleForms.mockResolvedValue([]);
@@ -87,10 +89,17 @@ describe('AuthService login SQMP assignment access', () => {
 
     expect(result.accessibleForms).toEqual(['SQMP-09-03']);
     expect(result.userMenu).toEqual(['Supplier Quality Management Plan']);
+    expect(result.roleAccessRecords).toEqual([]);
   });
 
   it('merges role-access workflow forms into auth accessibleForms and module menu', async () => {
-    authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue(['OGI-01-01', 'MNR-12-03']);
+    authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue([
+      'OGI-01-01',
+      'OGI-01-02',
+      'OGI-01-03',
+      'OGI-01-04',
+      'MNR-12-03',
+    ]);
 
     const service = new AuthService();
     const result = await service.login({
@@ -98,8 +107,54 @@ describe('AuthService login SQMP assignment access', () => {
       password: 'secret',
     });
 
-    expect(result.accessibleForms).toEqual(['OGI-01-01', 'MNR-12-03']);
+    expect(result.accessibleForms).toEqual([
+      'OGI-01-01',
+      'OGI-01-02',
+      'OGI-01-03',
+      'OGI-01-04',
+      'MNR-12-03',
+    ]);
     expect(result.userMenu).toEqual(['OGI', 'MNR Tracking']);
+  });
+
+  it('includes current-user role access records in the auth payload', async () => {
+    authRepositoryMock.findCurrentUserRoleAccessRecords.mockResolvedValue([
+      {
+        id: 'ra-1',
+        roleId: 'role-1',
+        formId: 'NPILOT-09-01',
+        formName: 'NPILOT-09-01',
+        formUrl: '/dashboard/new-parts/new',
+        menuGroup: 'NPI Transaction',
+        isActive: 1,
+        canView: 1,
+        canViewList: 1,
+        canAdd: 1,
+        canEdit: 0,
+        canDelete: 0,
+        canApprove: 0,
+        canCheck: 0,
+        canPrint: 0,
+        canExport: 0,
+        canAttach: 0,
+        perSite: 0,
+        pic: 0,
+      },
+    ]);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.roleAccessRecords).toEqual([
+      expect.objectContaining({
+        formId: 'NPILOT-09-01',
+        canAdd: 1,
+        canView: 1,
+      }),
+    ]);
   });
 
   it('includes NPI accessibleForms and menu when the user is assigned to NPI approval queues', async () => {
@@ -161,6 +216,29 @@ describe('AuthService login SQMP assignment access', () => {
 
   it('refreshes the current user context with updated SQMP accessibleForms', async () => {
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue(['SQMP-09-07']);
+    authRepositoryMock.findCurrentUserRoleAccessRecords.mockResolvedValue([
+      {
+        id: 'ra-2',
+        roleId: 'role-1',
+        formId: 'SQMP-09-07',
+        formName: 'SQMP-09-07',
+        formUrl: '/dashboard/sqm-plan/response-await-approval',
+        menuGroup: 'SQMP Transaction',
+        isActive: 1,
+        canView: 1,
+        canViewList: 1,
+        canAdd: 0,
+        canEdit: 1,
+        canDelete: 0,
+        canApprove: 1,
+        canCheck: 1,
+        canPrint: 0,
+        canExport: 0,
+        canAttach: 0,
+        perSite: 0,
+        pic: 0,
+      },
+    ]);
 
     const service = new AuthService();
     const result = await service.getCurrentUserContext('user-1');
@@ -169,6 +247,12 @@ describe('AuthService login SQMP assignment access', () => {
     expect(result.accessibleForms).toEqual(['SQMP-09-07']);
     expect(result.userMenu).toEqual(['Supplier Quality Management Plan']);
     expect(result.userData.USER_ID).toBe('user-1');
+    expect(result.roleAccessRecords).toEqual([
+      expect.objectContaining({
+        formId: 'SQMP-09-07',
+        canApprove: 1,
+      }),
+    ]);
   });
 
   it('includes MNR accessibleForms and module menu when the user is assigned to MNR approval queues', async () => {

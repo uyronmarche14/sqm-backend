@@ -54,6 +54,33 @@ export class NpiCrudService implements INpiService {
     return (payload[camelKey] ?? payload[snakeKey] ?? null) as string | null;
   }
 
+  private computeCorrectedLotVerificationForCreate(payload: NPICreationInput): number {
+    if (payload.referenceMnrNo && payload.incrementCorrectedLotVerification) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  private computeCorrectedLotVerificationForUpdate(
+    payload: NPIUpdateInput,
+    existingValue: number,
+  ): number | undefined {
+    if (payload.referenceMnrNo !== undefined && !payload.referenceMnrNo) {
+      return 0;
+    }
+
+    if (payload.incrementCorrectedLotVerification && payload.referenceMnrNo) {
+      return Math.min(existingValue + 1, 10);
+    }
+
+    if (payload.correctedLotVerification !== undefined) {
+      return payload.correctedLotVerification;
+    }
+
+    return undefined;
+  }
+
   /**
    * Get all NPI records with related data
    */
@@ -159,7 +186,12 @@ export class NpiCrudService implements INpiService {
     const effectiveUserId = userId || 'SYSTEM';
     const npiLotId = existing.record.npi_lot_id;
 
-    const dbUpdates = this.buildUpdatePayload(payload, effectiveUserId, now);
+    const dbUpdates = this.buildUpdatePayload(
+      payload,
+      effectiveUserId,
+      now,
+      existing.record.corrected_lot_verification ?? 0,
+    );
 
     return await this.repository.executeTransaction(async (trx) => {
       // 1. Update Base Record
@@ -290,6 +322,8 @@ export class NpiCrudService implements INpiService {
       finalInspectorId,
     });
 
+    const correctedLotVerification = this.computeCorrectedLotVerificationForCreate(payload);
+
     return {
       npi_lot_id: npiId,
       control_no: controlNo,
@@ -331,6 +365,7 @@ export class NpiCrudService implements INpiService {
       updateby: effectiveUserId,
       rohs_verification: payload.rohsVerification || null,
       reference_mnr_no: payload.referenceMnrNo || null,
+      corrected_lot_verification: correctedLotVerification,
       inspector_remarks: this.getRemarks(payload, 'inspectorRemarks', 'inspector_remarks'),
       // Additional required fields with defaults
       remarks: payload.remarks || null,
@@ -347,7 +382,12 @@ export class NpiCrudService implements INpiService {
   /**
    * Build payload for updating record
    */
-  private buildUpdatePayload(payload: NPIUpdateInput, userId: string, now: Date): NpiLotUpdate {
+  private buildUpdatePayload(
+    payload: NPIUpdateInput,
+    userId: string,
+    now: Date,
+    existingCorrectedLotVerification: number,
+  ): NpiLotUpdate {
     const dbUpdates: NpiLotUpdate = {
       last_update: now,
       updateby: userId
@@ -394,7 +434,14 @@ export class NpiCrudService implements INpiService {
     if (payload.total_critical !== undefined) dbUpdates.total_critical = payload.total_critical;
     if (payload.judgment !== undefined) dbUpdates.judgment = payload.judgment;
     if (payload.rohsVerification !== undefined) dbUpdates.rohs_verification = payload.rohsVerification;
-    if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo;
+    if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo || null;
+    const nextCorrectedLotVerification = this.computeCorrectedLotVerificationForUpdate(
+      payload,
+      existingCorrectedLotVerification,
+    );
+    if (nextCorrectedLotVerification !== undefined) {
+      dbUpdates.corrected_lot_verification = nextCorrectedLotVerification;
+    }
     if (payload.inspectorRemarks !== undefined || (payload as any).inspector_remarks !== undefined) {
       dbUpdates.inspector_remarks = this.getRemarks(payload, 'inspectorRemarks', 'inspector_remarks');
     }
@@ -404,7 +451,9 @@ export class NpiCrudService implements INpiService {
     if (payload.approverRemarks !== undefined || (payload as any).approver_remarks !== undefined) {
       dbUpdates.approver_remarks = this.getRemarks(payload, 'approverRemarks', 'approver_remarks');
     }
-    if (payload.inspectorId !== undefined || (payload as any).inspector_id !== undefined) dbUpdates.inspector_id = inspectorId;
+    if (payload.inspectorId !== undefined || (payload as any).inspector_id !== undefined) {
+      dbUpdates.inspector_id = inspectorId ?? undefined;
+    }
     if (payload.ssiAccept !== undefined) dbUpdates.ssi_accept = payload.ssiAccept;
     if (payload.ogiRefNo !== undefined) dbUpdates.ogi_ref_no = payload.ogiRefNo;
     if (payload.remarks !== undefined) dbUpdates.remarks = payload.remarks;

@@ -47,7 +47,17 @@ export class AuthService {
         };
     }
     async buildAccessibleForms(userId) {
-        return await getAssignedWorkflowAccessibleForms(userId);
+        const [assignedForms, roleBasedForms] = await Promise.all([
+            getAssignedWorkflowAccessibleForms(userId),
+            authRepository.findRoleBasedAccessibleForms(userId),
+        ]);
+        const accessibleForms = new Set(assignedForms);
+        roleBasedForms.forEach((formCode) => {
+            if (getLegacyFormMapping(formCode)) {
+                accessibleForms.add(formCode);
+            }
+        });
+        return Array.from(accessibleForms);
     }
     async refreshTokens(refreshToken) {
         const decoded = verifyRefreshToken(refreshToken);

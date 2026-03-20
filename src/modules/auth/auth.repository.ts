@@ -64,6 +64,42 @@ export class AuthRepository extends BaseRepository<'USERS'> {
     );
   }
 
+  async findCurrentUserRoleAccessRecords(userId: string) {
+    const user = await this.findUserById(userId);
+
+    if (!user?.role_id) {
+      return [];
+    }
+
+    return await db
+      .selectFrom('ROLE_ACCESS as ra')
+      .innerJoin('FORMS as f', 'ra.form_id', 'f.form_id')
+      .select([
+        'ra.roleaccess_id as id',
+        'ra.role_id as roleId',
+        'f.form_name as formId',
+        'f.form_name as formName',
+        'f.form_url as formUrl',
+        'f.menu_group as menuGroup',
+        'ra.active_flag as isActive',
+        'ra.can_view as canView',
+        'ra.can_viewlist as canViewList',
+        'ra.can_add as canAdd',
+        'ra.can_edit as canEdit',
+        'ra.can_delete as canDelete',
+        'ra.can_approve as canApprove',
+        'ra.can_check as canCheck',
+        'ra.can_print as canPrint',
+        'ra.can_export as canExport',
+        'ra.can_attach as canAttach',
+        'ra.per_site as perSite',
+        'ra.pic as pic',
+      ])
+      .where('ra.role_id', '=', user.role_id)
+      .where('ra.active_flag', '=', 1)
+      .execute();
+  }
+
   // NOTE: If your users are authenticated against AD (Active Directory), 
   // you might just insert them or fetch them, rather than storing their password_hash.
   // For the sake of the blueprint, we assume standard JWT + local storage.
@@ -826,49 +862,7 @@ export class AuthRepository extends BaseRepository<'USERS'> {
       accessibleForms.add('QMQA-MEDIA-09');
     }
 
-    console.log('📋 [QMQA_MEDIA] Assignment-based forms found:', Array.from(accessibleForms));
-
-    // =========================================================================
-    // PART 2: Role-Based (Query ROLE_ACCESS table for UI-assigned permissions)
-    // This allows immediate access when admin assigns via Maintenance UI
-    // =========================================================================
-    console.log('🔐 [QMQA_MEDIA] Checking role-based permissions...');
-    try {
-      // Get user's role
-      const userRecord = await this.findUserById(userId);
-      console.log('👤 [QMQA_MEDIA] User record:', { userId, roleId: userRecord?.role_id });
-      
-      if (userRecord?.role_id) {
-        // Query ROLE_ACCESS for QMQA_MEDIA form codes
-        const roleAccessRecords = await sql<{ form_name: string }>`
-          SELECT DISTINCT f.form_name
-          FROM ROLE_ACCESS ra
-          INNER JOIN FORMS f ON ra.form_id = f.form_id
-          WHERE ra.role_id = ${userRecord.role_id}
-            AND ra.active_flag = 1
-            AND f.form_name LIKE 'QMQA-MEDIA-%'
-            AND (ra.can_view = 1 OR ra.can_viewlist = 1)
-        `.execute(db);
-
-        console.log('📝 [QMQA_MEDIA] Role-based query returned:', roleAccessRecords.rows.length, 'records');
-        console.log('📝 [QMQA_MEDIA] Form names:', roleAccessRecords.rows.map(r => r.form_name));
-
-        // Add all role-based form codes
-        for (const row of roleAccessRecords.rows) {
-          accessibleForms.add(row.form_name);
-          console.log('✅ [QMQA_MEDIA] Added form:', row.form_name);
-        }
-      } else {
-        console.warn('⚠️ [QMQA_MEDIA] No role_id found for user');
-      }
-    } catch (err) {
-      // If role-based check fails, continue with assignment-based only
-      console.error('❌ [QMQA_MEDIA] Role-based permission check failed:', err);
-    }
-
-    const finalForms = Array.from(accessibleForms);
-    console.log('🎯 [QMQA_MEDIA] Final accessible forms:', finalForms);
-    return finalForms;
+    return Array.from(accessibleForms);
   }
 
   async findAssignedSqprAccessibleForms(userId: string): Promise<string[]> {
