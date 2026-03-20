@@ -67,9 +67,10 @@ export class NpiController {
         status: req.query.status as string | undefined,
         siteId: req.query.siteId as string | undefined,
         supplierId: req.query.supplierId as string | undefined,
+        partCode: req.query.partCode as string | undefined,
         keyword: req.query.keyword as string | undefined,
-        dateFrom: req.query.dateFrom as string | undefined,
-        dateTo: req.query.dateTo as string | undefined,
+        dateFrom: (req.query.dateFrom || req.query.startDate) as string | undefined,
+        dateTo: (req.query.dateTo || req.query.endDate) as string | undefined,
         scope: resolveWorkflowListScope({
           scope: req.query.scope,
           assignedToMe: req.query.assignedToMe,

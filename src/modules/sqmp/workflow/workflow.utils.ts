@@ -27,7 +27,7 @@ export interface SqmpWorkflowMetadata {
 }
 
 const isGlobalRole = (roleName?: string) =>
-  ['ADMIN', 'MPD'].some((role) => (roleName || '').toUpperCase().includes(role));
+  (roleName || '').toUpperCase().includes('ADMIN');
 
 const isSupplierRole = (roleName?: string) => (roleName || '').toUpperCase().includes('SUPPLIER');
 

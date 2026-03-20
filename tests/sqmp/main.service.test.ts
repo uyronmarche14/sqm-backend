@@ -18,6 +18,10 @@ const userRepositoryMock = vi.hoisted(() => ({
   findById: vi.fn(),
 }));
 
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
+
 vi.mock('../../src/modules/sqmp/sqmp.repository.js', () => ({
   sqmpRepository: repositoryMock,
 }));
@@ -28,6 +32,10 @@ vi.mock('../../src/modules/users/user.repository.js', () => ({
 
 vi.mock('../../src/shared/services/control-number.service.js', () => ({
   controlNumberService: controlNumberServiceMock,
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
 }));
 
 import { MainSqmpService } from '../../src/modules/sqmp/main/main.service';
@@ -86,6 +94,7 @@ describe('MainSqmpService attention resolution', () => {
     vi.clearAllMocks();
     controlNumberServiceMock.previewSqmp.mockResolvedValue('SQMP-2026-SITE-0-1ST');
     controlNumberServiceMock.getControlNoState.mockReturnValue('manual');
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
   });
 
   it('resolves SUPPLIERSUSER.Id to USERS.user_id during create', async () => {
@@ -199,6 +208,144 @@ describe('MainSqmpService attention resolution', () => {
       ],
       nextApproverId: 'closure-checker-1',
       nextApproverName: 'Closure Checker',
+    }));
+  });
+
+  it('lets ADMIN read the full SQM Plan queue without viewList', async () => {
+    repositoryMock.findAllDetailed.mockResolvedValue([
+      {
+        sqmp_id: 'sqmp-1',
+        request_status: '3',
+        site_id: 'site-a',
+        supplier_id: 'supplier-a',
+      },
+      {
+        sqmp_id: 'sqmp-2',
+        request_status: '4',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+    ]);
+    repositoryMock.findLatestResponsesBySqmpIds.mockResolvedValue([]);
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ADMIN' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
+
+    const service = new MainSqmpService();
+    const records = await service.getAllRecords('AWAITING_APPROVAL', 'admin-1', 'role-admin');
+
+    expect(records).toHaveLength(2);
+  });
+
+  it('does not treat MPD as a global SQM Plan reader anymore', async () => {
+    repositoryMock.findAllDetailed.mockResolvedValue([
+      {
+        sqmp_id: 'sqmp-1',
+        request_status: '4',
+        site_id: 'site-a',
+        supplier_id: 'supplier-a',
+        approver_id: 'approver-1',
+      },
+    ]);
+    repositoryMock.findLatestResponsesBySqmpIds.mockResolvedValue([]);
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'MPD USER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-z' });
+
+    const service = new MainSqmpService();
+    const records = await service.getAllRecords('AWAITING_APPROVAL', 'mpd-user-1', 'role-mpd');
+
+    expect(records).toHaveLength(0);
+  });
+
+  it('allows non-admin users with SQM Plan viewList to see the full queue', async () => {
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
+      action === 'viewlist' && formId === 'SQMP-09-03'
+    ));
+    repositoryMock.findAllDetailed.mockResolvedValue([
+      {
+        sqmp_id: 'sqmp-1',
+        request_status: '3',
+        site_id: 'site-a',
+        supplier_id: 'supplier-a',
+      },
+      {
+        sqmp_id: 'sqmp-2',
+        request_status: '4',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+    ]);
+    repositoryMock.findLatestResponsesBySqmpIds.mockResolvedValue([]);
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-z' });
+
+    const service = new MainSqmpService();
+    const records = await service.getAllRecords('AWAITING_APPROVAL', 'viewer-1', 'role-viewlist');
+
+    expect(records).toHaveLength(2);
+  });
+
+  it('keeps assigned approver visibility even without SQM Plan viewList', async () => {
+    repositoryMock.findAllDetailed.mockResolvedValue([
+      {
+        sqmp_id: 'sqmp-1',
+        request_status: '4',
+        site_id: 'site-a',
+        supplier_id: 'supplier-a',
+        approver_id: 'approver-1',
+        approver_name: 'Approver One',
+      },
+      {
+        sqmp_id: 'sqmp-2',
+        request_status: '4',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+        approver_id: 'approver-2',
+        approver_name: 'Approver Two',
+      },
+    ]);
+    repositoryMock.findLatestResponsesBySqmpIds.mockResolvedValue([]);
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-z' });
+
+    const service = new MainSqmpService();
+    const records = await service.getAllRecords('AWAITING_APPROVAL', 'approver-1', 'role-1');
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.sqmp_id).toBe('sqmp-1');
+    expect(records[0]?.availableActions).toEqual([
+      SQMP_WORKFLOW_ACTION.APPROVE_MAIN,
+      SQMP_WORKFLOW_ACTION.REJECT_MAIN,
+    ]);
+  });
+
+  it('allows detail access when the user has role-based viewList for the record queue', async () => {
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
+      action === 'viewlist' && formId === 'SQMP-09-03'
+    ));
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqmp_id: 'sqmp-1',
+        control_no: 'SQMP-1',
+        request_status: '4',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+      mainDocuments: [],
+      appendixDocuments: [],
+      ccList: [],
+      responses: [],
+      statusRemarks: [],
+    });
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
+
+    const service = new MainSqmpService();
+    const record = await service.getRecordById('sqmp-1', 'viewer-1', 'role-viewlist');
+
+    expect(record).toEqual(expect.objectContaining({
+      sqmp_id: 'sqmp-1',
+      workflowStageCode: '4',
+      status: 'AWAITING_APPROVAL',
     }));
   });
 });

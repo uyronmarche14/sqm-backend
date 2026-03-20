@@ -24,6 +24,7 @@ import {
   logRolePermissionGrant,
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
+import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 interface WorkflowContext {
   record: Record<string, any>;
@@ -271,12 +272,17 @@ export class QmqaWorkflowService {
       success: true,
       data: {
         id: record.qmqa_id,
+        recordId: record.qmqa_id,
         status: getQmqaCompatibilityStatus(
           metadata.workflowStage,
           latestResponse,
           record,
         ),
         request_status: QMQA_LEGACY_STAGE_CODE[metadata.workflowStage],
+        controlNo: String(record.control_no || '') || undefined,
+        controlNoState: record.control_no
+          ? controlNumberService.getControlNoState(String(record.control_no), true)
+          : undefined,
         ...metadata,
       },
       message,

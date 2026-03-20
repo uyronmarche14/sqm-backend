@@ -88,7 +88,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.submitMain('qmqa-1', 'issuer-1', 'submit');
+    const result = await service.submitMain('qmqa-1', 'issuer-1', undefined, 'submit');
 
     expect(tx.updateTable).toHaveBeenCalledWith('QMQA');
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
@@ -98,7 +98,8 @@ describe('QmqaWorkflowService', () => {
     }));
     expect(result.data).toEqual(expect.objectContaining({
       id: 'qmqa-1',
-      status: 'AWAITING_APPROVAL',
+      recordId: 'qmqa-1',
+      status: 'AWAITING_CHECKED',
       request_status: '3',
       workflowStageCode: '3',
     }));
@@ -113,7 +114,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.rejectMain('qmqa-1', 'checker-1', 'revise');
+    const result = await service.rejectMain('qmqa-1', 'checker-1', undefined, 'revise');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: '5',
@@ -136,7 +137,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.approveMain('qmqa-1', 'approver-1', 'approved');
+    const result = await service.approveMain('qmqa-1', 'approver-1', undefined, 'approved');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: '10',
@@ -159,7 +160,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.issueMain('qmqa-1', 'issuer-1', 'issued');
+    const result = await service.issueMain('qmqa-1', 'issuer-1', undefined, 'issued');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: '11',
@@ -180,7 +181,7 @@ describe('QmqaWorkflowService', () => {
     repository.findResponseByQmqaId.mockResolvedValue(null);
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.saveResponse('qmqa-1', 'supplier-attn-1', { initialReport: 'team' });
+    const result = await service.saveResponse('qmqa-1', 'supplier-attn-1', undefined, { initialReport: 'team' });
 
     expect(saveSupplierResponseContentMock).toHaveBeenCalledWith(
       'qmqa-1',
@@ -205,7 +206,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.submitInitialResponse('qmqa-1', 'supplier-attn-1', { initialReport: 'team' });
+    const result = await service.submitInitialResponse('qmqa-1', 'supplier-attn-1', undefined, { initialReport: 'team' });
 
     expect(saveSupplierResponseContentMock).toHaveBeenCalledWith(
       'qmqa-1',
@@ -234,7 +235,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.submitFinalResponse('qmqa-1', 'supplier-attn-1', { finalReport: 'done' });
+    const result = await service.submitFinalResponse('qmqa-1', 'supplier-attn-1', undefined, { finalReport: 'done' });
 
     expect(saveSupplierResponseContentMock).toHaveBeenCalledWith(
       'qmqa-1',
@@ -266,7 +267,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.submitResponseReview('qmqa-1', 'issuer-1', {
+    const result = await service.submitResponseReview('qmqa-1', 'issuer-1', undefined, {
       verification_remarks: 'assigned',
       cycle2_checker_id: 'checker-2',
       cycle2_approver_id: 'approver-2',
@@ -300,7 +301,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const checked = await service.checkResponse('qmqa-1', 'checker-2', 'checked');
+    const checked = await service.checkResponse('qmqa-1', 'checker-2', undefined, 'checked');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       checker_remarks: 'checked',
@@ -329,14 +330,14 @@ describe('QmqaWorkflowService', () => {
       }));
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
-    const approved = await service.approveResponse('qmqa-1', 'approver-2', 'approved');
+    const approved = await service.approveResponse('qmqa-1', 'approver-2', undefined, 'approved');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       approver_remarks: 'approved',
       updateby: 'approver-2',
     }));
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
-      request_status: '19',
+      request_status: '1',
       updateby: 'approver-2',
     }));
     expect(approved.data).toEqual(expect.objectContaining({
@@ -357,7 +358,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const issuerRejected = await service.rejectResponse('qmqa-1', 'issuer-1', 'redo');
+    const issuerRejected = await service.rejectResponse('qmqa-1', 'issuer-1', undefined, 'redo');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       issuer_remarks: 'redo',
@@ -390,7 +391,7 @@ describe('QmqaWorkflowService', () => {
       }));
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
-    const notAccepted = await service.notAcceptResponse('qmqa-1', 'issuer-1', 'not accepted');
+    const notAccepted = await service.notAcceptResponse('qmqa-1', 'issuer-1', undefined, 'not accepted');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       remarks: 'not accepted',
@@ -425,7 +426,7 @@ describe('QmqaWorkflowService', () => {
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
     const service = new QmqaWorkflowService(repository as any);
-    const result = await service.acceptResponse('qmqa-1', 'issuer-1', 'accepted');
+    const result = await service.acceptResponse('qmqa-1', 'issuer-1', undefined, 'accepted');
 
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       accept_date: expect.any(Date),

@@ -19,6 +19,7 @@ export interface MnrWorkflowActorContext {
 
 export interface MnrWorkflowRecordLike {
   request_status?: string | number | null;
+  report_issuance_8d?: number | boolean | null;
   supplier_id?: Nullable<string>;
   encoder_id?: Nullable<string>;
   encoder_name?: Nullable<string>;
@@ -221,13 +222,20 @@ export function buildMnrWorkflowMetadata(
       }
       break;
     case MNR_WORKFLOW_STAGE.SUPPLIER:
-      nextApproverId = record.attention_id || null;
-      nextApproverName = null;
-      if (supplierActorMatches(record, options.actor)) {
+      if (Boolean(record.report_issuance_8d)) {
+        nextApproverId = record.attention_id || null;
+        nextApproverName = null;
+      } else {
+        nextApproverId = record.issuer_id || null;
+        nextApproverName = record.issuer_name || null;
+      }
+      if (Boolean(record.report_issuance_8d) && supplierActorMatches(record, options.actor)) {
         availableActions = [
           MNR_WORKFLOW_ACTION.SAVE_INITIAL_RESPONSE,
           MNR_WORKFLOW_ACTION.SUBMIT_INITIAL_RESPONSE,
         ];
+      } else if (!Boolean(record.report_issuance_8d) && actorMatches(record.issuer_id, actorUserId)) {
+        availableActions = [MNR_WORKFLOW_ACTION.CLOSE];
       }
       break;
     case MNR_WORKFLOW_STAGE.INITIAL_RESPONSE:

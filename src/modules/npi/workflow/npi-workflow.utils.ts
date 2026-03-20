@@ -29,6 +29,81 @@ export function normalizeNpiWorkflowStage(status?: string | null): NpiWorkflowSt
   return STAGE_ALIASES[(status || '').toUpperCase()] || NPI_WORKFLOW_STAGE.DRAFT;
 }
 
+export function getNpiDbStatusesForFilter(status?: string | null): string[] | undefined {
+  const tokens = String(status || '')
+    .split(',')
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return undefined;
+  }
+
+  const dbStatuses = new Set<string>();
+  let allowAllResults = false;
+
+  for (const token of tokens) {
+    if (token === 'ALL' || token === 'SEARCH') {
+      allowAllResults = true;
+      continue;
+    }
+
+    if (
+      token === 'PENDING' ||
+      token === 'PD' ||
+      token === 'SU' ||
+      token === 'AAPPROVAL' ||
+      token === 'APPROVAL' ||
+      token === 'AA' ||
+      token === 'AWAITING_CHECKED' ||
+      token === 'AWAITING_APPROVAL' ||
+      token === 'CHECKED' ||
+      token === 'CK'
+    ) {
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER));
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.APPROVER));
+      continue;
+    }
+
+    if (
+      token === 'APPROVED' ||
+      token === 'AP' ||
+      token === 'ACCEPT' ||
+      token === 'LOTTRACKING' ||
+      token === 'LOT_TRACKING' ||
+      token === 'LOT-TRACKING' ||
+      token === 'LARMONITORING' ||
+      token === 'LT'
+    ) {
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.ACCEPT));
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.LOT_TRACKING));
+      continue;
+    }
+
+    if (token === 'REJECTED' || token === 'R5' || token === 'R6' || token === 'RE' || token === 'RJ') {
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER));
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_APPROVER));
+      continue;
+    }
+
+    if (token === 'CANCEL' || token === 'CANCELLED' || token === 'CA') {
+      dbStatuses.add(getNpiDbStatus(NPI_WORKFLOW_STAGE.CANCELLED));
+      continue;
+    }
+
+    const stage = STAGE_ALIASES[token];
+    if (stage) {
+      dbStatuses.add(getNpiDbStatus(stage));
+    }
+  }
+
+  if (dbStatuses.size === 0) {
+    return allowAllResults ? undefined : [];
+  }
+
+  return Array.from(dbStatuses);
+}
+
 export function getNpiDbStatus(stage: NpiWorkflowStage): string {
   return NPI_STAGE_DEFINITIONS[stage].dbCode;
 }

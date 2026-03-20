@@ -19,9 +19,15 @@ export class SqmpResponseService {
     return roleObj?.role_name || 'UNKNOWN';
   }
 
-  private async validateResponseAccess(mainRecord: any, roleName: string, userId: string, operation: 'upsert' | 'workflow' = 'workflow'): Promise<void> {
+  private async validateResponseAccess(
+    mainRecord: any,
+    latestResponse: any,
+    roleName: string,
+    userId: string,
+    operation: 'upsert' | 'workflow' = 'workflow',
+  ): Promise<void> {
     const isSupplier = roleName.toUpperCase().includes('SUPPLIER');
-    const isGlobalRole = ['ADMIN', 'MPD'].some((r) => roleName.toUpperCase().includes(r));
+    const isGlobalRole = roleName.toUpperCase().includes('ADMIN');
 
     if (isGlobalRole) return;
 
@@ -37,29 +43,22 @@ export class SqmpResponseService {
       return;
     }
 
-    const userObj = await userRepository.findById(userId);
-    const userSiteId = userObj?.site_id;
+    const isChecker = latestResponse?.checker_id === userId;
+    const isApprover = latestResponse?.approver_id === userId;
 
-    const isChecker = mainRecord.checker_id === userId;
-    const isApprover = mainRecord.approver_id === userId;
-    const isSameSite = mainRecord.site_id === userSiteId;
-
-    if (!isChecker && !isApprover && !isSameSite) {
+    if (!isChecker && !isApprover) {
       throw new ForbiddenError('Access Denied: You do not have permission to perform this workflow action.');
     }
   }
 
   private async validateClosureSaveAccess(mainRecord: any, roleName: string, userId: string): Promise<void> {
-    const isGlobalRole = ['ADMIN', 'MPD'].some((r) => roleName.toUpperCase().includes(r));
+    const isGlobalRole = roleName.toUpperCase().includes('ADMIN');
     if (isGlobalRole) return;
 
-    const userObj = await userRepository.findById(userId);
-    const userSiteId = userObj?.site_id;
     const isIssuer = mainRecord.issuer_id === userId;
-    const isSameSite = mainRecord.site_id === userSiteId;
 
-    if (!isIssuer && !isSameSite) {
-      throw new ForbiddenError('Only the assigned issuer or internal site users can save closure content.');
+    if (!isIssuer) {
+      throw new ForbiddenError('Only the assigned issuer can save closure content.');
     }
   }
 
@@ -245,7 +244,8 @@ export class SqmpResponseService {
     const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
-    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'upsert');
+    const latestResponse = mainRecord.responses?.[mainRecord.responses.length - 1];
+    await this.validateResponseAccess(mainRecord.record, latestResponse, roleName, userId, 'upsert');
 
     const result = await this.persistResponseContent(sqmpId, payload, userId, files, {
       mainRecordRequestStatus: String(mainRecord.record.request_status || ''),
@@ -268,7 +268,8 @@ export class SqmpResponseService {
     const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
-    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'upsert');
+    const latestResponse = mainRecord.responses?.[mainRecord.responses.length - 1];
+    await this.validateResponseAccess(mainRecord.record, latestResponse, roleName, userId, 'upsert');
 
     const result = await this.persistResponseContent(sqmpId, payload, userId, files, {
       mainRecordRequestStatus: String(mainRecord.record.request_status || ''),
@@ -308,15 +309,16 @@ export class SqmpResponseService {
     const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
-    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'workflow');
+    const latestResponse = mainRecord.responses?.[mainRecord.responses.length - 1];
+    await this.validateResponseAccess(mainRecord.record, latestResponse, roleName, userId, 'workflow');
 
     if (mainRecord.record.request_status !== mapStatusToDB('RESPONSE_SUBMITTED')) {
       throw new BadRequestError('Invalid Transition: Response is not yet submitted');
     }
 
     const now = new Date();
-    const latestResponse = await sqmpRepository.findLatestResponse(sqmpId);
-    if (!latestResponse) throw new NotFoundError('No response found to check');
+    const persistedLatestResponse = await sqmpRepository.findLatestResponse(sqmpId);
+    if (!persistedLatestResponse) throw new NotFoundError('No response found to check');
 
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP_RESPONSE')
@@ -327,7 +329,7 @@ export class SqmpResponseService {
           last_update: now,
           updateby: userId,
         })
-        .where('sqmp_response_id', '=', latestResponse.sqmp_response_id)
+        .where('sqmp_response_id', '=', persistedLatestResponse.sqmp_response_id)
         .execute();
 
       await trx.updateTable('SQMP')
@@ -357,15 +359,16 @@ export class SqmpResponseService {
     const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
-    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'workflow');
+    const latestResponse = mainRecord.responses?.[mainRecord.responses.length - 1];
+    await this.validateResponseAccess(mainRecord.record, latestResponse, roleName, userId, 'workflow');
 
     if (mainRecord.record.request_status !== mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
       throw new BadRequestError('Invalid Transition: Response is not awaiting approval');
     }
 
     const now = new Date();
-    const latestResponse = await sqmpRepository.findLatestResponse(sqmpId);
-    if (!latestResponse) throw new NotFoundError('No response found to approve');
+    const persistedLatestResponse = await sqmpRepository.findLatestResponse(sqmpId);
+    if (!persistedLatestResponse) throw new NotFoundError('No response found to approve');
 
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP_RESPONSE')
@@ -376,7 +379,7 @@ export class SqmpResponseService {
           last_update: now,
           updateby: userId,
         })
-        .where('sqmp_response_id', '=', latestResponse.sqmp_response_id)
+        .where('sqmp_response_id', '=', persistedLatestResponse.sqmp_response_id)
         .execute();
 
       await trx.updateTable('SQMP')
@@ -406,7 +409,8 @@ export class SqmpResponseService {
     const mainRecord = await sqmpRepository.findByIdDetailed(sqmpId, userId, roleName);
     if (!mainRecord) throw new NotFoundError('SQM Plan not found');
 
-    await this.validateResponseAccess(mainRecord.record, roleName, userId, 'workflow');
+    const latestResponse = mainRecord.responses?.[mainRecord.responses.length - 1];
+    await this.validateResponseAccess(mainRecord.record, latestResponse, roleName, userId, 'workflow');
 
     const dbStatus = mainRecord.record.request_status;
     if (dbStatus !== mapStatusToDB('RESPONSE_SUBMITTED') && dbStatus !== mapStatusToDB('RESPONSE_AWAITING_APPROVAL')) {
@@ -414,8 +418,8 @@ export class SqmpResponseService {
     }
 
     const now = new Date();
-    const latestResponse = await sqmpRepository.findLatestResponse(sqmpId);
-    if (!latestResponse) throw new NotFoundError('No response found to reject');
+    const persistedLatestResponse = await sqmpRepository.findLatestResponse(sqmpId);
+    if (!persistedLatestResponse) throw new NotFoundError('No response found to reject');
 
     return await sqmpRepository.executeTransaction(async (trx) => {
       await trx.updateTable('SQMP_RESPONSE')
@@ -426,7 +430,7 @@ export class SqmpResponseService {
           last_update: now,
           updateby: userId,
         })
-        .where('sqmp_response_id', '=', latestResponse.sqmp_response_id)
+        .where('sqmp_response_id', '=', persistedLatestResponse.sqmp_response_id)
         .execute();
 
       await trx.updateTable('SQMP')

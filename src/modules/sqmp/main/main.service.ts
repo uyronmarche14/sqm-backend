@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getModuleFormCodes, getSubFormFormCodes } from '@sqm/permissions-contract';
 import { sqmpRepository } from '../sqmp.repository.js';
 import { userRepository } from '../../users/user.repository.js';
 import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
@@ -12,14 +13,104 @@ import {
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../../shared/utils/workflow-access.js';
+import { permissionService } from '../../../shared/services/permission.service.js';
+
+const SQMP_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
+  NEW: ['SQMP-09-01'],
+  DRAFT: ['SQMP-09-02'],
+  SUBMITTED: ['SQMP-09-03'],
+  CHECKED: ['SQMP-09-03'],
+  AWAITING_CHECKED: ['SQMP-09-03'],
+  AAPPROVAL: ['SQMP-09-03'],
+  A_APPROVAL: ['SQMP-09-03'],
+  AWAITING_APPROVAL: ['SQMP-09-03'],
+  APPROVED: ['SQMP-09-04'],
+  ISSUED: ['SQMP-09-05', 'SQMP-09-06'],
+  RESPONSE_AWAITING: ['SQMP-09-06'],
+  RESPONSE_SUBMITTED: ['SQMP-09-06'],
+  RESPONSE_AWAITING_CHECKED: ['SQMP-09-07'],
+  RESPONSE_CHECKED: ['SQMP-09-07'],
+  RESPONSE_AWAIT_APPROVAL: ['SQMP-09-07'],
+  RESPONSE_AWAITING_APPROVAL: ['SQMP-09-07'],
+  RESPONSE_APPROVAL: ['SQMP-09-07'],
+  RESPONSE_AAPPROVAL: ['SQMP-09-07'],
+  RESPONSE_REJECTED: ['SQMP-09-08'],
+  CLOSED: ['SQMP-09-09'],
+  CANCEL: ['SQMP-09-10'],
+  CANCELLED: ['SQMP-09-10'],
+  REJECTED: ['SQMP-09-11'],
+  ACHIEVEMENT: ['SQMP-09-12'],
+  SEARCH: ['SQMP-09-13'],
+  REPORT: ['SQMP-09-14'],
+  '1': ['SQMP-09-09'],
+  '2': ['SQMP-09-02'],
+  '3': ['SQMP-09-03'],
+  '4': ['SQMP-09-03'],
+  '5': ['SQMP-09-11'],
+  '6': ['SQMP-09-11'],
+  '9': ['SQMP-09-10'],
+  '10': ['SQMP-09-04'],
+  '11': ['SQMP-09-05', 'SQMP-09-06'],
+  '15': ['SQMP-09-06'],
+  '16': ['SQMP-09-07'],
+  '17': ['SQMP-09-07'],
+  '19': ['SQMP-09-07'],
+  '21': ['SQMP-09-08'],
+  '22': ['SQMP-09-08'],
+  '24': ['SQMP-09-08'],
+};
+
+const SQMP_QUEUE_FORM_CODES = getModuleFormCodes('SQM_PLAN').filter((formId) => formId.startsWith('SQMP-09-'));
 
 export class MainSqmpService {
   private isGlobalRole(roleName?: string) {
-    return ['ADMIN', 'MPD'].some((role) => (roleName || '').toUpperCase().includes(role));
+    return (roleName || '').toUpperCase().includes('ADMIN');
   }
 
   private isSupplierRole(roleName?: string) {
     return (roleName || '').toUpperCase().includes('SUPPLIER');
+  }
+
+  private resolveRecordFormCodes(record: any, latestResponse: any): string[] {
+    const metadata = buildSqmpWorkflowMetadata({
+      record,
+      latestResponse,
+    });
+
+    const status = String(metadata.status || record?.request_status || '').toUpperCase();
+    const formCodes = new Set<string>([
+      ...getSubFormFormCodes('SQM_PLAN', status),
+      ...(SQMP_STATUS_FORM_FALLBACKS[status] || []),
+    ]);
+
+    return formCodes.size > 0 ? Array.from(formCodes) : SQMP_QUEUE_FORM_CODES;
+  }
+
+  private async resolveRoleViewListFormCodes(userId?: string): Promise<Set<string>> {
+    if (!userId) {
+      return new Set();
+    }
+
+    const checks = await Promise.all(
+      SQMP_QUEUE_FORM_CODES.map(async (formId) => ({
+        formId,
+        allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+      })),
+    );
+
+    return new Set(
+      checks
+        .filter((entry) => entry.allowed)
+        .map((entry) => entry.formId),
+    );
+  }
+
+  private hasRoleViewListAccessForRecord(record: any, latestResponse: any, roleViewListForms: Set<string>) {
+    if (roleViewListForms.size === 0) {
+      return false;
+    }
+
+    return this.resolveRecordFormCodes(record, latestResponse).some((formId) => roleViewListForms.has(formId));
   }
 
   private hasSupplierAccess(record: any, userId?: string, supplierIds: string[] = []) {
@@ -30,8 +121,20 @@ export class MainSqmpService {
     return supplierIds.includes(record.supplier_id) || record.attention_id === userId;
   }
 
-  private canReadRecord(record: any, latestResponse: any, userId?: string, roleName?: string, supplierIds: string[] = []) {
-    if (!record || !userId || this.isGlobalRole(roleName)) {
+  private canReadRecord(
+    record: any,
+    latestResponse: any,
+    userId?: string,
+    roleName?: string,
+    supplierIds: string[] = [],
+    roleViewListForms: Set<string> = new Set(),
+    userSiteId?: string | null,
+  ) {
+    if (!record || !userId) {
+      return false;
+    }
+
+    if (this.isGlobalRole(roleName)) {
       return true;
     }
 
@@ -39,12 +142,16 @@ export class MainSqmpService {
       return this.hasSupplierAccess(record, userId, supplierIds);
     }
 
+    if (this.hasRoleViewListAccessForRecord(record, latestResponse, roleViewListForms)) {
+      return true;
+    }
+
     const metadata = buildSqmpWorkflowMetadata({
       record,
       latestResponse,
       userId,
       roleName,
-      userSiteId: null,
+      userSiteId: userSiteId || null,
       supplierIds,
     });
 
@@ -67,11 +174,18 @@ export class MainSqmpService {
       return false;
     }
 
-    return (
-      record.encoder_id === userId ||
-      record.issuer_id === userId ||
-      this.canReadRecord(record, latestResponse, userId, roleName, supplierIds)
-    );
+    if (this.isSupplierRole(roleName)) {
+      return this.hasSupplierAccess(record, userId, supplierIds);
+    }
+
+    return [
+      record.encoder_id,
+      record.issuer_id,
+      record.checker_id,
+      record.approver_id,
+      latestResponse?.checker_id,
+      latestResponse?.approver_id,
+    ].includes(userId);
   }
 
   private async getRoleName(roleId?: string): Promise<string> {
@@ -170,6 +284,7 @@ export class MainSqmpService {
     const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
       ? await sqmpRepository.findSupplierIdsByUserId(userId)
       : [];
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(userId);
     const records = await sqmpRepository.findAllDetailed(status, userId, roleName);
     const latestResponses = records.length > 0
       ? await sqmpRepository.findLatestResponsesBySqmpIds(records.map((record: any) => record.sqmp_id))
@@ -188,7 +303,7 @@ export class MainSqmpService {
               latestResponse,
               userId,
               roleName,
-              userSiteId: null,
+              userSiteId: userObj?.site_id || null,
               supplierIds,
             });
             return Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0;
@@ -196,7 +311,15 @@ export class MainSqmpService {
           isMine: (record) =>
             this.isMineRecord(record, latestResponseBySqmpId.get((record as any).sqmp_id), userId, roleName, supplierIds),
           isHistoryVisible: (record) =>
-            this.canReadRecord(record, latestResponseBySqmpId.get((record as any).sqmp_id), userId, roleName, supplierIds),
+            this.canReadRecord(
+              record,
+              latestResponseBySqmpId.get((record as any).sqmp_id),
+              userId,
+              roleName,
+              supplierIds,
+              roleViewListForms,
+              userObj?.site_id || null,
+            ),
         });
 
     return visibleRecords.map((r: any) => {
@@ -226,13 +349,22 @@ export class MainSqmpService {
     const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
       ? await sqmpRepository.findSupplierIdsByUserId(userId)
       : [];
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(userId);
     const data = await sqmpRepository.findByIdDetailed(id, userId, roleName);
     if (!data) throw new NotFoundError('SQMP Record not found');
 
     const { record, mainDocuments, appendixDocuments, ccList, responses, statusRemarks } = data;
     const latestResponse = responses?.[responses.length - 1];
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(record, latestResponse, userId, roleName, supplierIds),
+      allowed: this.canReadRecord(
+        record,
+        latestResponse,
+        userId,
+        roleName,
+        supplierIds,
+        roleViewListForms,
+        userObj?.site_id || null,
+      ),
       action: 'view',
       moduleName: 'SQM Plan',
     });

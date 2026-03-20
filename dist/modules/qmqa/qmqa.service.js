@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../../shared/infrastructure/db.js';
-import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
 import { qmqaRepository } from './qmqa.repository.js';
 import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
@@ -11,6 +11,28 @@ const sanitizeUUID = (value) => {
 };
 const QMQA_DUPLICATE_KEY_NUMBERS = new Set([2601, 2627]);
 export class QmqaService {
+    assertScheduleControlNoInputs(payload) {
+        if (!payload.site_id) {
+            throw new BadRequestError('Site is required before creating a QMQA schedule.');
+        }
+        if (!payload.audit_category_id) {
+            throw new BadRequestError('Audit category is required before creating a QMQA schedule.');
+        }
+        if (!payload.audit_plan_date) {
+            throw new BadRequestError('Audit plan date is required before creating a QMQA schedule.');
+        }
+    }
+    assertRecordControlNoInputs(payload) {
+        if (!payload.site_id) {
+            throw new BadRequestError('Site is required before creating an ad hoc QMQA record.');
+        }
+        if (!payload.audit_category_id) {
+            throw new BadRequestError('Audit category is required before creating an ad hoc QMQA record.');
+        }
+        if (!payload.audit_plan_date && !payload.audit_date) {
+            throw new BadRequestError('Audit plan date or audit date is required before creating an ad hoc QMQA record.');
+        }
+    }
     getDbErrorNumber(error) {
         const candidates = [
             error?.number,
@@ -159,6 +181,7 @@ export class QmqaService {
         const id = uuidv4();
         const now = new Date();
         const effectiveUserId = userId || 'SYSTEM';
+        this.assertScheduleControlNoInputs(payload);
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
                 return await qmqaRepository.executeTransaction(async (trx) => {
@@ -319,6 +342,9 @@ export class QmqaService {
         const effectiveUserId = userId || 'SYSTEM';
         const qmqaId = uuidv4();
         const isLinkedToExistingSchedule = Boolean(payload.schedule_id);
+        if (!isLinkedToExistingSchedule) {
+            this.assertRecordControlNoInputs(payload);
+        }
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
                 return await qmqaRepository.executeTransaction(async (trx) => {

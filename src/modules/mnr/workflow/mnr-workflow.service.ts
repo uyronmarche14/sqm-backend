@@ -22,6 +22,34 @@ import {
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 
 export class MnrWorkflowService {
+  private assertSubmitControlNoInputs(record: Record<string, any>) {
+    if (!record.site_id && !record.site_code) {
+      throw new BadRequestError('Site is required before submitting this MNR.');
+    }
+
+    if (!record.defectcategory_id && !record.defectcategory_acronym) {
+      throw new BadRequestError('Defect category is required before submitting this MNR.');
+    }
+  }
+
+  private buildWorkflowData(
+    record: Record<string, any>,
+    status: string,
+    controlNo?: string,
+  ) {
+    const resolvedControlNo = String(controlNo ?? record.control_no ?? '');
+
+    return {
+      id: record.mnr_id,
+      recordId: record.mnr_id,
+      status,
+      controlNo: resolvedControlNo || undefined,
+      controlNoState: resolvedControlNo
+        ? controlNumberService.getControlNoState(resolvedControlNo)
+        : undefined,
+    };
+  }
+
   private isSupplierResponseActor(
     record: { attention_id?: string | null; supplier_id?: string | null },
     userId: string,
@@ -247,6 +275,7 @@ export class MnrWorkflowService {
     // Check if user is issuer or encoder
     const assignedUserId = record.issuer_id || record.encoder_id;
     await this.ensureActor(record, userId, roleId, 'submit', assignedUserId, 'Only the issuer or originator can submit this MNR.');
+    this.assertSubmitControlNoInputs(record);
 
     const now = new Date();
     let controlNo = String(record.control_no || '');
@@ -279,10 +308,11 @@ export class MnrWorkflowService {
     return {
       success: true,
       data: {
-        id: record.mnr_id,
-        status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER),
-        controlNo: controlNo,
-        controlNoState: controlNumberService.getControlNoState(controlNo),
+        ...this.buildWorkflowData(
+          record,
+          getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER),
+          controlNo,
+        ),
         ...this.getActorNames({
           ...record,
           control_no: controlNo,
@@ -315,8 +345,7 @@ export class MnrWorkflowService {
     return {
       success: true,
       data: {
-        id: record.mnr_id,
-        status: getMnrDbStatus(MNR_WORKFLOW_STAGE.APPROVER),
+        ...this.buildWorkflowData(record, getMnrDbStatus(MNR_WORKFLOW_STAGE.APPROVER)),
         ...this.getActorNames({
           ...record,
           request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.APPROVER),
@@ -348,8 +377,7 @@ export class MnrWorkflowService {
     return {
       success: true,
       data: {
-        id: record.mnr_id,
-        status: getMnrDbStatus(MNR_WORKFLOW_STAGE.ISSUER),
+        ...this.buildWorkflowData(record, getMnrDbStatus(MNR_WORKFLOW_STAGE.ISSUER)),
         ...this.getActorNames({
           ...record,
           request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.ISSUER),
@@ -383,8 +411,7 @@ export class MnrWorkflowService {
       return {
         success: true,
         data: {
-          id: record.mnr_id,
-          status: getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_CHECKER),
+          ...this.buildWorkflowData(record, getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_CHECKER)),
           ...this.getActorNames({
             ...record,
             request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_CHECKER),
@@ -408,8 +435,7 @@ export class MnrWorkflowService {
       return {
         success: true,
         data: {
-          id: record.mnr_id,
-          status: getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_APPROVER),
+          ...this.buildWorkflowData(record, getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_APPROVER)),
           ...this.getActorNames({
             ...record,
             request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.REJECT_APPROVER),
@@ -444,14 +470,50 @@ export class MnrWorkflowService {
     return {
       success: true,
       data: {
-        id: record.mnr_id,
-        status: getMnrDbStatus(MNR_WORKFLOW_STAGE.SUPPLIER),
+        ...this.buildWorkflowData(record, getMnrDbStatus(MNR_WORKFLOW_STAGE.SUPPLIER)),
         ...buildMnrWorkflowMetadata({
           ...record,
           request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.SUPPLIER),
         }),
       },
       message: 'MNR issued successfully',
+    };
+  }
+
+  async close(id: string, userId: string, roleId?: string, remarks?: string) {
+    const existing = await this.getExistingRecord(id);
+    const record = existing.record;
+    const stage = normalizeMnrWorkflowStage(record.request_status);
+
+    if (stage !== MNR_WORKFLOW_STAGE.SUPPLIER) {
+      throw new BadRequestError(`Cannot close MNR from ${stage}`);
+    }
+
+    if (Boolean(record.report_issuance_8d)) {
+      throw new BadRequestError('Only MNR records without 8D requirement can be closed directly after issue.');
+    }
+
+    await this.ensureActor(record, userId, roleId, 'close', record.issuer_id, 'Only the assigned issuer can close this MNR.');
+
+    const now = new Date();
+    await this.updateLotsWorkflow(record.mnr_id, {
+      request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.ACCEPT),
+      remarks: remarks || record.remarks || null,
+      last_update: now,
+      updateby: userId,
+    });
+
+    return {
+      success: true,
+      data: {
+        id: record.mnr_id,
+        status: getMnrDbStatus(MNR_WORKFLOW_STAGE.ACCEPT),
+        ...buildMnrWorkflowMetadata({
+          ...record,
+          request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.ACCEPT),
+        }),
+      },
+      message: 'MNR closed successfully',
     };
   }
 
@@ -481,8 +543,7 @@ export class MnrWorkflowService {
     return {
       success: true,
       data: {
-        id: record.mnr_id,
-        status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CANCEL),
+        ...this.buildWorkflowData(record, getMnrDbStatus(MNR_WORKFLOW_STAGE.CANCEL)),
         ...buildMnrWorkflowMetadata({
           ...record,
           request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CANCEL),

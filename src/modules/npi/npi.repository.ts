@@ -12,6 +12,7 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
     status?: string;
     siteId?: string;
     supplierId?: string;
+    partCode?: string;
     keyword?: string;
     dateFrom?: string;
     dateTo?: string;
@@ -68,14 +69,36 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
     if (filters?.supplierId) {
       query = query.where('n.supplier_id', '=', filters.supplierId);
     }
+    if (filters?.partCode) {
+      query = query.where((eb) =>
+        eb.or([
+          eb('n.part_id', '=', filters.partCode!),
+          eb('p.part_code', '=', filters.partCode!),
+        ])
+      );
+    }
     if (filters?.keyword) {
       const kw = `%${filters.keyword}%`;
       query = query.where((eb) =>
         eb.or([
           eb('n.control_no', 'like', kw),
           eb('n.lot_no', 'like', kw),
+          eb('p.part_code', 'like', kw),
+          eb('sup.supplier_name', 'like', kw),
         ])
       );
+    }
+    if (filters?.dateFrom) {
+      const dateFrom = new Date(filters.dateFrom);
+      if (!Number.isNaN(dateFrom.getTime())) {
+        query = query.where('n.datecreated', '>=', dateFrom);
+      }
+    }
+    if (filters?.dateTo) {
+      const dateTo = new Date(filters.dateTo);
+      if (!Number.isNaN(dateTo.getTime())) {
+        query = query.where('n.datecreated', '<=', dateTo);
+      }
     }
 
     return await query.orderBy('n.datecreated', 'desc').execute();

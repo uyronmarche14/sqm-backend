@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const controlNumberServiceMock = vi.hoisted(() => ({
+  buildOgiDraft: vi.fn(),
   finalizeOgi: vi.fn(),
   getControlNoState: vi.fn(),
 }));
@@ -27,8 +28,53 @@ import { OgiService } from '../../../../src/modules/ogi/ogi.service.js';
 describe('OgiService legacy workflow alignment', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    controlNumberServiceMock.buildOgiDraft.mockResolvedValue('DRF-2026-3-1-SITE');
     controlNumberServiceMock.finalizeOgi.mockResolvedValue('OGI-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('final');
+  });
+
+  it('finalizes the control number when create is requested directly as submitted', async () => {
+    let insertedValues: Record<string, unknown> | undefined;
+
+    ogiRepositoryMock.executeTransaction.mockImplementation(async (callback: (trx: any) => unknown) => {
+      const trx = {
+        insertInto: vi.fn(() => ({
+          values: (values: Record<string, unknown>) => {
+            insertedValues = values;
+            return {
+              execute: vi.fn().mockResolvedValue(undefined),
+            };
+          },
+        })),
+      };
+
+      return callback(trx);
+    });
+
+    const service = new OgiService();
+    const result = await service.createRecord({
+      status: 'SUBMITTED',
+      siteId: 'site-1',
+      supplierId: 'supplier-1',
+      partId: 'part-1',
+      lots: [],
+      attachments: [],
+    } as any, 'user-1');
+
+    expect(controlNumberServiceMock.finalizeOgi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        siteId: 'site-1',
+      }),
+      expect.anything(),
+    );
+    expect(insertedValues).toEqual(expect.objectContaining({
+      control_no: 'OGI-2026-3-1-SITE',
+      request_status: 'SB',
+    }));
+    expect(result.data).toEqual(expect.objectContaining({
+      controlNo: 'OGI-2026-3-1-SITE',
+      controlNoState: 'final',
+    }));
   });
 
   it('maps SB database records back to SUBMITTED in list reads', async () => {
@@ -87,5 +133,23 @@ describe('OgiService legacy workflow alignment', () => {
       request_status: 'SB',
     }));
     expect(result.message).toBe('OGI Record submitted successfully');
+  });
+
+  it('blocks submit when the stored record has no resolvable site data', async () => {
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'DRF-2026-3-1-SITE',
+        site_id: null,
+        site_code: null,
+        request_status: 'DR',
+      },
+    });
+
+    const service = new OgiService();
+
+    await expect(service.submitRecord('ogi-1', 'user-1')).rejects.toMatchObject({
+      message: 'Site is required before submitting this OGI record.',
+    });
   });
 });

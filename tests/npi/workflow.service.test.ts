@@ -72,6 +72,7 @@ describe('NpiWorkflowService', () => {
     );
     expect(result.data).toEqual({
       id: 'npi-1',
+      recordId: 'npi-1',
       status: 'SU',
       controlNo: 'IQC-2026-3-1-SITE',
       controlNoState: 'final',
@@ -97,7 +98,22 @@ describe('NpiWorkflowService', () => {
     );
     expect(result.data).toEqual({
       id: 'npi-1',
+      recordId: 'npi-1',
       status: 'CK',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
+    });
+  });
+
+  it('blocks submit when the site required for final numbering is missing', async () => {
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createRecord({ site_id: null, site_code: null }),
+    });
+
+    const service = new NpiWorkflowService(repository as any);
+
+    await expect(service.submitForApproval('npi-1', 'originator-1')).rejects.toMatchObject({
+      message: 'Site is required before submitting this NPI record.',
     });
   });
 
@@ -120,7 +136,10 @@ describe('NpiWorkflowService', () => {
     );
     expect(result.data).toEqual({
       id: 'npi-1',
+      recordId: 'npi-1',
       status: 'AP',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
     });
   });
 
@@ -142,7 +161,10 @@ describe('NpiWorkflowService', () => {
     );
     expect(result.data).toEqual({
       id: 'npi-1',
+      recordId: 'npi-1',
       status: 'R5',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
     });
   });
 

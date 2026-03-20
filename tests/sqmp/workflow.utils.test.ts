@@ -123,4 +123,19 @@ describe('SQMP workflow metadata', () => {
       SQMP_WORKFLOW_ACTION.SUBMIT_RESPONSE,
     ]);
   });
+
+  it('does not treat MPD as a global workflow actor for SQM Plan anymore', () => {
+    const metadata = buildSqmpWorkflowMetadata({
+      record: {
+        ...baseRecord,
+        request_status: '4',
+      },
+      latestResponse: undefined,
+      userId: 'mpd-user-1',
+      roleName: 'MPD',
+      supplierIds: [],
+    });
+
+    expect(metadata.availableActions).toEqual([]);
+  });
 });

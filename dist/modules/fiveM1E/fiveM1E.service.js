@@ -62,6 +62,12 @@ function normalizeInput(data) {
     }
     return normalized;
 }
+function toRequiredLegacyString(value, fallback = '') {
+    if (value === undefined || value === null) {
+        return fallback;
+    }
+    return String(value);
+}
 export class FiveM1EService {
     repository;
     permissions;
@@ -168,9 +174,18 @@ export class FiveM1EService {
         const normalized = normalizeInput(data);
         // Automap Frontend Fields to DB Columns using SmartMapper
         const dbData = SmartMapper.toDB(normalized, applicationSchema);
+        const now = new Date();
+        // Legacy table contract: drafts may be partially filled, but non-null legacy
+        // text columns must still receive empty strings instead of NULL.
+        dbData.Title = toRequiredLegacyString(dbData.Title);
+        dbData.SupplierCN = toRequiredLegacyString(dbData.SupplierCN, toRequiredLegacyString(normalized.supplier_cn ?? normalized.supplierCN));
+        dbData.VendorID = toRequiredLegacyString(dbData.VendorID, toRequiredLegacyString(normalized.vendor_id ?? normalized.vendorId, 'UNKNOWN'));
+        dbData.ItemID = toRequiredLegacyString(dbData.ItemID, toRequiredLegacyString(normalized.item_id ?? normalized.itemId));
+        dbData.ImpactDate = toRequiredLegacyString(dbData.ImpactDate, toRequiredLegacyString(normalized.impact_date ?? normalized.impactDate));
         dbData.ControlNo = controlNo;
         dbData.CreatedBy = userId;
-        dbData.CreateDate = new Date();
+        dbData.CreateDate = now;
+        dbData.ModifiedDate = now;
         // Build approval data from frontend payload
         const approvalData = {};
         if (data.mpd_pic)
@@ -328,6 +343,7 @@ export class FiveM1EService {
                     ...dto,
                     id: record.ID,
                     control_no: record.ControlNo,
+                    controlNoState: controlNumberService.getControlNoState(record.ControlNo),
                     status: normalizedStatus,
                     workflowStage: workflow.workflowStage,
                     workflowStageCode: workflow.workflowStageCode,
@@ -412,6 +428,7 @@ export class FiveM1EService {
             ...dto,
             id: record.ID,
             control_no: record.ControlNo,
+            controlNoState: controlNumberService.getControlNoState(record.ControlNo),
             status: normalizedStatus,
             workflowStage: workflow.workflowStage,
             workflowStageCode: workflow.workflowStageCode,

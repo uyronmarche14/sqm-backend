@@ -29,7 +29,7 @@ import {
   UploadedFile
 } from '../types/npi.types.js';
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
-import { getNpiDbStatus } from '../workflow/npi-workflow.utils.js';
+import { getNpiDbStatus, getNpiDbStatusesForFilter } from '../workflow/npi-workflow.utils.js';
 import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
 import { getNpiStageOwnerId } from '../workflow/npi-workflow.utils.js';
 import {
@@ -129,13 +129,20 @@ export class NpiCrudService implements INpiService {
       status?: string;
       siteId?: string;
       supplierId?: string;
+      partCode?: string;
       keyword?: string;
       dateFrom?: string;
       dateTo?: string;
       scope?: WorkflowListScope;
     }
   ): Promise<NpiListDTO[]> {
-    const records = await this.repository.findAllDetailed(filters);
+    const normalizedStatuses = getNpiDbStatusesForFilter(filters?.status);
+    const records = await this.repository.findAllDetailed({
+      ...filters,
+      status: normalizedStatuses && normalizedStatuses.length > 0
+        ? normalizedStatuses.join(',')
+        : undefined,
+    });
     const visibleRecords = this.isAdminActor(actor)
       ? records
       : filterWorkflowRecordsByScope(records, filters?.scope || 'history', {

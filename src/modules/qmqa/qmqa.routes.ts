@@ -47,6 +47,10 @@ export function createQmqaRoutes(variant: QmqaRouteVariant = 'QMQA') {
 
   // Protect all routes
   router.use(requireAuth);
+  router.use((req, _res, next) => {
+    (req as any).qmqaVariant = variant;
+    next();
+  });
 
   // Document Downloader
   router.get(

@@ -55,6 +55,7 @@ export const MNR_WORKFLOW_ACTION = {
   APPROVE_MAIN: 'approve-main',
   REJECT_MAIN: 'reject-main',
   ISSUE_MAIN: 'issue-main',
+  CLOSE: 'close',
   CANCEL_MAIN: 'cancel-main',
   SAVE_INITIAL_RESPONSE: 'save-initial-response',
   SUBMIT_INITIAL_RESPONSE: 'submit-initial-response',

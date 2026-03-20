@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ogiRepository } from './ogi.repository.js';
 import { OGICreationInput, OGIUpdateInput } from './ogi.schema.js';
-import { NotFoundError } from '../../shared/errors/AppError.js';
+import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
 import {
   assertWorkflowRecordAccess,
@@ -40,6 +40,12 @@ function mapOgiStatusFromDB(code?: string): string {
 }
 
 export class OgiService {
+  private assertSubmitControlNoInputs(input: { siteId?: string | null; siteCode?: string | null }) {
+    if (!input.siteId && !input.siteCode) {
+      throw new BadRequestError('Site is required before submitting this OGI record.');
+    }
+  }
+
   private isAdminActor(actor?: { roleName?: string | null }) {
     return (actor?.roleName || '').toUpperCase().includes('ADMIN');
   }
@@ -146,6 +152,11 @@ export class OgiService {
     const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
     
     const dbStatus = mapOgiStatusToDB(payload.status || 'DRAFT');
+    const isSubmittedOnCreate = dbStatus === OGI_DB_STATUS.SUBMITTED;
+
+    if (isSubmittedOnCreate) {
+      this.assertSubmitControlNoInputs({ siteId: payload.siteId });
+    }
 
     const dbPayload = {
         ogi_id: recordId,
@@ -163,13 +174,21 @@ export class OgiService {
     };
 
     return await ogiRepository.executeTransaction(async (trx) => {
-      const controlNo = await controlNumberService.buildOgiDraft(
-        {
-          siteId: payload.siteId,
-          date: now,
-        },
-        trx,
-      );
+      const controlNo = isSubmittedOnCreate
+        ? await controlNumberService.finalizeOgi(
+            {
+              siteId: payload.siteId,
+              date: now,
+            },
+            trx,
+          )
+        : await controlNumberService.buildOgiDraft(
+            {
+              siteId: payload.siteId,
+              date: now,
+            },
+            trx,
+          );
 
       // 1. Insert Main Record
       await trx.insertInto('OGI').values({
@@ -264,6 +283,10 @@ export class OgiService {
 
     return await ogiRepository.executeTransaction(async (trx) => {
       if (dbUpdates.request_status === 'SB' && existing.record.request_status !== 'SB') {
+        this.assertSubmitControlNoInputs({
+          siteId: dbUpdates.site_id || existing.record.site_id,
+          siteCode: existing.record.site_code,
+        });
         dbUpdates.control_no = await controlNumberService.finalizeOgi(
           {
             siteId: dbUpdates.site_id || existing.record.site_id,
@@ -351,6 +374,10 @@ export class OgiService {
     const now = new Date();
     let controlNo = String(existing.record.control_no || '');
     return await ogiRepository.executeTransaction(async (trx) => {
+      this.assertSubmitControlNoInputs({
+        siteId: existing.record.site_id,
+        siteCode: existing.record.site_code,
+      });
       controlNo = await controlNumberService.finalizeOgi(
         {
           siteId: existing.record.site_id,

@@ -55,6 +55,13 @@ This document captures the legacy-visible control number rules that the modern b
   - Temporary on create: `TMP_{yyyy}{m}{d}-{h}-{m}-{s}-{ms}`.
   - Final when first assigned into the MPD flow: `{site}-{partType}-{product}-{00001}`.
   - Final sequence is zero-padded to five digits.
+  - Modern exception: if the legacy site/part/product codes are not yet resolvable at supplier submit time, the backend promotes `TMP_*` to a stable non-temp `5M-XXXXXXXX` control number instead of failing submission.
+
+## Submit-time hardening policy
+
+- For `MNR`, `NPI`, `OGI`, `QMQA`, and `SQPR`, the backend validates control-number prerequisites before advancing workflow status.
+- If a final business control number cannot be generated, submit is rejected and the record remains in its current workflow state.
+- `5M1E` is the explicit exception: it never stays on `TMP_*` after submit, and it may fall back to a stable `5M-*` number if legacy lookup data is incomplete.
 
 ## Source notes
 

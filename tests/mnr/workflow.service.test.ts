@@ -84,6 +84,7 @@ describe('MnrWorkflowService', () => {
     );
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
+      recordId: 'mnr-1',
       status: 'SU',
       controlNo: 'MNR-2026-3-1-SITE',
       controlNoState: 'final',
@@ -110,9 +111,24 @@ describe('MnrWorkflowService', () => {
     );
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
+      recordId: 'mnr-1',
       status: 'CK',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
       workflowStageCode: '4',
     }));
+  });
+
+  it('blocks submit when the site or defect category required for final numbering is missing', async () => {
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createRecord({ site_id: null, site_code: null }),
+    });
+
+    const service = new MnrWorkflowService(repository as any);
+
+    await expect(service.submitMain('mnr-1', 'issuer-1')).rejects.toMatchObject({
+      message: 'Site is required before submitting this MNR.',
+    });
   });
 
   it('rejects check attempts from non-assigned actors', async () => {
@@ -145,7 +161,10 @@ describe('MnrWorkflowService', () => {
     );
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
+      recordId: 'mnr-1',
       status: 'AP',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
       workflowStageCode: '10',
     }));
   });
@@ -169,8 +188,35 @@ describe('MnrWorkflowService', () => {
     );
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
+      recordId: 'mnr-1',
       status: 'IS',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
       workflowStageCode: '11',
+    }));
+  });
+
+  it('closes issued records without 8D requirement through the explicit close path', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createRecord({ request_status: 'IS', report_issuance_8d: 0 }),
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+
+    const service = new MnrWorkflowService(repository as any);
+    const result = await service.close('mnr-1', 'issuer-1', undefined, 'closed');
+
+    expect(tx.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_status: 'CL',
+        remarks: 'closed',
+        updateby: 'issuer-1',
+      }),
+    );
+    expect(result.data).toEqual(expect.objectContaining({
+      id: 'mnr-1',
+      status: 'CL',
+      workflowStageCode: '1',
     }));
   });
 

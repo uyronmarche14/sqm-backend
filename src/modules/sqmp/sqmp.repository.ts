@@ -54,7 +54,9 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
       ])
       .orderBy('s.registration_date', 'desc');
 
-    // 1. Horizontal Security Guards (IDOR Context)
+    // Suppliers remain constrained at the query level. Internal user visibility is
+    // normalized in the service layer so list/detail scope and viewList behave
+    // consistently across all SQM Plan queues.
     if (userId && userRole) {
       const isSupplier = userRole.toUpperCase().includes('SUPPLIER');
       
@@ -65,33 +67,6 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
             .select('su.supplier_id')
             .where('su.user_id', '=', userId)),
         ]));
-      } else {
-        // Internal users: Check if they are restricted by site
-        // Fetch user site first or join? Joining USERS for the current user is heavy
-        // We'll perform a subquery or assume the service passes the context if available.
-        // For baseline, we filter by the user's assigned site if they aren't admin.
-        const isGlobalRole = ['ADMIN', 'MPD'].some(r => userRole.toUpperCase().includes(r));
-        
-        if (!isGlobalRole) {
-          query = query.innerJoin('USERS as curr_user', (join) => 
-            join.on('curr_user.user_id', '=', userId)
-          ).where((eb: any) => eb.or([
-            eb('s.site_id', '=', eb.ref('curr_user.site_id')),
-            eb('s.encoder_id', '=', userId),
-            eb('s.issuer_id', '=', userId),
-            eb('s.checker_id', '=', userId),
-            eb('s.approver_id', '=', userId),
-            eb.exists(
-              eb.selectFrom('SQMP_RESPONSE as resp')
-                .select('resp.sqmp_response_id')
-                .whereRef('resp.sqmp_id', '=', 's.sqmp_id')
-                .where((respEb: any) => respEb.or([
-                  respEb('resp.checker_id', '=', userId),
-                  respEb('resp.approver_id', '=', userId),
-                ]))
-            ),
-          ]));
-        }
       }
     }
 
@@ -211,7 +186,8 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
         eb('s.control_no', '=', idOrControlNo)
       ]));
 
-    // 1. Horizontal Security Guards (IDOR Context)
+    // Suppliers remain constrained at the query level. Internal user visibility is
+    // normalized in the service layer so detail access matches list access.
     if (userId && userRole) {
       const isSupplier = userRole.toUpperCase().includes('SUPPLIER');
       
@@ -222,29 +198,6 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
             .select('su.supplier_id')
             .where('su.user_id', '=', userId)),
         ]));
-      } else {
-        const isGlobalRole = ['ADMIN', 'MPD'].some(r => userRole.toUpperCase().includes(r));
-        
-        if (!isGlobalRole) {
-          query = query.innerJoin('USERS as curr_user', (join) => 
-            join.on('curr_user.user_id', '=', userId)
-          ).where((eb: any) => eb.or([
-            eb('s.site_id', '=', eb.ref('curr_user.site_id')),
-            eb('s.encoder_id', '=', userId),
-            eb('s.issuer_id', '=', userId),
-            eb('s.checker_id', '=', userId),
-            eb('s.approver_id', '=', userId),
-            eb.exists(
-              eb.selectFrom('SQMP_RESPONSE as resp')
-                .select('resp.sqmp_response_id')
-                .whereRef('resp.sqmp_id', '=', 's.sqmp_id')
-                .where((respEb: any) => respEb.or([
-                  respEb('resp.checker_id', '=', userId),
-                  respEb('resp.approver_id', '=', userId),
-                ]))
-            ),
-          ]));
-        }
       }
     }
 

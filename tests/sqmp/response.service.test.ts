@@ -155,4 +155,31 @@ describe('SqmpResponseService', () => {
       remarks: 'supplier response draft',
     }));
   });
+
+  it('forbids same-site internal users from saving closure content when they are not the assigned issuer', async () => {
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqmp_id: 'sqmp-1',
+        site_id: 'SITE-1',
+        issuer_id: 'issuer-1',
+        request_status: '15',
+      },
+    });
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'USER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'SITE-1' });
+
+    const service = new SqmpResponseService();
+
+    await expect(
+      service.saveClosureContent(
+        'sqmp-1',
+        {
+          issuer_remarks: 'closure prepared',
+        } as any,
+        'same-site-user',
+        'role-1',
+        [],
+      ),
+    ).rejects.toThrow('Only the assigned issuer can save closure content.');
+  });
 });

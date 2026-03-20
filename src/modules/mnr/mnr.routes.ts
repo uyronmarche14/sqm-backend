@@ -34,7 +34,7 @@ router.post('/:id/reject', requirePermission('MNR-12-03', 'reject'), mnrControll
 router.post('/:id/reject-main', requirePermission('MNR-12-03', 'reject'), mnrController.rejectMain.bind(mnrController));
 router.post('/:id/issue', requirePermission('MNR-12-07', 'issue'), mnrController.issue);
 router.post('/:id/issue-main', requirePermission('MNR-12-07', 'issue'), mnrController.issueMain.bind(mnrController));
-router.post('/:id/close', requirePermission('MNR-12-10', 'edit'), mnrController.close);
+router.post('/:id/close', requirePermission('MNR-12-09', 'edit'), mnrController.close);
 router.post('/:id/cancel', requirePermission('MNR-12-08', 'delete'), mnrController.cancel);
 router.post('/:id/cancel-main', requirePermission('MNR-12-08', 'delete'), mnrController.cancelMain.bind(mnrController));
 router.post('/:id/save-initial-response', requirePermission('MNR-12-09', 'edit'), mnrController.saveInitialResponse.bind(mnrController));

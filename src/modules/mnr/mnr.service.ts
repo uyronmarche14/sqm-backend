@@ -73,6 +73,19 @@ export class MnrService {
     return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
   }
 
+  private canDeleteRecord(record: Record<string, any>, actor?: MnrWorkflowActorContext) {
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (!this.canMutateMainRecord(record, actor)) {
+      return false;
+    }
+
+    const stage = buildMnrWorkflowMetadata(record).workflowStage;
+    return stage === MNR_WORKFLOW_STAGE.DRAFT || stage === MNR_WORKFLOW_STAGE.CANCEL;
+  }
+
   /**
    * Helper: Format Date consistently
    */
@@ -311,6 +324,7 @@ export class MnrService {
     return visibleRecords.map(r => {
       const workflow = buildMnrWorkflowMetadata({
         request_status: r.status,
+        report_issuance_8d: r.report_issuance_8d,
         supplier_id: r.supplier_id,
         encoder_id: (r as any).encoder_id,
         encoder_name: r.encoder_name,
@@ -941,6 +955,9 @@ export class MnrService {
             }
          }
 
+         const updateCcList = (updates as any).ccList;
+         const updateDefects = Array.isArray((updates as any).defects) ? (updates as any).defects : undefined;
+
          // Update Main Fields
          if (Object.keys(dbUpdates).length > 2) {
              await trx.updateTable('MNR_LOTS')
@@ -952,8 +969,61 @@ export class MnrService {
                  .execute();
          }
 
-         // Detailed handling for CC, Defects, and Response is simplified for exact parity
-         // ... (Omitted full syncing logic for time and clarity, but structure is here)
+         if (updateDefects) {
+             await trx.deleteFrom('MNR_DETAILS').where('mnr_id', '=', realId).execute();
+
+             for (const defect of updateDefects) {
+                 let resolvedClassId: string | null = defect.classId || null;
+                 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                 if (resolvedClassId && !uuidRegex.test(resolvedClassId)) {
+                     const classRow = await trx.selectFrom('DEFECTCLASS')
+                       .select('defectclass_id')
+                       .where('defectclass_name', '=', resolvedClassId)
+                       .executeTakeFirst();
+                     resolvedClassId = classRow?.defectclass_id || null;
+                 }
+
+                 await trx.insertInto('MNR_DETAILS').values({
+                   mnr_detail_id: defect.id || uuidv4(),
+                   mnr_id: realId,
+                   part_id: defect.partId || '',
+                   defect_id: defect.defectId || '',
+                   defectclass_id: resolvedClassId,
+                   defect_qty: defect.qty || 0,
+                   ca: defect.ca ? 1 : 0,
+                   inspection_date: this.formatDate(defect.inspectionDate),
+                   invoice_no: defect.invoiceNo || null,
+                   invoice_qty: defect.invoiceQty || null,
+                   lot_no: defect.lotNo || null,
+                   lot_size: defect.lotSize || null,
+                   sample_size: defect.sampleSize || null,
+                   group_line: defect.groupLine || null,
+                   area_defect: defect.areaDefect || null,
+                   cavity_no: defect.cavityNo || null,
+                   tray_no: defect.trayNo || null,
+                   encounter_date: this.formatDate(defect.encounterDate),
+                   verification_date: this.formatDate(defect.verificationDate),
+                   verified_by: defect.verifiedBy || null,
+                   last_update: now,
+                   updateby: actor.userId || 'SYSTEM',
+                 }).execute();
+             }
+         }
+
+         if (updateCcList !== undefined) {
+             await trx.deleteFrom('MNR_CC').where('mnr_id', '=', realId).execute();
+             for (const cc of updateCcList) {
+                 const ccId = typeof cc === 'string' ? cc : cc?.id;
+                 if (!ccId) continue;
+                 await trx.insertInto('MNR_CC').values({
+                   mnr_cc_id: uuidv4(),
+                   mnr_id: realId,
+                   user_id: ccId,
+                   last_update: now,
+                   updateby: actor.userId || 'SYSTEM',
+                 }).execute();
+             }
+         }
 
          return { success: true, message: 'Record updated successfully' };
      });
@@ -974,7 +1044,7 @@ export class MnrService {
          const realId = record.mnr_id;
          const existingRecord = await mnrRepository.findByIdDetailed(realId);
          assertWorkflowRecordAccess({
-           allowed: this.canMutateMainRecord(existingRecord?.record || {}, actor),
+           allowed: this.canDeleteRecord(existingRecord?.record || {}, actor),
            action: 'delete',
            moduleName: 'MNR',
          });

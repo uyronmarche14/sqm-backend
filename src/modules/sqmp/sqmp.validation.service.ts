@@ -12,10 +12,10 @@ export class SqmpValidationService {
     }
 
     /**
-     * Checks if the user has a global bypass role (ADMIN or MPD).
+     * Checks if the user has a global bypass role.
      */
     isGlobalRole(roleName: string): boolean {
-        return ['ADMIN', 'MPD'].some(r => roleName.toUpperCase().includes(r));
+        return roleName.toUpperCase().includes('ADMIN');
     }
 
     /**

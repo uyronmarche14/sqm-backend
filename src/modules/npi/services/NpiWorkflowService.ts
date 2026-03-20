@@ -23,6 +23,30 @@ type DetailedRecord = Record<string, any>;
 export class NpiWorkflowService {
   constructor(private repository: NpiRepository) {}
 
+  private assertSubmitControlNoInputs(record: DetailedRecord) {
+    if (!record.site_id && !record.site_code) {
+      throw new BadRequestError('Site is required before submitting this NPI record.');
+    }
+  }
+
+  private buildWorkflowData(
+    record: DetailedRecord,
+    status: string,
+    controlNo?: string,
+  ): WorkflowActionResponse {
+    const resolvedControlNo = String(controlNo ?? record.control_no ?? '');
+
+    return {
+      id: record.npi_lot_id,
+      recordId: record.npi_lot_id,
+      status,
+      controlNo: resolvedControlNo || undefined,
+      controlNoState: resolvedControlNo
+        ? controlNumberService.getControlNoState(resolvedControlNo)
+        : undefined,
+    };
+  }
+
   /**
    * Three-layer permission check for workflow actions (mirrors SQPR ensureActor)
    * Layer 1: Admin Bypass — Admins can perform any action
@@ -179,6 +203,7 @@ export class NpiWorkflowService {
     if (!record.checker_id || !record.approver_id) {
       throw new BadRequestError('Checker and approver must be assigned before submitting.');
     }
+    this.assertSubmitControlNoInputs(record);
 
     const now = new Date();
     let controlNo = String(record.control_no || '');
@@ -207,12 +232,7 @@ export class NpiWorkflowService {
 
     return {
       success: true,
-      data: {
-        id: record.npi_lot_id,
-        status: getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER),
-        controlNo,
-        controlNoState: controlNumberService.getControlNoState(controlNo),
-      },
+      data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER), controlNo),
       message: 'Record submitted for checker approval',
     };
   }
@@ -251,10 +271,7 @@ export class NpiWorkflowService {
 
     return {
       success: true,
-      data: {
-        id: record.npi_lot_id,
-        status: getNpiDbStatus(NPI_WORKFLOW_STAGE.APPROVER),
-      },
+      data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.APPROVER)),
       message: 'Record checked successfully',
     };
   }
@@ -293,10 +310,7 @@ export class NpiWorkflowService {
 
     return {
       success: true,
-      data: {
-        id: record.npi_lot_id,
-        status: getNpiDbStatus(NPI_WORKFLOW_STAGE.ACCEPT),
-      },
+      data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.ACCEPT)),
       message: 'Record approved successfully',
     };
   }
@@ -338,10 +352,7 @@ export class NpiWorkflowService {
 
       return {
         success: true,
-        data: {
-          id: record.npi_lot_id,
-          status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER),
-        },
+        data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER)),
         message: 'Record rejected by checker',
       };
     }
@@ -366,10 +377,7 @@ export class NpiWorkflowService {
 
       return {
         success: true,
-        data: {
-          id: record.npi_lot_id,
-          status: getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_APPROVER),
-        },
+        data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_APPROVER)),
         message: 'Record rejected by approver',
       };
     }
