@@ -10,7 +10,7 @@ export class SqprRepository extends BaseRepository<'SQPR'> {
   async findSiteCode(siteId: string) {
     const row = await db
       .selectFrom('MFG_SITES as site')
-      .select((eb) => [
+      .select([
         'site.site_id',
         'site.site_name',
         sql<string>`COALESCE(site.site_code, site.site_name)`.as('site_code'),

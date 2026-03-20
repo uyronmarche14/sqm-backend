@@ -3,6 +3,11 @@ import { ogiRepository } from './ogi.repository.js';
 import { OGICreationInput, OGIUpdateInput } from './ogi.schema.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
+import {
+  assertWorkflowRecordAccess,
+  filterWorkflowRecordsByScope,
+  type WorkflowListScope,
+} from '../../shared/utils/workflow-access.js';
 
 const OGI_DB_STATUS = {
   DRAFT: 'DR',
@@ -34,6 +39,26 @@ function mapOgiStatusFromDB(code?: string): string {
 }
 
 export class OgiService {
+  private isAdminActor(actor?: { roleName?: string | null }) {
+    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+  }
+
+  private canReadRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
+    if (!actor?.userId || this.isAdminActor(actor)) {
+      return true;
+    }
+
+    return record.incharge_id === actor.userId;
+  }
+
+  private canMutateRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
+    if (!actor?.userId || this.isAdminActor(actor)) {
+      return true;
+    }
+
+    return record.incharge_id === actor.userId;
+  }
+
   
   async generateSequence(siteId: string): Promise<string> {
     const d = new Date();
@@ -53,7 +78,10 @@ export class OgiService {
     return `${prefix}${nextNum.toString().padStart(4, '0')}`;
   }
 
-  async getAllRecords() {
+  async getAllRecords(
+    actor?: { userId?: string; roleName?: string | null },
+    scope: WorkflowListScope = 'history',
+  ) {
     const records = await ogiRepository.findAllDetailed();
     if (records.length === 0) return [];
 
@@ -61,7 +89,15 @@ export class OgiService {
     const allLots = await ogiRepository.fetchLotsByOgiIds(ogiIds);
     const allAttachments = await ogiRepository.fetchAttachmentsByOgiIds(ogiIds);
 
-    return records.map((r: any) => {
+    const visibleRecords = this.isAdminActor(actor)
+      ? records
+      : filterWorkflowRecordsByScope(records, scope, {
+          isAssigned: (record) => this.canReadRecord(record as any, actor),
+          isMine: (record) => this.canReadRecord(record as any, actor),
+          isHistoryVisible: (record) => this.canReadRecord(record as any, actor),
+        });
+
+    return visibleRecords.map((r: any) => {
       const rLots = allLots.filter((l: any) => l.ogi_id === r.ogi_id).map((l: any) => ({
         id: l.ogi_lot_id,
         lotNo: l.lot_no,
@@ -86,9 +122,14 @@ export class OgiService {
     });
   }
 
-  async getRecordById(id: string) {
+  async getRecordById(id: string, actor?: { userId?: string; roleName?: string | null }) {
     const data = await ogiRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('OGI Record not found');
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(data.record, actor),
+      action: 'view',
+      moduleName: 'OGI',
+    });
 
     const { record, lots, attachments } = data;
 
@@ -179,12 +220,22 @@ export class OgiService {
     });
   }
 
-  async updateRecord(id: string, payload: OGIUpdateInput, userId: string, files: any[] = []) {
+  async updateRecord(
+    id: string,
+    payload: OGIUpdateInput,
+    actor: { userId?: string; roleName?: string | null },
+    files: any[] = [],
+  ) {
     const existing = await ogiRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
+    assertWorkflowRecordAccess({
+      allowed: this.canMutateRecord(existing.record, actor),
+      action: 'update',
+      moduleName: 'OGI',
+    });
     
     const now = new Date();
-    const effectiveUserId = userId || 'SYSTEM';
+    const effectiveUserId = actor.userId || 'SYSTEM';
 
     const dbUpdates: any = {
       last_update: now,
@@ -287,9 +338,14 @@ export class OgiService {
   /**
    * Deletes an OGI record and all child tables
    */
-  async deleteRecord(id: string) {
+  async deleteRecord(id: string, actor?: { userId?: string; roleName?: string | null }) {
     const existing = await ogiRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('OGI Record not found');
+    assertWorkflowRecordAccess({
+      allowed: this.canMutateRecord(existing.record, actor),
+      action: 'delete',
+      moduleName: 'OGI',
+    });
 
     const ogiId = existing.record.ogi_id;
 

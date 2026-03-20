@@ -12,6 +12,7 @@ type Nullable<T> = T | null | undefined;
 export interface QmqaWorkflowActorContext {
   userId?: string | null;
   supplierIds?: string[];
+  roleName?: string | null;
 }
 
 export interface QmqaWorkflowRecordLike {
@@ -500,4 +501,3 @@ export function resolveQmqaStatusFilter(status?: string | string[] | null) {
 
   return Array.from(mapped);
 }
-

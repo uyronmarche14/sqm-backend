@@ -3,10 +3,75 @@ import { mnrRepository } from './mnr.repository.js';
 import { MNRCreationInput, MNRUpdateInput } from './mnr.schema.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusToDB, mapStatusFromDB } from '../../shared/utils/status-mapper.js';
-import { buildMnrWorkflowMetadata } from './workflow/mnr-workflow.utils.js';
+import { buildMnrWorkflowMetadata, type MnrWorkflowActorContext } from './workflow/mnr-workflow.utils.js';
 import { MNR_WORKFLOW_STAGE, type MnrWorkflowStage } from './workflow/mnr-workflow.constants.js';
+import {
+  assertWorkflowRecordAccess,
+  filterWorkflowRecordsByScope,
+  type WorkflowListScope,
+} from '../../shared/utils/workflow-access.js';
 
 export class MnrService {
+  private isAdminActor(actor?: MnrWorkflowActorContext) {
+    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+  }
+
+  private buildWorkflow(record: Record<string, any>, latestResponse: Record<string, any> | null | undefined, actor?: MnrWorkflowActorContext) {
+    return buildMnrWorkflowMetadata(record, {
+      latestResponse: latestResponse || undefined,
+      actor,
+    });
+  }
+
+  private isAssignedRecord(record: Record<string, any>, latestResponse: Record<string, any> | null | undefined, actor?: MnrWorkflowActorContext) {
+    if (!actor?.userId) {
+      return false;
+    }
+
+    const workflow = this.buildWorkflow(record, latestResponse, actor);
+    return Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
+  }
+
+  private isMineRecord(record: Record<string, any>, latestResponse: Record<string, any> | null | undefined, actor?: MnrWorkflowActorContext) {
+    if (!actor?.userId) {
+      return false;
+    }
+
+    return (
+      record.encoder_id === actor.userId ||
+      record.issuer_id === actor.userId ||
+      this.isAssignedRecord(record, latestResponse, actor)
+    );
+  }
+
+  private canReadRecord(record: Record<string, any>, latestResponse: Record<string, any> | null | undefined, actor?: MnrWorkflowActorContext) {
+    if (!actor?.userId || this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (this.isAssignedRecord(record, latestResponse, actor)) {
+      return true;
+    }
+
+    return [
+      record.encoder_id,
+      record.issuer_id,
+      record.checker_id,
+      record.approver_id,
+      record.attention_id,
+      latestResponse?.checker_id,
+      latestResponse?.approver_id,
+    ].includes(actor.userId) || Boolean(record.supplier_id && actor.supplierId && record.supplier_id === actor.supplierId);
+  }
+
+  private canMutateMainRecord(record: Record<string, any>, actor?: MnrWorkflowActorContext) {
+    if (!actor?.userId || this.isAdminActor(actor)) {
+      return true;
+    }
+
+    return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
+  }
+
   /**
    * Helper: Generate Control No
    */
@@ -227,13 +292,16 @@ export class MnrService {
     });
   }
 
-  async getAllRecords(statusFilter?: string, userId?: string, supplierId?: string) {
+  async getAllRecords(
+    filters: { status?: string; scope?: WorkflowListScope } = {},
+    actor: MnrWorkflowActorContext = {},
+  ) {
     let dbFilter: string[] | string | undefined;
-    if (statusFilter) {
-      if (statusFilter.includes(',')) {
-        dbFilter = statusFilter.split(',').map(s => mapStatusToDB(s.trim()));
+    if (filters.status) {
+      if (filters.status.includes(',')) {
+        dbFilter = filters.status.split(',').map(s => mapStatusToDB(s.trim()));
       } else {
-        dbFilter = mapStatusToDB(statusFilter.trim());
+        dbFilter = mapStatusToDB(filters.status.trim());
       }
     }
     const records = await mnrRepository.findAllDetailed(dbFilter);
@@ -243,7 +311,15 @@ export class MnrService {
     const latestResponseMap = new Map(latestResponses.map((response) => [response.mnr_id, response]));
     
     // Map DB flat rows back to expected DTO shape
-    return records.map(r => {
+    const visibleRecords = this.isAdminActor(actor)
+      ? records
+      : filterWorkflowRecordsByScope(records, filters.scope || 'history', {
+          isAssigned: (record) => this.isAssignedRecord(record as any, latestResponseMap.get((record as any).id), actor),
+          isMine: (record) => this.isMineRecord(record as any, latestResponseMap.get((record as any).id), actor),
+          isHistoryVisible: (record) => this.canReadRecord(record as any, latestResponseMap.get((record as any).id), actor),
+        });
+
+    return visibleRecords.map(r => {
       const workflow = buildMnrWorkflowMetadata({
         request_status: r.status,
         supplier_id: r.supplier_id,
@@ -258,7 +334,7 @@ export class MnrService {
         attention_id: (r as any).attention_id,
       }, {
         latestResponse: latestResponseMap.get(r.id),
-        actor: { userId, supplierId },
+        actor,
       });
 
       return ({
@@ -315,15 +391,21 @@ export class MnrService {
     });
   }
 
-  async getRecordById(id: string, userId?: string, supplierId?: string) {
+  async getRecordById(id: string, actor: MnrWorkflowActorContext = {}) {
     const data = await mnrRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('MNR Record not found');
+
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(data.record, data.response, actor),
+      action: 'view',
+      moduleName: 'MNR',
+    });
 
     const main = data.record;
     
     const workflow = buildMnrWorkflowMetadata(main, {
       latestResponse: data.response || undefined,
-      actor: { userId, supplierId },
+      actor,
     });
 
     return {
@@ -697,7 +779,7 @@ export class MnrService {
   }
 
   // Update and delete omitted for brevity, will be similar to execution loop
-  async updateRecord(id: string, payload: MNRUpdateInput, userId: string, files: any[] = []) {
+  async updateRecord(id: string, payload: MNRUpdateInput, actor: MnrWorkflowActorContext, files: any[] = []) {
      const updates = payload.updates || payload;
      const now = new Date();
      
@@ -713,10 +795,16 @@ export class MnrService {
          
          if (!currentRecord) throw new NotFoundError('MNR Record not found');
          const realId = currentRecord.mnr_id;
+         const existingRecord = await mnrRepository.findByIdDetailed(realId);
+         assertWorkflowRecordAccess({
+           allowed: this.canMutateMainRecord(existingRecord?.record || {}, actor),
+           action: 'update',
+           moduleName: 'MNR',
+         });
          
          const dbUpdates: any = {
              last_update: now,
-             updateby: userId
+             updateby: actor.userId
          };
 
 
@@ -727,10 +815,11 @@ export class MnrService {
          if (updates.mfg_area_id) dbUpdates.mfg_area_id = updates.mfg_area_id;
          if (updates.defectcategory_id) dbUpdates.defectcategory_id = updates.defectcategory_id;
          if (updates.mnrType) dbUpdates.mnrtype_id = updates.mnrType;
+         const typedUpdates = updates as any;
          const requestedAttentionId =
-           updates.attention_id ??
-           updates.attention ??
-           updates.mainDetails?.attention;
+           typedUpdates.attention_id ??
+           typedUpdates.attention ??
+           typedUpdates.mainDetails?.attention;
          if (requestedAttentionId !== undefined) {
            dbUpdates.attention_id = await this.resolveAttentionId(trx, requestedAttentionId);
          }
@@ -805,7 +894,7 @@ export class MnrService {
          // 4. Response 8D + Verification (Update/Upsert)
          const responsePayload = (updates as any).response8D;
          if (responsePayload && typeof responsePayload === 'object') {
-            await this.persistResponseArtifacts(trx, realId, responsePayload, userId, now);
+            await this.persistResponseArtifacts(trx, realId, responsePayload, actor.userId || 'SYSTEM', now);
          }
 
          // 5. Attachments (Update)
@@ -841,7 +930,7 @@ export class MnrService {
                 file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
                 remarks: withOriginalMarker || null,
                 last_update: now,
-                updateby: userId
+                updateby: actor.userId || 'SYSTEM'
               }).execute();
             }
          }
@@ -864,7 +953,7 @@ export class MnrService {
      });
   }
 
-  async deleteRecord(id: string) {
+  async deleteRecord(id: string, actor: MnrWorkflowActorContext = {}) {
      return await mnrRepository.executeTransaction(async (trx) => {
          // Resolve real mnr_id if control_no was passed
          const record = await trx.selectFrom('MNR_LOTS')
@@ -877,6 +966,12 @@ export class MnrService {
 
          if (!record) return { success: false, message: 'Record not found' };
          const realId = record.mnr_id;
+         const existingRecord = await mnrRepository.findByIdDetailed(realId);
+         assertWorkflowRecordAccess({
+           allowed: this.canMutateMainRecord(existingRecord?.record || {}, actor),
+           action: 'delete',
+           moduleName: 'MNR',
+         });
 
          await trx.deleteFrom('MNR_CC').where('mnr_id', '=', realId).execute();
          await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', realId).execute();

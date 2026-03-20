@@ -31,12 +31,50 @@ import {
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
 import { getNpiDbStatus } from '../workflow/npi-workflow.utils.js';
 import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
+import { getNpiStageOwnerId } from '../workflow/npi-workflow.utils.js';
+import {
+  assertWorkflowRecordAccess,
+  filterWorkflowRecordsByScope,
+  type WorkflowListScope,
+} from '../../../shared/utils/workflow-access.js';
 
 export class NpiCrudService implements INpiService {
   constructor(
     private repository: NpiRepository,
     private mapper: NpiMapper
   ) {}
+
+  private isAdminActor(actor?: NpiWorkflowActorContext) {
+    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+  }
+
+  private isAssignedRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
+    return Boolean(actor?.userId && getNpiStageOwnerId(record) === actor.userId);
+  }
+
+  private isMineRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
+    return Boolean(actor?.userId && record.inspector_id === actor.userId);
+  }
+
+  private canReadRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
+    if (!actor?.userId || this.isAdminActor(actor)) {
+      return true;
+    }
+
+    return [
+      record.inspector_id,
+      record.checker_id,
+      record.approver_id,
+    ].includes(actor.userId);
+  }
+
+  private canMutateMainRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
+    if (!actor?.userId || this.isAdminActor(actor)) {
+      return true;
+    }
+
+    return record.inspector_id === actor.userId;
+  }
 
   private getActorId(
     payload: NPICreationInput | NPIUpdateInput,
@@ -93,10 +131,18 @@ export class NpiCrudService implements INpiService {
       keyword?: string;
       dateFrom?: string;
       dateTo?: string;
+      scope?: WorkflowListScope;
     }
   ): Promise<NpiListDTO[]> {
     const records = await this.repository.findAllDetailed(filters);
-    return this.mapper.toListDTOs(records, actor);
+    const visibleRecords = this.isAdminActor(actor)
+      ? records
+      : filterWorkflowRecordsByScope(records, filters?.scope || 'history', {
+          isAssigned: (record) => this.isAssignedRecord(record, actor),
+          isMine: (record) => this.isMineRecord(record, actor),
+          isHistoryVisible: (record) => this.canReadRecord(record, actor),
+        });
+    return this.mapper.toListDTOs(visibleRecords, actor);
   }
 
   /**
@@ -107,6 +153,11 @@ export class NpiCrudService implements INpiService {
     if (!data) {
       throw new NotFoundError('NPI Record not found');
     }
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(data.record, actor),
+      action: 'view',
+      moduleName: 'NPI',
+    });
     return this.mapper.toDetailDTO(data, actor);
   }
 
@@ -181,6 +232,11 @@ export class NpiCrudService implements INpiService {
     if (!existing) {
       throw new NotFoundError('Record not found');
     }
+    assertWorkflowRecordAccess({
+      allowed: this.canMutateMainRecord(existing.record, { userId }),
+      action: 'update',
+      moduleName: 'NPI',
+    });
     
     const now = new Date();
     const effectiveUserId = userId || 'SYSTEM';
@@ -249,11 +305,16 @@ export class NpiCrudService implements INpiService {
   /**
    * Delete NPI record and all related data
    */
-  async deleteRecord(id: string): Promise<ServiceResponse<{ id: string }>> {
+  async deleteRecord(id: string, actor?: NpiWorkflowActorContext): Promise<ServiceResponse<{ id: string }>> {
     const existing = await this.repository.findByIdDetailed(id);
     if (!existing) {
       throw new NotFoundError('NPI Record not found');
     }
+    assertWorkflowRecordAccess({
+      allowed: this.canMutateMainRecord(existing.record, actor),
+      action: 'delete',
+      moduleName: 'NPI',
+    });
 
     const npiLotId = existing.record.npi_lot_id;
 

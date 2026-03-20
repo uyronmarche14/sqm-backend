@@ -4,13 +4,19 @@ import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema
 import { successResponse, createResponse } from '../../../shared/utils/api-response.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { sqmpWorkflowService } from '../workflow/workflow.service.js';
+import { resolveWorkflowListScope } from '../../../shared/utils/workflow-access.js';
 
 export class MainSqmpController {
   async getAll(req: Request, res: Response, next: NextFunction) {
     try {
       const status = req.query.status as string | undefined;
       const user = (req as any).user;
-      const records = await mainSqmpService.getAllRecords(status, user?.userId, user?.roleId);
+      const records = await mainSqmpService.getAllRecords(
+        status,
+        user?.userId,
+        user?.roleId,
+        resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }),
+      );
       res.json(successResponse(records));
     } catch (error) {
       console.error('[SQMP-MAIN] GET ALL error:', error);
@@ -160,10 +166,10 @@ export class MainSqmpController {
       }
 
       const result = await sqmpWorkflowService.issueMain(parsed.params.id, parsed.body?.remarks, userId, roleId);
-      res.json(successResponse(result.data || result, result.message));
+      return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQMP-MAIN] REQUEST RESPONSE error:', error);
-      next(error);
+      return next(error);
     }
   }
 

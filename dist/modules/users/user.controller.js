@@ -17,6 +17,15 @@ const mapUserToDto = (user) => ({
     last_update: user.last_update
 });
 export const userController = {
+    getLookupUsers: async (_req, res, next) => {
+        try {
+            const users = await userService.getLookupUsers();
+            res.json(users);
+        }
+        catch (error) {
+            next(error);
+        }
+    },
     getAllUsers: async (_req, res, next) => {
         try {
             const users = await userService.getAllUsers();

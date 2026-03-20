@@ -12,6 +12,23 @@ export class UserRepository extends BaseRepository<'USERS'> {
     return await this.getQuery().selectAll().orderBy('full_name').execute();
   }
 
+  async findLookupUsers() {
+    return await db
+      .selectFrom('USERS as u')
+      .leftJoin('ROLES as r', 'u.role_id', 'r.role_id')
+      .select([
+        'u.user_id',
+        'u.full_name',
+        'u.email',
+        'u.role_id',
+        'u.site_id',
+        'u.active_flag',
+        'r.role_name',
+      ])
+      .orderBy('u.full_name')
+      .execute();
+  }
+
   async findById(id: string) {
     return await super.findById('user_id', id);
   }

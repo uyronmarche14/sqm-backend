@@ -12,6 +12,7 @@ import {
 } from './npi.schema.js';
 import { createResponse, successResponse } from '../../shared/utils/api-response.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 const repository = new NpiRepository();
 const mapper = new NpiMapper();
@@ -69,6 +70,10 @@ export class NpiController {
         keyword: req.query.keyword as string | undefined,
         dateFrom: req.query.dateFrom as string | undefined,
         dateTo: req.query.dateTo as string | undefined,
+        scope: resolveWorkflowListScope({
+          scope: req.query.scope,
+          assignedToMe: req.query.assignedToMe,
+        }),
       };
       const records = await crudService.getAllRecords(await this.getActor(req), filters);
       res.json(successResponse(records));
@@ -234,7 +239,7 @@ export class NpiController {
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = NpiIdParamSchema.parse({ params: req.params }).params;
-      const result = await crudService.deleteRecord(id);
+      const result = await crudService.deleteRecord(id, await this.getActor(req));
       res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] DELETE error:', error);

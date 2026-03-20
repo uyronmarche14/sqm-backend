@@ -144,6 +144,17 @@ export class FiveM1EWorkflowService {
       };
     }
 
+    // SQE checker and approver stages must remain explicitly assigned.
+    // Role access may still make the queue readable, but only the recorded assignee
+    // may receive actionable workflow ownership for check/approve.
+    if (isExplicitApprovalAssigneeStage) {
+      return {
+        owner: explicitOwner,
+        ownerMode: 'unresolved' as FiveM1EWorkflowOwnerMode,
+        eligibleActorUserIds: [],
+      };
+    }
+
     const eligibleUsers = await this.findStageEligibleUsers(stage);
     if (eligibleUsers.length === 1) {
       const [user] = eligibleUsers;

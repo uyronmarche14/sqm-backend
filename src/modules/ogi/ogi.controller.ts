@@ -3,12 +3,33 @@ import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
 import { successResponse } from '../../shared/utils/api-response.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class OgiController {
+  constructor() {
+    this.getAll = this.getAll.bind(this);
+    this.getById = this.getById.bind(this);
+    this.create = this.create.bind(this);
+    this.update = this.update.bind(this);
+    this.generateSequence = this.generateSequence.bind(this);
+    this.downloadAttachment = this.downloadAttachment.bind(this);
+    this.submit = this.submit.bind(this);
+    this.delete = this.delete.bind(this);
+  }
+
+  private getActor(req: Request) {
+    return {
+      userId: (req as any).user?.userId || (req as any).user?.id || 'SYSTEM',
+      roleName: (req as any).user?.roleName || (req as any).user?.role_name || (req as any).user?.role || undefined,
+    };
+  }
   
-  async getAll(_req: Request, res: Response, next: NextFunction) {
+  async getAll(req: Request, res: Response, next: NextFunction) {
     try {
-      const records = await ogiService.getAllRecords();
+      const records = await ogiService.getAllRecords(
+        this.getActor(req),
+        resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }),
+      );
       return res.json(successResponse(records));
     } catch (error) {
       console.error('[OGI] GET ALL error:', error);
@@ -19,7 +40,7 @@ export class OgiController {
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
-      const record = await ogiService.getRecordById(id);
+      const record = await ogiService.getRecordById(id, this.getActor(req));
       return res.json(successResponse(record));
     } catch (error) {
       console.error('[OGI] GET BY ID error:', error);
@@ -45,10 +66,10 @@ export class OgiController {
     try {
       const { id } = OgiUpdateSchema.parse({ params: req.params, body: req.body }).params;
       const payload = OgiUpdateSchema.parse({ params: req.params, body: req.body }).body;
-      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const actor = this.getActor(req);
       const files = (req as any).files || [];
 
-      const result = await ogiService.updateRecord(id, payload, userId, files);
+      const result = await ogiService.updateRecord(id, payload, actor, files);
       return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] UPDATE error:', error);
@@ -98,7 +119,7 @@ export class OgiController {
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
-      const result = await ogiService.deleteRecord(id);
+      const result = await ogiService.deleteRecord(id, this.getActor(req));
       return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] DELETE error:', error);

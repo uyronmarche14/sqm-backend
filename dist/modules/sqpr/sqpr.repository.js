@@ -8,7 +8,7 @@ export class SqprRepository extends BaseRepository {
     async findSiteCode(siteId) {
         const row = await db
             .selectFrom('MFG_SITES as site')
-            .select((eb) => [
+            .select([
             'site.site_id',
             'site.site_name',
             sql `COALESCE(site.site_code, site.site_name)`.as('site_code'),

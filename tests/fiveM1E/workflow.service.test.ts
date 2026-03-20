@@ -292,6 +292,33 @@ describe('FiveM1EWorkflowService', () => {
     }));
   });
 
+  it('does not grant check actions through role fallback when the SQE checker field is not assigned', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 5,
+        checker: null,
+        checker_full_name: null,
+      }),
+    );
+    permissions.findUsersWithRolePermission.mockImplementation(async (formId: string, action: string) => {
+      if (
+        action === 'check' &&
+        (formId === '5M1EApprovalSecEnvi-06-17' || formId === '5M1EApprovalSecQA-06-17')
+      ) {
+        return [{ userId: 'sqe-checker-1', fullName: 'SQE Checker' }];
+      }
+      return [];
+    });
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+
+    await expect(service.canUserPerformAction('5M-001', 'sqe-checker-1', 'check')).resolves.toBe(false);
+    await expect(service.checkApplication('5M-001', 'sqe-checker-1', 'checked')).rejects.toThrow(
+      'Only the assigned SQE checker can check this 5M1E application.',
+    );
+  });
+
   it('moves the assigned approver to approved on approve', async () => {
     repository.findWithApproval.mockResolvedValue(
       createRecord({
@@ -317,6 +344,33 @@ describe('FiveM1EWorkflowService', () => {
       status: 'APPROVED',
       workflowStageCode: '15',
     }));
+  });
+
+  it('does not grant approve actions through role fallback when the SQE approver field is not assigned', async () => {
+    repository.findWithApproval.mockResolvedValue(
+      createRecord({
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 6,
+        approver: null,
+        approver_full_name: null,
+      }),
+    );
+    permissions.findUsersWithRolePermission.mockImplementation(async (formId: string, action: string) => {
+      if (
+        action === 'approve' &&
+        (formId === '5M1EApprovalSecEnvi-06-17' || formId === '5M1EApprovalSecQA-06-17')
+      ) {
+        return [{ userId: 'sqe-approver-1', fullName: 'SQE Approver' }];
+      }
+      return [];
+    });
+
+    const service = new FiveM1EWorkflowService(repository as any, permissions as any);
+
+    await expect(service.canUserPerformAction('5M-001', 'sqe-approver-1', 'approve')).resolves.toBe(false);
+    await expect(service.approveApplication('5M-001', 'sqe-approver-1', 'approved')).rejects.toThrow(
+      'Only the assigned SQE approver can approve this 5M1E application.',
+    );
   });
 
   it('moves the assigned approver to approved with condition when requested', async () => {

@@ -147,6 +147,7 @@ export const CreateFiveM1ESchema = z.object({
         approver: z.string().optional(),
         approver_name: z.string().optional(),
         approver_dt_aprd: z.string().optional(),
+        apr_status: z.string().optional(),
         // Final Approver
         final_approver: z.string().optional(),
         fa_name: z.string().optional(),

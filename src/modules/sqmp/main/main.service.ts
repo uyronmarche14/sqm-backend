@@ -6,8 +6,73 @@ import { NotFoundError, ForbiddenError } from '../../../shared/errors/AppError.j
 import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 import { SQMP_STAGE_CODE } from '../workflow/workflow.constants.js';
 import { buildSqmpWorkflowMetadata } from '../workflow/workflow.utils.js';
+import {
+  assertWorkflowRecordAccess,
+  filterWorkflowRecordsByScope,
+  type WorkflowListScope,
+} from '../../../shared/utils/workflow-access.js';
 
 export class MainSqmpService {
+  private isGlobalRole(roleName?: string) {
+    return ['ADMIN', 'MPD'].some((role) => (roleName || '').toUpperCase().includes(role));
+  }
+
+  private isSupplierRole(roleName?: string) {
+    return (roleName || '').toUpperCase().includes('SUPPLIER');
+  }
+
+  private hasSupplierAccess(record: any, userId?: string, supplierIds: string[] = []) {
+    if (!record || !userId) {
+      return false;
+    }
+
+    return supplierIds.includes(record.supplier_id) || record.attention_id === userId;
+  }
+
+  private canReadRecord(record: any, latestResponse: any, userId?: string, roleName?: string, supplierIds: string[] = []) {
+    if (!record || !userId || this.isGlobalRole(roleName)) {
+      return true;
+    }
+
+    if (this.isSupplierRole(roleName)) {
+      return this.hasSupplierAccess(record, userId, supplierIds);
+    }
+
+    const metadata = buildSqmpWorkflowMetadata({
+      record,
+      latestResponse,
+      userId,
+      roleName,
+      userSiteId: null,
+      supplierIds,
+    });
+
+    if (Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0) {
+      return true;
+    }
+
+    return [
+      record.encoder_id,
+      record.issuer_id,
+      record.checker_id,
+      record.approver_id,
+      latestResponse?.checker_id,
+      latestResponse?.approver_id,
+    ].includes(userId);
+  }
+
+  private isMineRecord(record: any, latestResponse: any, userId?: string, roleName?: string, supplierIds: string[] = []) {
+    if (!userId) {
+      return false;
+    }
+
+    return (
+      record.encoder_id === userId ||
+      record.issuer_id === userId ||
+      this.canReadRecord(record, latestResponse, userId, roleName, supplierIds)
+    );
+  }
+
   private async getRoleName(roleId?: string): Promise<string> {
       if (!roleId) return 'UNKNOWN';
       const roleObj = await userRepository.findRoleById(roleId);
@@ -19,24 +84,22 @@ export class MainSqmpService {
    */
   private async validateAccess(record: any, roleName: string, userId: string): Promise<void> {
     const isSupplier = roleName.toUpperCase().includes('SUPPLIER');
-    const isGlobalRole = ['ADMIN', 'MPD'].some(r => roleName.toUpperCase().includes(r));
-
-    if (isGlobalRole) return;
-
-    const userObj = await userRepository.findById(userId);
-    const userSiteId = userObj?.site_id;
-
-    const isOwner = record.encoder_id === userId;
-    const isChecker = record.checker_id === userId;
-    const isApprover = record.approver_id === userId;
-    const isIssuer = record.issuer_id === userId;
-    const isSameSite = record.site_id === userSiteId;
+    if (this.isGlobalRole(roleName)) return;
 
     if (isSupplier) {
       throw new ForbiddenError('Suppliers are not permitted to edit SQM Plan issuance content.');
     }
 
-    if (!isOwner && !isChecker && !isApprover && !isIssuer && !isSameSite) {
+    const metadata = buildSqmpWorkflowMetadata({
+      record,
+      latestResponse: null,
+      userId,
+      roleName,
+      userSiteId: null,
+      supplierIds: [],
+    });
+
+    if (!Array.isArray(metadata.availableActions) || metadata.availableActions.length === 0) {
       throw new ForbiddenError('Access Denied: You do not have permission to access or modify this record.');
     }
   }
@@ -84,7 +147,7 @@ export class MainSqmpService {
     return supplierUser?.user_id || normalizedAttentionId;
   }
 
-  async getAllRecords(status?: string, userId?: string, roleId?: string) {
+  async getAllRecords(status?: string, userId?: string, roleId?: string, scope: WorkflowListScope = 'history') {
     const roleName = await this.getRoleName(roleId);
     const userObj = userId ? await userRepository.findById(userId) : null;
     const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
@@ -98,7 +161,28 @@ export class MainSqmpService {
       latestResponses.map((response: any) => [response.sqmp_id, response]),
     );
 
-    return records.map((r: any) => {
+    const visibleRecords = this.isGlobalRole(roleName)
+      ? records
+      : filterWorkflowRecordsByScope(records, scope, {
+          isAssigned: (record) => {
+            const latestResponse = latestResponseBySqmpId.get((record as any).sqmp_id);
+            const metadata = buildSqmpWorkflowMetadata({
+              record,
+              latestResponse,
+              userId,
+              roleName,
+              userSiteId: null,
+              supplierIds,
+            });
+            return Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0;
+          },
+          isMine: (record) =>
+            this.isMineRecord(record, latestResponseBySqmpId.get((record as any).sqmp_id), userId, roleName, supplierIds),
+          isHistoryVisible: (record) =>
+            this.canReadRecord(record, latestResponseBySqmpId.get((record as any).sqmp_id), userId, roleName, supplierIds),
+        });
+
+    return visibleRecords.map((r: any) => {
       const latestResponse = latestResponseBySqmpId.get(r.sqmp_id);
       const metadata = buildSqmpWorkflowMetadata({
         record: r,
@@ -130,6 +214,11 @@ export class MainSqmpService {
 
     const { record, mainDocuments, appendixDocuments, ccList, responses, statusRemarks } = data;
     const latestResponse = responses?.[responses.length - 1];
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(record, latestResponse, userId, roleName, supplierIds),
+      action: 'view',
+      moduleName: 'SQM Plan',
+    });
     const metadata = buildSqmpWorkflowMetadata({
       record,
       latestResponse,

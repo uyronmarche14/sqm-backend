@@ -6,6 +6,35 @@ import * as ctrl from './master-data.controller.js';
 const router = express.Router();
 // All master data endpoints require authentication
 router.use(requireAuth);
+// Workflow-safe lookup endpoints
+router.get('/lookup/sites', ctrl.sitesCtrl.getAll);
+router.get('/lookup/suppliers', ctrl.suppliersCtrl.getAll);
+router.get('/lookup/products', ctrl.productsCtrl.getAll);
+router.get('/lookup/models', ctrl.modelsCtrl.getAll);
+router.get('/lookup/mfg-areas', ctrl.mfgAreasCtrl.getAll);
+router.get('/lookup/defect-categories', ctrl.defectCatsCtrl.getAll);
+router.get('/lookup/defects', ctrl.defectsCtrl.getAll);
+router.get('/lookup/defect-classes', ctrl.defectClassesCtrl.getAll);
+router.get('/lookup/dispositions', ctrl.dispositionsCtrl.getAll);
+router.get('/lookup/severity', ctrl.severityCtrl.getAll);
+router.get('/lookup/aql', ctrl.aqlCtrl.getAll);
+router.get('/lookup/inspection-categories', ctrl.inspCatsCtrl.getAll);
+router.get('/lookup/inspection-methods', ctrl.inspMethodsCtrl.getAll);
+router.get('/lookup/inspectors', ctrl.inspectorsCtrl.getAll);
+router.get('/lookup/mnr-types', ctrl.generalMasterCtrl.getAll);
+router.get('/lookup/general', ctrl.generalMasterCtrl.getAll);
+router.get('/lookup/parts', ctrl.partClassCtrl.getAll);
+router.get('/lookup/part-types', ctrl.partTypesCtrl.getAll);
+router.get('/lookup/part-data-categories', ctrl.partDataCatsCtrl.getAll);
+router.get('/lookup/part-dim-categories', ctrl.partDimCatsCtrl.getAll);
+router.get('/lookup/part-noise-categories', ctrl.partNoiseCatsCtrl.getAll);
+router.get('/lookup/parts-catalog', ctrl.partsCatalogCtrl.getAll);
+router.get('/lookup/supplier-incharges', ctrl.supplierInchargesCtrl.getAll);
+router.get('/lookup/supplier-information', ctrl.supplierInfoCtrl.getAll);
+router.get('/lookup/supplier-information/by-supplier/:supplierId', ctrl.getSupplierInfoBySupplier);
+router.get('/lookup/audit-categories', ctrl.auditCatsCtrl.getAll);
+router.get('/lookup/audit-types', ctrl.auditTypesCtrl.getAll);
+router.get('/lookup/five-m1e-categories', ctrl.fiveM1ECatsCtrl.getAll);
 const maintenanceAccess = (formIds) => ({
     list: requireAnyPermission(formIds, 'viewlist'),
     add: requireAnyPermission(formIds, 'add'),

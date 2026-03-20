@@ -5,7 +5,7 @@ import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '.
 import { getLegacyFormMapping, getModulePermissionManifest } from '@sqm/permissions-contract';
 import { getAssignedWorkflowAccessibleForms } from './assigned-form-access.js';
 export class AuthService {
-    buildAuthContextResponse(user, accessibleForms) {
+    buildAuthContextResponse(user, accessibleForms, roleAccessRecords) {
         console.log('🏗️ [Auth] Building auth context for accessible forms:', accessibleForms);
         const userMenuSet = new Set();
         for (const formCode of accessibleForms) {
@@ -44,6 +44,7 @@ export class AuthService {
             },
             userMenu,
             accessibleForms,
+            roleAccessRecords,
         };
     }
     async buildAccessibleForms(userId) {
@@ -94,8 +95,11 @@ export class AuthService {
         };
         const accessToken = generateAccessToken(payload);
         const refreshToken = generateRefreshToken(payload);
-        const accessibleForms = await this.buildAccessibleForms(user.user_id);
-        const authContext = this.buildAuthContextResponse(user, accessibleForms);
+        const [accessibleForms, roleAccessRecords] = await Promise.all([
+            this.buildAccessibleForms(user.user_id),
+            authRepository.findCurrentUserRoleAccessRecords(user.user_id),
+        ]);
+        const authContext = this.buildAuthContextResponse(user, accessibleForms, roleAccessRecords);
         return {
             success: true,
             message: 'Welcome back!',
@@ -108,6 +112,7 @@ export class AuthService {
             mustChangePassword: user.change_pw ? true : false,
             userMenu: authContext.userMenu,
             accessibleForms: authContext.accessibleForms,
+            roleAccessRecords: authContext.roleAccessRecords,
         };
     }
     async getCurrentUserContext(userId) {
@@ -115,8 +120,11 @@ export class AuthService {
         if (!user) {
             throw new UnauthorizedError('Invalid session');
         }
-        const accessibleForms = await this.buildAccessibleForms(user.user_id);
-        const authContext = this.buildAuthContextResponse(user, accessibleForms);
+        const [accessibleForms, roleAccessRecords] = await Promise.all([
+            this.buildAccessibleForms(user.user_id),
+            authRepository.findCurrentUserRoleAccessRecords(user.user_id),
+        ]);
+        const authContext = this.buildAuthContextResponse(user, accessibleForms, roleAccessRecords);
         return {
             success: true,
             message: 'User context refreshed',
@@ -124,6 +132,7 @@ export class AuthService {
             userData: authContext.userData,
             userMenu: authContext.userMenu,
             accessibleForms: authContext.accessibleForms,
+            roleAccessRecords: authContext.roleAccessRecords,
         };
     }
 }

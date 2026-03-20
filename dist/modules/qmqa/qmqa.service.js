@@ -4,7 +4,8 @@ import { db } from '../../shared/infrastructure/db.js';
 import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
 import { qmqaRepository } from './qmqa.repository.js';
-import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
+import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
+import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, resolveWorkflowListScope, } from '../../shared/utils/workflow-access.js';
 const sanitizeUUID = (value) => {
     return value && value.trim() !== '' ? value : null;
 };
@@ -82,14 +83,63 @@ export class QmqaService {
             .executeTakeFirst();
         return supplierUser?.user_id || cleanAttentionId;
     }
-    async resolveActorContext(userId) {
+    async resolveActorContextWithRole(userId, roleName) {
         if (!userId) {
             return {};
         }
         return {
             userId,
             supplierIds: await qmqaRepository.findSupplierIdsByUserId(userId),
+            roleName: roleName || null,
         };
+    }
+    isAdminActor(actor) {
+        return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    }
+    isAssignedRecord(record, latestResponse, actor) {
+        if (!actor.userId) {
+            return false;
+        }
+        const workflow = buildQmqaWorkflowMetadata(record, {
+            latestResponse: latestResponse || null,
+            actor,
+        });
+        return Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
+    }
+    isMineRecord(record, latestResponse, actor) {
+        if (!actor.userId) {
+            return false;
+        }
+        return (record.encoder_id === actor.userId ||
+            record.issuer_id === actor.userId ||
+            record.sqe_pic_id === actor.userId ||
+            this.isAssignedRecord(record, latestResponse, actor));
+    }
+    canReadRecord(record, latestResponse, actor) {
+        if (!actor.userId || this.isAdminActor(actor)) {
+            return true;
+        }
+        if (this.isAssignedRecord(record, latestResponse, actor) || isQmqaSupplierActor(record, actor)) {
+            return true;
+        }
+        return [
+            record.encoder_id,
+            record.issuer_id,
+            record.checker_id,
+            record.approver_id,
+            record.attention_id,
+            record.sqe_pic_id,
+            record.pic_auditor_id,
+            latestResponse?.checker_id,
+            latestResponse?.approver_id,
+            latestResponse?.updateby,
+        ].includes(actor.userId);
+    }
+    canMutateMainRecord(record, actor) {
+        if (!actor.userId || this.isAdminActor(actor)) {
+            return true;
+        }
+        return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
     }
     async findLatestResponseMap(qmqaIds) {
         const latestResponseMap = new Map();
@@ -206,13 +256,21 @@ export class QmqaService {
     }
     async getAllRecords(filters, actor) {
         const mappedStatus = resolveQmqaStatusFilter(filters?.status);
-        const actorContext = await this.resolveActorContext(actor?.userId);
+        const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
+        const scope = resolveWorkflowListScope({ scope: filters?.scope }, 'history');
         const records = await qmqaRepository.findAllRecordsDetailed({
             mappedStatus,
             actorContext,
         });
         const latestResponseMap = await this.findLatestResponseMap(records.map((record) => record.qmqa_id));
-        return records.map((record) => this.decorateRecord(record, actorContext, latestResponseMap.get(record.qmqa_id) || null));
+        const visibleRecords = this.isAdminActor(actorContext)
+            ? records
+            : filterWorkflowRecordsByScope(records, scope, {
+                isAssigned: (record) => this.isAssignedRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext),
+                isMine: (record) => this.isMineRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext),
+                isHistoryVisible: (record) => this.canReadRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext),
+            });
+        return visibleRecords.map((record) => this.decorateRecord(record, actorContext, latestResponseMap.get(record.qmqa_id) || null));
     }
     async getRecordById(id, actor) {
         const data = await qmqaRepository.findRecordByIdDetailed(id);
@@ -223,7 +281,12 @@ export class QmqaService {
         const attachments = await qmqaRepository.findAttachments(data.qmqa_id);
         const ccList = await qmqaRepository.findCcList(data.qmqa_id);
         const response = await qmqaRepository.findResponseByQmqaId(data.qmqa_id);
-        const actorContext = await this.resolveActorContext(actor?.userId);
+        const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
+        assertWorkflowRecordAccess({
+            allowed: this.canReadRecord(data, response, actorContext),
+            action: 'view',
+            moduleName: 'QMQA',
+        });
         let responseInitialAttachments = [];
         let responseFinalAttachments = [];
         let responseVerificationAttachments = [];
@@ -402,18 +465,24 @@ export class QmqaService {
         }
         throw new ConflictError('Unable to generate a unique QMQA control number.');
     }
-    async updateRecord(id, payload, userId) {
+    async updateRecord(id, payload, actor) {
         const existing = await qmqaRepository.findRecordByIdDetailed(id);
         if (!existing) {
             throw new NotFoundError('QMQA Record not found');
         }
+        const actorContext = await this.resolveActorContextWithRole(actor.userId, actor.roleName);
+        assertWorkflowRecordAccess({
+            allowed: this.canMutateMainRecord(existing, actorContext),
+            action: 'update',
+            moduleName: 'QMQA',
+        });
         const now = new Date();
         const resolvedAttentionId = payload.attention_id !== undefined
             ? await this.resolveAttentionId(payload.attention_id)
             : undefined;
         const qmqaUpdates = {
             last_update: now,
-            updateby: userId || 'SYSTEM',
+            updateby: actor.userId || 'SYSTEM',
         };
         if (payload.audit_type_id !== undefined)
             qmqaUpdates.audit_type_id = payload.audit_type_id;
@@ -445,7 +514,7 @@ export class QmqaService {
             qmqaUpdates.approver_id = sanitizeUUID(payload.approver_id);
         const planUpdates = {
             last_update: now,
-            updateby: userId || 'SYSTEM',
+            updateby: actor.userId || 'SYSTEM',
         };
         if (payload.site_id !== undefined)
             planUpdates.site_id = payload.site_id;
@@ -636,11 +705,17 @@ export class QmqaService {
             return { success: true, message: 'Schedule deleted successfully' };
         });
     }
-    async deleteRecord(id) {
+    async deleteRecord(id, actor) {
         const existing = await qmqaRepository.findRecordByIdDetailed(id);
         if (!existing) {
             throw new NotFoundError('QMQA Record not found');
         }
+        const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
+        assertWorkflowRecordAccess({
+            allowed: this.canMutateMainRecord(existing, actorContext),
+            action: 'delete',
+            moduleName: 'QMQA',
+        });
         return qmqaRepository.executeTransaction(async (trx) => {
             const response = await qmqaRepository.findResponseByQmqaId(id);
             if (response) {

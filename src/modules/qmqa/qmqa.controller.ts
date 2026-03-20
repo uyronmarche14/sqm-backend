@@ -11,6 +11,7 @@ import {
 } from './qmqa.schema.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class QmqaController {
   private getUserId(req: Request) {
@@ -19,6 +20,10 @@ export class QmqaController {
 
   private getRoleId(req: Request) {
     return (req as any).user?.roleId || (req as any).user?.role_id || undefined;
+  }
+
+  private getRoleName(req: Request) {
+    return (req as any).user?.roleName || (req as any).user?.role_name || (req as any).user?.role || undefined;
   }
 
   private getActionRemarks(req: Request) {
@@ -81,9 +86,13 @@ export class QmqaController {
   getAllRecords = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const status = req.query.status as string | undefined;
+      const scope = resolveWorkflowListScope({
+        scope: req.query.scope,
+        assignedToMe: req.query.assignedToMe,
+      });
       const records = await qmqaService.getAllRecords(
-        { status },
-        { userId: this.getUserId(req) },
+        { status, scope },
+        { userId: this.getUserId(req), roleName: this.getRoleName(req) },
       );
       res.json({ data: records });
     } catch (error) {
@@ -94,7 +103,10 @@ export class QmqaController {
   getRecordById = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-      const record = await qmqaService.getRecordById(id, { userId: this.getUserId(req) });
+      const record = await qmqaService.getRecordById(id, {
+        userId: this.getUserId(req),
+        roleName: this.getRoleName(req),
+      });
       res.json({ data: record });
     } catch (error) {
       next(error);
@@ -118,7 +130,10 @@ export class QmqaController {
       const result = await qmqaService.updateRecord(
         parsed.params.id,
         parsed.body,
-        this.getUserId(req),
+        {
+          userId: this.getUserId(req),
+          roleName: this.getRoleName(req),
+        },
       );
       res.json(result);
     } catch (error) {
@@ -129,7 +144,10 @@ export class QmqaController {
   deleteRecord = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
-      const result = await qmqaService.deleteRecord(id);
+      const result = await qmqaService.deleteRecord(id, {
+        userId: this.getUserId(req),
+        roleName: this.getRoleName(req),
+      });
       res.json(result);
     } catch (error) {
       next(error);
@@ -496,4 +514,3 @@ export class QmqaController {
 }
 
 export const qmqaController = new QmqaController();
-

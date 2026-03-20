@@ -10,9 +10,13 @@ const repositoryMock = vi.hoisted(() => ({
   replaceActionItems: vi.fn(),
   replaceCheckItems: vi.fn(),
   replaceStatusRemarks: vi.fn(),
+  replaceCCUsers: vi.fn(),
+  deleteApproval: vi.fn(),
+  deleteByControlNo: vi.fn(),
 }));
 
 const workflowServiceMock = vi.hoisted(() => ({
+  getWorkflowMetadata: vi.fn(),
   submitApplication: vi.fn(),
   checkApplication: vi.fn(),
   approveApplication: vi.fn(),
@@ -32,8 +36,22 @@ import { FiveM1EService } from '../../src/modules/fiveM1E/fiveM1E.service.js';
 import { FIVE_M1E_WORKFLOW_STAGE } from '../../src/modules/fiveM1E/workflow/fiveM1E-workflow.constants.js';
 
 describe('FiveM1EService', () => {
+  const permissionServiceMock = {
+    checkRolePermission: vi.fn(),
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.DRAFT,
+      workflowStageCode: 'DRAFT',
+      workflowStageLabel: 'Draft',
+      availableActions: ['submit'],
+      nextApproverId: null,
+      nextApproverName: null,
+      ownerMode: 'shared-queue',
+    });
   });
 
   it('adds workflow metadata to list reads', async () => {
@@ -49,7 +67,7 @@ describe('FiveM1EService', () => {
     ]);
 
     const service = new FiveM1EService();
-    const records = await service.getAllApplications(undefined, 'creator-1');
+    const records = await service.getAllApplications(undefined, { userId: 'creator-1', roleName: 'USER' });
 
     expect(records).toHaveLength(1);
     expect(records[0]).toEqual(expect.objectContaining({
@@ -61,6 +79,241 @@ describe('FiveM1EService', () => {
       supplier_name: 'Supplier One',
       site_name: 'Site One',
     }));
+  });
+
+  it('keeps legacy-readable joined labels on list reads', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-001',
+        CreatedBy: 'creator-1',
+        approval_status: 'DRAFT',
+        supplier_name: 'Supplier One',
+        vendor_name: 'Vendor One',
+        item_name: 'Part One',
+        class_name: 'Class One',
+        attribute_05_name: 'Rank One',
+        attribute_06_name: 'Category One',
+      },
+    ]);
+
+    const service = new FiveM1EService();
+    const records = await service.getAllApplications(undefined, { userId: 'creator-1', roleName: 'USER' });
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        vendor_name: 'Vendor One',
+        item_name: 'Part One',
+        class_name: 'Class One',
+        attribute_05_name: 'Rank One',
+        attribute_06_name: 'Category One',
+      }),
+    );
+  });
+
+  it('returns released records to users with release queue role access even when they are not record participants', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-REL',
+        CreatedBy: 'creator-1',
+        approval_status: 'RELEASE',
+      },
+    ]);
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.RELEASED,
+      workflowStageCode: 'RELEASE',
+      workflowStageLabel: 'Released',
+      availableActions: [],
+      nextApproverId: null,
+      nextApproverName: null,
+      ownerMode: 'assigned',
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1ERELEASE-06-17' && (action === 'view' || action === 'viewlist'),
+    );
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const records = await service.getAllApplications('RELEASE', { userId: 'viewer-1', roleName: 'USER' });
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        control_no: '5M-REL',
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.RELEASED,
+      }),
+    );
+  });
+
+  it('returns shared for-approval queue records to role-assigned users on assigned scope', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-FAP',
+        CreatedBy: 'creator-1',
+        approval_status: 'FAPPROVED',
+      },
+    ]);
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.REVIEWER,
+      workflowStageCode: '4',
+      workflowStageLabel: 'Awaiting Reviewer',
+      availableActions: ['submit'],
+      nextApproverId: null,
+      nextApproverName: null,
+      ownerMode: 'shared-queue',
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecEnvi-06-17' && (action === 'view' || action === 'viewlist'),
+    );
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const records = await service.getAllApplications(
+      'FAPPROVED',
+      { userId: 'approver-1', roleName: 'USER' },
+      'assigned',
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        control_no: '5M-FAP',
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.REVIEWER,
+      }),
+    );
+  });
+
+  it('returns explicitly assigned for-approval rows to role-visible users on the for-approval queue', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-FAP-ASSIGNED',
+        CreatedBy: 'creator-1',
+        approval_status: 'FOR APPROVAL',
+      },
+    ]);
+    workflowServiceMock.getWorkflowMetadata.mockResolvedValue({
+      workflowStage: FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER,
+      workflowStageCode: '7',
+      workflowStageLabel: 'Awaiting Final Approver',
+      availableActions: [],
+      nextApproverId: 'other-approver',
+      nextApproverName: 'Other Approver',
+      ownerMode: 'assigned',
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecEnvi-06-17' && (action === 'view' || action === 'viewlist'),
+    );
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const records = await service.getAllApplications(
+      'FAPPROVED',
+      { userId: 'approver-1', roleName: 'USER' },
+      'assigned',
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        control_no: '5M-FAP-ASSIGNED',
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER,
+      }),
+    );
+  });
+
+  it('returns the full for-approval queue to admin even when assigned scope is requested', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-FAP-CHECK',
+        CreatedBy: 'creator-1',
+        approval_status: 'FOR APPROVAL',
+      },
+      {
+        ID: 2,
+        ControlNo: '5M-FAP-APPROVE',
+        CreatedBy: 'creator-2',
+        approval_status: 'FOR APPROVAL',
+      },
+    ]);
+    workflowServiceMock.getWorkflowMetadata
+      .mockResolvedValueOnce({
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER,
+        workflowStageCode: '5',
+        workflowStageLabel: 'For Checked',
+        availableActions: [],
+        nextApproverId: 'checker-1',
+        nextApproverName: 'Checker One',
+        ownerMode: 'assigned',
+      })
+      .mockResolvedValueOnce({
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER,
+        workflowStageCode: '6',
+        workflowStageLabel: 'For Approved',
+        availableActions: [],
+        nextApproverId: 'approver-1',
+        nextApproverName: 'Approver One',
+        ownerMode: 'assigned',
+      });
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const records = await service.getAllApplications(
+      'FAPPROVED',
+      { userId: 'admin-1', roleName: 'TIP_ADMIN' },
+      'assigned',
+    );
+
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record.control_no)).toEqual(['5M-FAP-CHECK', '5M-FAP-APPROVE']);
+  });
+
+  it('returns full search results to users with the 5M1E search form even when they are not participants', async () => {
+    repositoryMock.findAllWithApproval.mockResolvedValue([
+      {
+        ID: 1,
+        ControlNo: '5M-001',
+        CreatedBy: 'creator-1',
+        approval_status: 'DRAFT',
+      },
+      {
+        ID: 2,
+        ControlNo: '5M-002',
+        CreatedBy: 'other-user',
+        approval_status: 'RELEASE',
+      },
+    ]);
+    workflowServiceMock.getWorkflowMetadata
+      .mockResolvedValueOnce({
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.DRAFT,
+        workflowStageCode: 'DRAFT',
+        workflowStageLabel: 'Draft',
+        availableActions: [],
+        nextApproverId: null,
+        nextApproverName: null,
+        ownerMode: 'assigned',
+      })
+      .mockResolvedValueOnce({
+        workflowStage: FIVE_M1E_WORKFLOW_STAGE.RELEASED,
+        workflowStageCode: 'RELEASE',
+        workflowStageLabel: 'Released',
+        availableActions: [],
+        nextApproverId: null,
+        nextApproverName: null,
+        ownerMode: 'assigned',
+      });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1ESEARCH-11-01' && (action === 'view' || action === 'viewlist'),
+    );
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
+    const records = await service.getAllApplications('SEARCH', { userId: 'search-user-1', roleName: 'USER' });
+
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record.control_no)).toEqual(['5M-001', '5M-002']);
   });
 
   it('delegates submit to the workflow service', async () => {
@@ -132,5 +385,20 @@ describe('FiveM1EService', () => {
         ModifiedDate: expect.any(Date),
       }),
     );
+  });
+
+  it('cleans status remarks and cc rows when deleting an application', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      approval_status: 'DRAFT',
+    });
+
+    const service = new FiveM1EService();
+    await service.deleteApplication('5M-001');
+
+    expect(repositoryMock.replaceStatusRemarks).toHaveBeenCalledWith('5M-001', []);
+    expect(repositoryMock.replaceCCUsers).toHaveBeenCalledWith('5M-001', []);
+    expect(repositoryMock.deleteApproval).toHaveBeenCalledWith('5M-001');
+    expect(repositoryMock.deleteByControlNo).toHaveBeenCalledWith('5M-001');
   });
 });

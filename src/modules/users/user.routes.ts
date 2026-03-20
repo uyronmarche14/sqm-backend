@@ -9,6 +9,10 @@ const USER_FORM_IDS = ['USERS-06-01', 'USERS-06-02', 'USERS-06-03'];
 // All user routes require authentication
 router.use(requireAuth);
 
+// Workflow-safe helper endpoints
+router.get('/lookup', userController.getLookupUsers);
+router.post('/:id/assignment-coverage-preview', userController.getAssignmentCoverage);
+
 router.get('/', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAllUsers);
 router.get('/:id', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getUserById);
 router.post('/:id/assignment-coverage', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAssignmentCoverage);

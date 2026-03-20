@@ -1,5 +1,6 @@
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 import { db } from '../../shared/infrastructure/db.js';
+import { sql } from 'kysely';
 /** Check if value is a pure numeric string (matches int ID column) */
 const isNumeric = (val) => /^\d+$/.test(val);
 export class FiveM1ERepository extends BaseRepository {
@@ -27,9 +28,14 @@ export class FiveM1ERepository extends BaseRepository {
             .selectFrom('TBL_5M1E_Application as app')
             .leftJoin('TBL_5M1E_Approval as approval', 'app.ControlNo', 'approval.ControlNo')
             .leftJoin('SUPPLIERS as sup', 'app.SupplierID', 'sup.supplier_id')
+            .leftJoin('SUPPLIERS as vendorSup', 'app.VendorID', 'vendorSup.supplier_id')
             .leftJoin('MFG_SITES as site', 'app.SiteID', 'site.site_id')
             .leftJoin('MODELS as mdl', 'app.ModelID', 'mdl.model_id')
             .leftJoin('PARTTYPES as pt', 'app.CommodityID', 'pt.parttype_id')
+            .leftJoin('PARTS as part', 'app.ItemID', 'part.part_id')
+            .leftJoin('PARTCLASS as partClass', 'app.Class', 'partClass.partclass_id')
+            .leftJoin('PARTCLASSCATEGORIES as classCategory', 'app.ClassType', 'classCategory.Category_ID')
+            .leftJoin('PARTCLASSCATEGORIES as rankCategory', 'app.RankID', 'rankCategory.Category_ID')
             // JOIN USERS to resolve UUIDs → human-readable names
             .leftJoin('USERS as reviewerUser', 'approval.Reviewer', 'reviewerUser.user_id')
             .leftJoin('USERS as checkerUser', 'approval.Checker', 'checkerUser.user_id')
@@ -116,10 +122,20 @@ export class FiveM1ERepository extends BaseRepository {
             'designCheckerUser.full_name as design_checker_id_name',
             // Human-readable names from master data joins
             'sup.supplier_name as supplier_name',
+            'vendorSup.supplier_name as vendor_name',
             'site.site_name as site_name',
+            'part.part_code as part_code',
+            'part.part_name as item_name',
             'mdl.model_name as model_name',
             'pt.parttype_name as part_type_name',
             'prod.product_name as attribute_03_name',
+            sql `COALESCE(partClass.partclass_desc, partClass.partclass_name)`.as('class_name'),
+            'partClass.partclass_desc as class_desc',
+            'classCategory.Category_name as class_type_name',
+            'classCategory.Category_name as category_name',
+            'classCategory.Category_name as attribute_06_name',
+            'rankCategory.Category_name as rank_name',
+            'rankCategory.Category_name as attribute_05_name',
             'evalPicUser.full_name as mpd_pic_name',
         ]);
         if (isNumeric(idOrControlNo)) {
@@ -139,7 +155,14 @@ export class FiveM1ERepository extends BaseRepository {
             .selectFrom('TBL_5M1E_Application as app')
             .leftJoin('TBL_5M1E_Approval as approval', 'app.ControlNo', 'approval.ControlNo')
             .leftJoin('SUPPLIERS as sup', 'app.SupplierID', 'sup.supplier_id')
+            .leftJoin('SUPPLIERS as vendorSup', 'app.VendorID', 'vendorSup.supplier_id')
             .leftJoin('MFG_SITES as site', 'app.SiteID', 'site.site_id')
+            .leftJoin('MODELS as mdl', 'app.ModelID', 'mdl.model_id')
+            .leftJoin('PARTTYPES as pt', 'app.CommodityID', 'pt.parttype_id')
+            .leftJoin('PARTS as part', 'app.ItemID', 'part.part_id')
+            .leftJoin('PARTCLASS as partClass', 'app.Class', 'partClass.partclass_id')
+            .leftJoin('PARTCLASSCATEGORIES as classCategory', 'app.ClassType', 'classCategory.Category_ID')
+            .leftJoin('PARTCLASSCATEGORIES as rankCategory', 'app.RankID', 'rankCategory.Category_ID')
             .leftJoin('USERS as reviewerUser', 'approval.Reviewer', 'reviewerUser.user_id')
             .leftJoin('USERS as checkerUser', 'approval.Checker', 'checkerUser.user_id')
             .leftJoin('USERS as approverUser', 'approval.Approver', 'approverUser.user_id')
@@ -215,6 +238,18 @@ export class FiveM1ERepository extends BaseRepository {
             'designApproverUser.full_name as design_approver_id_name',
             'designCheckerUser.full_name as design_checker_id_name',
             'prod.product_name as attribute_03_name',
+            'vendorSup.supplier_name as vendor_name',
+            'part.part_code as part_code',
+            'part.part_name as item_name',
+            'mdl.model_name as model_name',
+            'pt.parttype_name as part_type_name',
+            sql `COALESCE(partClass.partclass_desc, partClass.partclass_name)`.as('class_name'),
+            'partClass.partclass_desc as class_desc',
+            'classCategory.Category_name as class_type_name',
+            'classCategory.Category_name as category_name',
+            'classCategory.Category_name as attribute_06_name',
+            'rankCategory.Category_name as rank_name',
+            'rankCategory.Category_name as attribute_05_name',
             'evalPicUser.full_name as mpd_pic_name',
         ]);
         if (statusFilter && statusFilter !== 'all') {
@@ -455,6 +490,7 @@ export class FiveM1ERepository extends BaseRepository {
         }
     }
     async replaceActionItems(controlNo, items) {
+        await this.deleteActionItemAttachmentsByControlNo(controlNo);
         await db.deleteFrom('TBL_5M1E_ActionItems').where('ControlNo', '=', controlNo).execute();
         await this.insertActionItems(controlNo, items);
     }
@@ -487,12 +523,23 @@ export class FiveM1ERepository extends BaseRepository {
         }
     }
     async replaceCheckItems(controlNo, items) {
+        await this.deleteCheckItemAttachmentsByControlNo(controlNo);
         await db.deleteFrom('TBL_5M1E_CheckItems').where('ControlNo', '=', controlNo).execute();
         await this.insertCheckItems(controlNo, items);
     }
     // =========================================================================
     // Child Table: Action Item Attachments (TBL_5M1E_AI_Attachment)
     // =========================================================================
+    async deleteActionItemAttachmentsByControlNo(controlNo) {
+        const dbAny = db;
+        return await dbAny
+            .deleteFrom('TBL_5M1E_AI_Attachment')
+            .where('ChkItemID', 'in', dbAny
+            .selectFrom('TBL_5M1E_ActionItems')
+            .select('ID')
+            .where('ControlNo', '=', controlNo))
+            .execute();
+    }
     async insertActionItemAttachments(actionItemId, attachments) {
         const now = new Date();
         for (const att of attachments) {
@@ -514,6 +561,16 @@ export class FiveM1ERepository extends BaseRepository {
     // =========================================================================
     // Child Table: Check Item Attachments (TBL_5M1E_CI_Attachment)
     // =========================================================================
+    async deleteCheckItemAttachmentsByControlNo(controlNo) {
+        const dbAny = db;
+        return await dbAny
+            .deleteFrom('TBL_5M1E_CI_Attachment')
+            .where('ChkItemID', 'in', dbAny
+            .selectFrom('TBL_5M1E_CheckItems')
+            .select('ID')
+            .where('ControlNo', '=', controlNo))
+            .execute();
+    }
     async insertCheckItemAttachments(checkItemId, attachments) {
         const now = new Date();
         for (const att of attachments) {

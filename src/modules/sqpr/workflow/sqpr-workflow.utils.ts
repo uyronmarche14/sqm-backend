@@ -13,6 +13,7 @@ type Nullable<T> = T | null | undefined;
 
 export interface SqprWorkflowActorContext {
   userId?: string | null;
+  roleName?: string | null;
 }
 
 export interface SqprWorkflowRecordLike {

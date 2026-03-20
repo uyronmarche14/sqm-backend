@@ -34,13 +34,13 @@ END
 IF NOT EXISTS (SELECT 1 FROM FORMS WHERE form_name = '5M1EApprovalSecSQE-06-17')
 BEGIN
     INSERT INTO FORMS (form_id, form_name, form_url, menu_group, active_flag, updateby, last_update) 
-    VALUES (NEWID(), '5M1EApprovalSecSQE-06-17', '/dashboard/5m1e/f-approved', '5M1E Transaction', 1, 'SYSTEM', GETDATE());
+    VALUES (NEWID(), '5M1EApprovalSecSQE-06-17', '/dashboard/5m1e/approved', '5M1E Transaction', 1, 'SYSTEM', GETDATE());
 END
 
 IF NOT EXISTS (SELECT 1 FROM FORMS WHERE form_name = '5M1EJudgementSec-06-17')
 BEGIN
     INSERT INTO FORMS (form_id, form_name, form_url, menu_group, active_flag, updateby, last_update) 
-    VALUES (NEWID(), '5M1EJudgementSec-06-17', '/dashboard/5m1e/approved', '5M1E Transaction', 1, 'SYSTEM', GETDATE());
+    VALUES (NEWID(), '5M1EJudgementSec-06-17', '/dashboard/5m1e/approvedwc', '5M1E Transaction', 1, 'SYSTEM', GETDATE());
 END
 
 IF NOT EXISTS (SELECT 1 FROM FORMS WHERE form_name = '5M1ERELEASE-06-17')

@@ -2,6 +2,7 @@ import { sqprService } from './sqpr.service.js';
 import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema, SqprAttachmentParamSchema } from './sqpr.schema.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { sqprWorkflowService } from './workflow/sqpr-workflow.service.js';
+import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 export class SqprController {
     constructor() {
         this.getAll = this.getAll.bind(this);
@@ -23,13 +24,22 @@ export class SqprController {
     getRoleId(req) {
         return req.user?.roleId || req.user?.role_id;
     }
+    getRoleName(req) {
+        return req.user?.roleName || req.user?.role_name || req.user?.role || undefined;
+    }
     getActionRemarks(req) {
         return req.body?.remarks || req.body?.approver_remarks || req.body?.rejectionRemarks;
     }
     async getAll(req, res, next) {
         try {
             const status = req.query.status;
-            const records = await sqprService.getAllRecords({ status }, { userId: this.getUserId(req) });
+            const records = await sqprService.getAllRecords({
+                status,
+                scope: resolveWorkflowListScope({
+                    scope: req.query.scope,
+                    assignedToMe: req.query.assignedToMe,
+                }),
+            }, { userId: this.getUserId(req), roleName: this.getRoleName(req) });
             res.json({ data: records });
         }
         catch (error) {
@@ -40,7 +50,10 @@ export class SqprController {
     async getById(req, res, next) {
         try {
             const { id } = SqprIdParamSchema.parse({ params: req.params }).params;
-            const record = await sqprService.getRecordById(id, { userId: this.getUserId(req) });
+            const record = await sqprService.getRecordById(id, {
+                userId: this.getUserId(req),
+                roleName: this.getRoleName(req),
+            });
             res.json({ data: record });
         }
         catch (error) {
@@ -142,7 +155,7 @@ export class SqprController {
             const payload = SqprUpdateSchema.parse({ params: req.params, body }).body;
             const userId = this.getUserId(req);
             const files = req.files || [];
-            const result = await sqprService.updateRecord(id, payload, userId, files);
+            const result = await sqprService.updateRecord(id, payload, { userId, roleName: this.getRoleName(req) }, files);
             const responseData = result.data;
             // Log response
             console.log('[SQPR Controller] UPDATE response:', {
@@ -197,7 +210,10 @@ export class SqprController {
     async delete(req, res, next) {
         try {
             const { id } = SqprIdParamSchema.parse({ params: req.params }).params;
-            const result = await sqprService.deleteRecord(id);
+            const result = await sqprService.deleteRecord(id, {
+                userId: this.getUserId(req),
+                roleName: this.getRoleName(req),
+            });
             res.json(result);
         }
         catch (error) {

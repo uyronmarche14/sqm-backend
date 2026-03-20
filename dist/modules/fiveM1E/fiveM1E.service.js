@@ -6,6 +6,7 @@ import { NotFoundError } from '../../shared/errors/AppError.js';
 import { v4 as uuidv4 } from 'uuid';
 import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
 import { FIVE_M1E_WORKFLOW_STAGE } from './workflow/fiveM1E-workflow.constants.js';
+import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
 /**
  * 5M1E Domain Service
  * Encapsulates core business logic and mapping.
@@ -61,6 +62,28 @@ function normalizeInput(data) {
     return normalized;
 }
 export class FiveM1EService {
+    isAdminActor(actor) {
+        return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    }
+    isParticipant(record, userId) {
+        if (!userId) {
+            return true;
+        }
+        return [
+            record.CreatedBy,
+            record.Reviewer,
+            record.Checker,
+            record.Approver,
+            record.MPDPIC,
+            record.MPDChecker,
+            record.MPDApprover,
+            record.EvaluationIC,
+            record.DesignApproverID,
+            record.EnviApproverID,
+            record.QACheckerID,
+            record.FinalApprover,
+        ].includes(userId);
+    }
     /**
      * Creates a new 5M1E Application and its initial Approval state
      */
@@ -130,6 +153,10 @@ export class FiveM1EService {
             approvalData.FAName = data.fa_name;
         if (data.fa_dt_aprd)
             approvalData.FADtAprd = data.fa_dt_aprd;
+        if (data.fa_status)
+            approvalData.FAStatus = data.fa_status;
+        if (data.apr_status)
+            approvalData.AprStatus = data.apr_status;
         if (data.design_approver_dt_aprd)
             approvalData.DesignApproverDtAprd = data.design_approver_dt_aprd;
         if (data.approval_seq !== undefined)
@@ -182,16 +209,7 @@ export class FiveM1EService {
         }
         // Insert CC Notification List
         if (data.cc_list && data.cc_list.length > 0) {
-            for (const cc of data.cc_list) {
-                const ccId = uuidv4();
-                await db.insertInto('TBL_5M1E_CC').values({
-                    ID: ccId,
-                    ControlNo: cn,
-                    UserID: cc.user_id,
-                    UpdateBy: userId,
-                    LastUpdate: new Date(),
-                }).execute();
-            }
+            await fiveM1ERepository.replaceCCUsers(cn, data.cc_list, userId);
         }
         return {
             success: true,
@@ -205,41 +223,70 @@ export class FiveM1EService {
     /**
      * Retrieves all 5M1E Applications
      */
-    async getAllApplications(status, actorUserId) {
+    async getAllApplications(status, actor, scope = 'history') {
         const records = await fiveM1ERepository.findAllWithApproval(status);
-        return Promise.all(records.map(async (record) => {
+        const decoratedRecords = await Promise.all(records.map(async (record) => {
             const dto = SmartMapper.toDTO(record, applicationSchema);
-            const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actorUserId);
+            const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actor?.userId);
             const normalizedStatus = workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
             return {
-                ...dto,
-                id: record.ID,
-                control_no: record.ControlNo,
-                status: normalizedStatus,
-                workflowStage: workflow.workflowStage,
-                workflowStageCode: workflow.workflowStageCode,
-                workflowStageLabel: workflow.workflowStageLabel,
-                availableActions: workflow.availableActions,
-                nextApproverId: workflow.nextApproverId,
-                nextApproverName: workflow.nextApproverName,
-                ownerMode: workflow.ownerMode,
-                mpd_pic: record.mpd_pic,
-                mpd_approver: record.mpd_approver,
-                created_at: record.CreateDate,
-                reviewer_name: record.reviewer_full_name,
-                checker_name: record.checker_full_name,
-                approver_name: record.approver_full_name,
-                supplier_name: record.supplier_name,
-                site_name: record.site_name,
-                attribute_03_name: record.attribute_03_name,
-                mpd_pic_name: record.mpd_pic_name,
+                source: record,
+                workflow,
+                data: {
+                    ...dto,
+                    id: record.ID,
+                    control_no: record.ControlNo,
+                    status: normalizedStatus,
+                    workflowStage: workflow.workflowStage,
+                    workflowStageCode: workflow.workflowStageCode,
+                    workflowStageLabel: workflow.workflowStageLabel,
+                    availableActions: workflow.availableActions,
+                    nextApproverId: workflow.nextApproverId,
+                    nextApproverName: workflow.nextApproverName,
+                    ownerMode: workflow.ownerMode,
+                    mpd_pic: record.mpd_pic,
+                    mpd_approver: record.mpd_approver,
+                    created_at: record.CreateDate,
+                    apr_status: record.apr_status,
+                    fa_status: record.fa_status,
+                    reviewer_name: record.reviewer_full_name,
+                    checker_name: record.checker_full_name,
+                    approver_name: record.approver_full_name,
+                    supplier_name: record.supplier_name,
+                    vendor_name: record.vendor_name,
+                    site_name: record.site_name,
+                    part_code: record.part_code,
+                    item_name: record.item_name,
+                    model_name: record.model_name,
+                    part_type_name: record.part_type_name,
+                    class_name: record.class_name,
+                    class_desc: record.class_desc,
+                    class_type_name: record.class_type_name,
+                    rank_name: record.rank_name,
+                    category_name: record.category_name,
+                    attribute_05_name: record.attribute_05_name,
+                    attribute_06_name: record.attribute_06_name,
+                    attribute_03_name: record.attribute_03_name,
+                    mpd_pic_name: record.mpd_pic_name,
+                },
             };
         }));
+        const visibleRecords = this.isAdminActor(actor)
+            ? decoratedRecords
+            : filterWorkflowRecordsByScope(decoratedRecords, scope, {
+                isAssigned: (entry) => Boolean(actor?.userId &&
+                    (entry.workflow.ownerMode === 'assigned' || entry.workflow.ownerMode === 'role-fallback') &&
+                    entry.workflow.nextApproverId === actor.userId),
+                isMine: (entry) => this.isParticipant(entry.source, actor?.userId),
+                isHistoryVisible: (entry) => this.isParticipant(entry.source, actor?.userId) ||
+                    (Array.isArray(entry.workflow.availableActions) && entry.workflow.availableActions.length > 0),
+            });
+        return visibleRecords.map((entry) => entry.data);
     }
     /**
      * Retrieves a 5M1E Application with its full Approval + Child Tables
      */
-    async getApplication(controlNo, actorUserId) {
+    async getApplication(controlNo, actor) {
         const record = await fiveM1ERepository.findWithApproval(controlNo);
         if (!record) {
             throw new NotFoundError(`5M1E Application ${controlNo} not found`);
@@ -264,7 +311,12 @@ export class FiveM1EService {
       WHERE cc.ControlNo = ${cn}
     `.execute(db);
         const ccList = ccResult.rows;
-        const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actorUserId);
+        const workflow = await fiveM1EWorkflowService.getWorkflowMetadata(record, actor?.userId);
+        assertWorkflowRecordAccess({
+            allowed: this.isAdminActor(actor) || this.isParticipant(record, actor?.userId) || workflow.availableActions.length > 0,
+            action: 'view',
+            moduleName: '5M1E',
+        });
         const normalizedStatus = workflow.workflowStage === FIVE_M1E_WORKFLOW_STAGE.RELEASED ? 'RELEASE' : record.approval_status;
         return {
             ...dto,
@@ -285,10 +337,20 @@ export class FiveM1EService {
             checker_name: record.checker_full_name,
             approver_name: record.approver_full_name,
             supplier_name: record.supplier_name,
-            supplier_company_name: record.supplier_company_name,
+            supplier_company_name: record.supplier_name,
+            vendor_name: record.vendor_name,
             site_name: record.site_name,
+            part_code: record.part_code,
+            item_name: record.item_name,
             model_name: record.model_name,
             part_type_name: record.part_type_name,
+            class_name: record.class_name,
+            class_desc: record.class_desc,
+            class_type_name: record.class_type_name,
+            rank_name: record.rank_name,
+            category_name: record.category_name,
+            attribute_05_name: record.attribute_05_name,
+            attribute_06_name: record.attribute_06_name,
             attribute_03_name: record.attribute_03_name,
             mpd_approver_name: record.mpd_approver_name,
             mpd_pic_name: record.mpd_pic_name,
@@ -299,6 +361,8 @@ export class FiveM1EService {
             issue_date: record.issue_date,
             chkr_dt_aprd: record.chkr_dt_aprd,
             approver_dt_aprd: record.approver_dt_aprd,
+            apr_status: record.apr_status,
+            fa_status: record.fa_status,
             mpd_pic: record.mpd_pic,
             mpd_approver: record.mpd_approver,
             mpd_checker: record.MPDChecker,
@@ -390,6 +454,10 @@ export class FiveM1EService {
             approvalUpdates.FAName = data.fa_name;
         if (data.fa_dt_aprd)
             approvalUpdates.FADtAprd = data.fa_dt_aprd;
+        if (data.fa_status)
+            approvalUpdates.FAStatus = data.fa_status;
+        if (data.apr_status)
+            approvalUpdates.AprStatus = data.apr_status;
         if (data.qa_checker_id)
             approvalUpdates.QACheckerID = data.qa_checker_id;
         if (data.qa_checker_name)
@@ -477,17 +545,7 @@ export class FiveM1EService {
         }
         // Replace CC Notification List (delete & re-insert)
         if (data.cc_list !== undefined) {
-            await db.deleteFrom('TBL_5M1E_CC').where('ControlNo', '=', cn).execute();
-            for (const cc of data.cc_list) {
-                const ccId = uuidv4();
-                await db.insertInto('TBL_5M1E_CC').values({
-                    ID: ccId,
-                    ControlNo: cn,
-                    UserID: cc.user_id,
-                    UpdateBy: _userId,
-                    LastUpdate: new Date(),
-                }).execute();
-            }
+            await fiveM1ERepository.replaceCCUsers(cn, data.cc_list, _userId);
         }
         return {
             success: true,
@@ -537,6 +595,8 @@ export class FiveM1EService {
         await fiveM1ERepository.replaceAttachments(cn, []);
         await fiveM1ERepository.replaceActionItems(cn, []);
         await fiveM1ERepository.replaceCheckItems(cn, []);
+        await fiveM1ERepository.replaceStatusRemarks(cn, []);
+        await fiveM1ERepository.replaceCCUsers(cn, []);
         await fiveM1ERepository.deleteApproval(cn);
         await fiveM1ERepository.deleteByControlNo(cn);
         return { success: true, message: 'Application deleted successfully', data: { controlNo } };

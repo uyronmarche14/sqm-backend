@@ -10,14 +10,58 @@ import {
 } from './mnr.schema.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { mnrWorkflowService } from './workflow/mnr-workflow.service.js';
+import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class MnrController {
+  constructor() {
+    this.getAll = this.getAll.bind(this);
+    this.getById = this.getById.bind(this);
+    this.create = this.create.bind(this);
+    this.update = this.update.bind(this);
+    this.delete = this.delete.bind(this);
+    this.submit = this.submit.bind(this);
+    this.submitMain = this.submitMain.bind(this);
+    this.check = this.check.bind(this);
+    this.checkMain = this.checkMain.bind(this);
+    this.approve = this.approve.bind(this);
+    this.approveMain = this.approveMain.bind(this);
+    this.reject = this.reject.bind(this);
+    this.rejectMain = this.rejectMain.bind(this);
+    this.issue = this.issue.bind(this);
+    this.issueMain = this.issueMain.bind(this);
+    this.close = this.close.bind(this);
+    this.cancel = this.cancel.bind(this);
+    this.cancelMain = this.cancelMain.bind(this);
+    this.saveInitialResponse = this.saveInitialResponse.bind(this);
+    this.submitInitialResponse = this.submitInitialResponse.bind(this);
+    this.saveFinalResponse = this.saveFinalResponse.bind(this);
+    this.submitFinalResponse = this.submitFinalResponse.bind(this);
+    this.saveResponseReview = this.saveResponseReview.bind(this);
+    this.submitResponseReview = this.submitResponseReview.bind(this);
+    this.checkResponse = this.checkResponse.bind(this);
+    this.approveResponse = this.approveResponse.bind(this);
+    this.rejectResponse = this.rejectResponse.bind(this);
+    this.acceptResponse = this.acceptResponse.bind(this);
+    this.notAcceptResponse = this.notAcceptResponse.bind(this);
+    this.downloadAttachment = this.downloadAttachment.bind(this);
+  }
+
+  private getActor(req: Request) {
+    return {
+      userId: (req as any).user?.userId || (req as any).user?.id || undefined,
+      supplierId: (req as any).user?.supplierId || undefined,
+      roleName: (req as any).user?.roleName || (req as any).user?.role_name || (req as any).user?.role || undefined,
+    };
+  }
+
   async getAll(req: Request, res: Response, next: NextFunction) {
     try {
       const status = req.query.status as string | undefined;
-      const userId = (req as any).user?.userId || (req as any).user?.id || undefined;
-      const supplierId = (req as any).user?.supplierId || undefined;
-      const records = await mnrService.getAllRecords(status, userId, supplierId);
+      const actor = this.getActor(req);
+      const records = await mnrService.getAllRecords(
+        { status, scope: resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }) },
+        actor,
+      );
       res.json({ data: records });
     } catch (error) {
       console.error('[MNR] GET ALL error:', error);
@@ -28,9 +72,8 @@ export class MnrController {
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-      const userId = (req as any).user?.userId || (req as any).user?.id || undefined;
-      const supplierId = (req as any).user?.supplierId || undefined;
-      const record = await mnrService.getRecordById(id, userId, supplierId);
+      const actor = this.getActor(req);
+      const record = await mnrService.getRecordById(id, actor);
       res.json({ data: record });
     } catch (error) {
       console.error('[MNR] GET BY ID error:', error);
@@ -56,10 +99,10 @@ export class MnrController {
     try {
       const { id } = MnrUpdateSchema.parse({ params: req.params, body: req.body }).params;
       const payload = MnrUpdateSchema.parse({ params: req.params, body: req.body }).body;
-      const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const actor = this.getActor(req);
       const files = (req as any).files || [];
 
-      const result = await mnrService.updateRecord(id, payload, userId, files);
+      const result = await mnrService.updateRecord(id, payload, actor, files);
       res.json(result);
     } catch (error) {
       console.error('[MNR] UPDATE error:', error);
@@ -70,7 +113,7 @@ export class MnrController {
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
-      const result = await mnrService.deleteRecord(id);
+      const result = await mnrService.deleteRecord(id, this.getActor(req));
       res.json(result);
     } catch (error) {
       console.error('[MNR] DELETE error:', error);
@@ -206,8 +249,9 @@ export class MnrController {
       const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
       const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
+      const roleId = (req as any).user?.roleId || (req as any).user?.role_id || undefined;
       const supplierId = (req as any).user?.supplierId || undefined;
-      const result = await mnrWorkflowService.saveInitialResponse(id, userId, responsePayload, supplierId);
+      const result = await mnrWorkflowService.saveInitialResponse(id, userId, roleId, responsePayload, supplierId);
       res.json(result);
     } catch (error) {
       console.error('[MNR] SAVE INITIAL RESPONSE error:', error);

@@ -7,6 +7,9 @@ export class UserService {
     async getAllUsers() {
         return await userRepository.findAll();
     }
+    async getLookupUsers() {
+        return await userRepository.findLookupUsers();
+    }
     async getUserById(id) {
         const user = await userRepository.findById(id);
         if (!user)

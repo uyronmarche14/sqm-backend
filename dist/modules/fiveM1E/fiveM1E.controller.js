@@ -1,7 +1,27 @@
 import { fiveM1EService } from './fiveM1E.service.js';
 import { successResponse } from '../../shared/utils/api-response.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 export class FiveM1EController {
+    constructor() {
+        this.createApplication = this.createApplication.bind(this);
+        this.getAllApplications = this.getAllApplications.bind(this);
+        this.getApplication = this.getApplication.bind(this);
+        this.updateApplication = this.updateApplication.bind(this);
+        this.deleteApplication = this.deleteApplication.bind(this);
+        this.submitApplication = this.submitApplication.bind(this);
+        this.checkApplication = this.checkApplication.bind(this);
+        this.approveApplication = this.approveApplication.bind(this);
+        this.rejectApplication = this.rejectApplication.bind(this);
+        this.releaseApplication = this.releaseApplication.bind(this);
+        this.downloadAttachment = this.downloadAttachment.bind(this);
+    }
+    getActor(req) {
+        return {
+            userId: req.user?.userId,
+            roleName: req.user?.roleName || req.user?.role_name || req.user?.role || undefined,
+        };
+    }
     /**
      * Submit a new 5M1E Application
      */
@@ -27,7 +47,7 @@ export class FiveM1EController {
     async getAllApplications(req, res, next) {
         try {
             const status = req.query.status;
-            const records = await fiveM1EService.getAllApplications(status, req.user?.userId);
+            const records = await fiveM1EService.getAllApplications(status, this.getActor(req), resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }));
             res.status(200).json(successResponse(records));
         }
         catch (error) {
@@ -40,7 +60,7 @@ export class FiveM1EController {
     async getApplication(req, res, next) {
         try {
             const id = req.params.id; // ID acts as controlNo in our URL schema
-            const record = await fiveM1EService.getApplication(id, req.user?.userId);
+            const record = await fiveM1EService.getApplication(id, this.getActor(req));
             res.status(200).json(successResponse(record));
         }
         catch (error) {

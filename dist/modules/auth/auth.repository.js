@@ -50,6 +50,39 @@ export class AuthRepository extends BaseRepository {
             .map((record) => record.formName)
             .filter((formName) => Boolean(formName))));
     }
+    async findCurrentUserRoleAccessRecords(userId) {
+        const user = await this.findUserById(userId);
+        if (!user?.role_id) {
+            return [];
+        }
+        return await db
+            .selectFrom('ROLE_ACCESS as ra')
+            .innerJoin('FORMS as f', 'ra.form_id', 'f.form_id')
+            .select([
+            'ra.roleaccess_id as id',
+            'ra.role_id as roleId',
+            'f.form_name as formId',
+            'f.form_name as formName',
+            'f.form_url as formUrl',
+            'f.menu_group as menuGroup',
+            'ra.active_flag as isActive',
+            'ra.can_view as canView',
+            'ra.can_viewlist as canViewList',
+            'ra.can_add as canAdd',
+            'ra.can_edit as canEdit',
+            'ra.can_delete as canDelete',
+            'ra.can_approve as canApprove',
+            'ra.can_check as canCheck',
+            'ra.can_print as canPrint',
+            'ra.can_export as canExport',
+            'ra.can_attach as canAttach',
+            'ra.per_site as perSite',
+            'ra.pic as pic',
+        ])
+            .where('ra.role_id', '=', user.role_id)
+            .where('ra.active_flag', '=', 1)
+            .execute();
+    }
     // NOTE: If your users are authenticated against AD (Active Directory), 
     // you might just insert them or fetch them, rather than storing their password_hash.
     // For the sake of the blueprint, we assume standard JWT + local storage.

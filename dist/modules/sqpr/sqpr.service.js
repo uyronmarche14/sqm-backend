@@ -1,9 +1,35 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sqprRepository } from './sqpr.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
-import { buildSqprWorkflowMetadata, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, normalizeSqprWorkflowStage, } from './workflow/sqpr-workflow.utils.js';
+import { buildSqprWorkflowMetadata, getSqprStageOwnerId, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, normalizeSqprWorkflowStage, } from './workflow/sqpr-workflow.utils.js';
 import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
+import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
 export class SqprService {
+    isAdminActor(actor) {
+        return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    }
+    isAssignedRecord(record, actor = {}) {
+        return Boolean(actor.userId && getSqprStageOwnerId(record) === actor.userId);
+    }
+    isMineRecord(record, actor = {}) {
+        return Boolean(actor.userId && record.incharge_id === actor.userId);
+    }
+    canReadRecord(record, actor = {}) {
+        if (!actor.userId || this.isAdminActor(actor)) {
+            return true;
+        }
+        return [
+            record.incharge_id,
+            record.checker_id,
+            record.approver_id,
+        ].includes(actor.userId);
+    }
+    canMutateMainRecord(record, actor = {}) {
+        if (!actor.userId || this.isAdminActor(actor)) {
+            return true;
+        }
+        return record.incharge_id === actor.userId;
+    }
     /**
      * Legacy SQPR draft control numbers stay in DRF form until submit.
      */
@@ -45,7 +71,14 @@ export class SqprService {
     }
     async getAllRecords(filters = {}, actor = {}) {
         const records = await sqprRepository.findAllDetailed();
-        return records
+        const visibleRecords = this.isAdminActor(actor)
+            ? records
+            : filterWorkflowRecordsByScope(records, filters.scope || 'history', {
+                isAssigned: (record) => this.isAssignedRecord(record, actor),
+                isMine: (record) => this.isMineRecord(record, actor),
+                isHistoryVisible: (record) => this.canReadRecord(record, actor),
+            });
+        return visibleRecords
             .filter((record) => matchesSqprStatusFilter(record, filters.status))
             .map((record) => this.decorateRecord(record, actor));
     }
@@ -53,6 +86,11 @@ export class SqprService {
         const data = await sqprRepository.findByIdDetailed(id);
         if (!data)
             throw new NotFoundError('SQPR Record not found');
+        assertWorkflowRecordAccess({
+            allowed: this.canReadRecord(data.record, actor),
+            action: 'view',
+            moduleName: 'SQPR',
+        });
         const { record, attachments, ccList } = data;
         return {
             ...this.decorateRecord(record, actor),
@@ -184,14 +222,19 @@ export class SqprService {
             };
         });
     }
-    async updateRecord(id, payload, userId, files = []) {
+    async updateRecord(id, payload, actor, files = []) {
         const existing = await sqprRepository.findByIdDetailed(id);
         if (!existing)
             throw new NotFoundError('Record not found');
+        assertWorkflowRecordAccess({
+            allowed: this.canMutateMainRecord(existing.record, actor),
+            action: 'update',
+            moduleName: 'SQPR',
+        });
         const now = new Date();
         const dbUpdates = {
             last_update: now,
-            updateby: userId
+            updateby: actor.userId
         };
         if (payload.site_id)
             dbUpdates.site_id = payload.site_id;
@@ -255,7 +298,7 @@ export class SqprService {
                         attachment_type: att.attachment_type || 'COVER',
                         remarks: finalRemarks,
                         last_update: now,
-                        updateby: userId
+                        updateby: actor.userId || 'SYSTEM'
                     }).execute();
                     savedAttachments.push({
                         sqpr_attachment_id: attachmentId,
@@ -264,7 +307,7 @@ export class SqprService {
                         file_extension: diskFileName ? diskFileName.split('.').pop() : (att.file_extension || 'dat'),
                         attachment_type: att.attachment_type || 'COVER',
                         remarks: finalRemarks,
-                        updateby: userId,
+                        updateby: actor.userId,
                         last_update: now
                     });
                 }
@@ -280,9 +323,9 @@ export class SqprService {
                         sqpr_id: existing.record.sqpr_id,
                         user_id: cc.user_id,
                         last_update: now,
-                        updateby: userId
+                        updateby: actor.userId || 'SYSTEM'
                     }).execute();
-                    savedCcList.push({ sqpr_cc_id: ccId, sqpr_id: existing.record.sqpr_id, user_id: cc.user_id, updateby: userId, last_update: now });
+                    savedCcList.push({ sqpr_cc_id: ccId, sqpr_id: existing.record.sqpr_id, user_id: cc.user_id, updateby: actor.userId || 'SYSTEM', last_update: now });
                 }
             }
             // 4. Return record data directly (don't fetch from DB inside transaction)
@@ -298,7 +341,7 @@ export class SqprService {
             return {
                 success: true,
                 data: {
-                    ...this.decorateRecord(recordData, { userId }),
+                    ...this.decorateRecord(recordData, actor),
                     attachments: savedAttachments.length > 0 ? savedAttachments : (existing.attachments || []),
                     cc_list: savedCcList.length > 0 ? savedCcList : (existing.ccList || [])
                 },
@@ -306,10 +349,15 @@ export class SqprService {
             };
         });
     }
-    async deleteRecord(id) {
+    async deleteRecord(id, actor = {}) {
         const existing = await sqprRepository.findByIdDetailed(id);
         if (!existing)
             throw new NotFoundError('Record not found');
+        assertWorkflowRecordAccess({
+            allowed: this.canMutateMainRecord(existing.record, actor),
+            action: 'delete',
+            moduleName: 'SQPR',
+        });
         return await sqprRepository.executeTransaction(async (trx) => {
             await trx.deleteFrom('SQPR_ATTACHMENT').where('sqpr_id', '=', existing.record.sqpr_id).execute();
             await trx.deleteFrom('SQPR_CC').where('sqpr_id', '=', existing.record.sqpr_id).execute();

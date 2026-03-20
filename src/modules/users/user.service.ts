@@ -15,6 +15,10 @@ export class UserService {
     return await userRepository.findAll();
   }
 
+  async getLookupUsers() {
+    return await userRepository.findLookupUsers();
+  }
+
   async getUserById(id: string) {
     const user = await userRepository.findById(id);
     if (!user) throw new NotFoundError('User not found');

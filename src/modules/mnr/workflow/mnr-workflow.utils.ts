@@ -14,6 +14,7 @@ type Nullable<T> = T | null | undefined;
 export interface MnrWorkflowActorContext {
   userId?: string | null;
   supplierId?: string | null;
+  roleName?: string | null;
 }
 
 export interface MnrWorkflowRecordLike {
@@ -131,7 +132,6 @@ function supplierActorMatches(
 }
 
 function resolveCycle2Checker(
-  record: MnrWorkflowRecordLike,
   latestResponse?: MnrWorkflowResponseLike | null,
 ) {
   return {
@@ -141,7 +141,6 @@ function resolveCycle2Checker(
 }
 
 function resolveCycle2Approver(
-  record: MnrWorkflowRecordLike,
   latestResponse?: MnrWorkflowResponseLike | null,
 ) {
   return {
@@ -159,8 +158,8 @@ export function buildMnrWorkflowMetadata(
 ): MnrWorkflowMetadata {
   const stage = normalizeMnrWorkflowStage(record.request_status);
   const actorUserId = options.actor?.userId || null;
-  const cycle2Checker = resolveCycle2Checker(record, options.latestResponse);
-  const cycle2Approver = resolveCycle2Approver(record, options.latestResponse);
+  const cycle2Checker = resolveCycle2Checker(options.latestResponse);
+  const cycle2Approver = resolveCycle2Approver(options.latestResponse);
 
   let nextApproverId: string | null = null;
   let nextApproverName: string | null = null;
