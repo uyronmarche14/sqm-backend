@@ -17,7 +17,7 @@ export const mapStatusToDB = (status) => {
         // Cycle 1
         'AWAITING_CHECKED': 'AC',
         'AWAITING_APPROVAL': 'AA',
-        'SUBMITTED': 'SU', // 5M1E and OGI legacy
+        'SUBMITTED': 'SU',
         'APPROVED': 'AP',
         'APPROVED_WC': 'AW',
         'APPROVEDWC': 'AW',
@@ -71,6 +71,7 @@ export const mapStatusFromDB = (code) => {
         // Cycle 1
         'AC': 'AWAITING_CHECKED',
         'AA': 'AWAITING_APPROVAL',
+        'SB': 'SUBMITTED',
         'SU': 'SUBMITTED',
         'PD': 'PENDING',
         'PN': 'PENDING',

@@ -4,6 +4,35 @@ import { OGICreationInput, OGIUpdateInput } from './ogi.schema.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
 
+const OGI_DB_STATUS = {
+  DRAFT: 'DR',
+  SUBMITTED: 'SB',
+} as const;
+
+function mapOgiStatusToDB(status?: string): string {
+  const normalized = String(status || 'DRAFT').toUpperCase();
+
+  if (normalized === 'DR' || normalized === 'DRAFT' || normalized === 'NEW') {
+    return OGI_DB_STATUS.DRAFT;
+  }
+
+  if (normalized === 'SB' || normalized === 'SU' || normalized === 'SUBMITTED') {
+    return OGI_DB_STATUS.SUBMITTED;
+  }
+
+  return mapStatusToDB(normalized);
+}
+
+function mapOgiStatusFromDB(code?: string): string {
+  const normalized = String(code || OGI_DB_STATUS.DRAFT).toUpperCase();
+
+  if (normalized === 'SB' || normalized === 'SU') {
+    return 'SUBMITTED';
+  }
+
+  return mapStatusFromDB(normalized);
+}
+
 export class OgiService {
   
   async generateSequence(siteId: string): Promise<string> {
@@ -49,7 +78,7 @@ export class OgiService {
 
       return {
         ...r,
-        status: mapStatusFromDB(r.request_status),
+        status: mapOgiStatusFromDB(r.request_status),
         created_at: r.upload_date,
         lots: rLots,
         attachments: rAtts
@@ -65,7 +94,7 @@ export class OgiService {
 
     return {
       ...record,
-      status: mapStatusFromDB(record.request_status),
+      status: mapOgiStatusFromDB(record.request_status),
       created_at: record.upload_date,
       lots: (lots || []).map((l: any) => ({
         id: l.ogi_lot_id,
@@ -88,7 +117,7 @@ export class OgiService {
     const defaultUserId = '6a15b66a-079b-433b-b70f-dc15dce25631'; 
     const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
     
-    const dbStatus = mapStatusToDB(payload.status || 'DRAFT');
+    const dbStatus = mapOgiStatusToDB(payload.status || 'DRAFT');
 
     const dbPayload = {
         ogi_id: recordId,
@@ -127,7 +156,7 @@ export class OgiService {
       // 3. Insert Attachments
       if (payload.attachments && payload.attachments.length > 0) {
         for (const att of payload.attachments) {
-          const originalName = att.file_name || att.fileName;
+          const originalName = att.fileName;
           if (!originalName) continue;
           
           const uploadedFile = files.find(f => f.originalname === originalName);
@@ -169,7 +198,7 @@ export class OgiService {
 
     const statusVal = payload.status || payload.request_status;
     if (statusVal) {
-      dbUpdates.request_status = mapStatusToDB(statusVal);
+      dbUpdates.request_status = mapOgiStatusToDB(statusVal);
       if (dbUpdates.request_status === 'SB' && existing.record.request_status !== 'SB') {
          dbUpdates.submit_date = now;
       }
@@ -204,7 +233,7 @@ export class OgiService {
       if (payload.attachments !== undefined) {
          await trx.deleteFrom('OGI_ATTACHMENT').where('ogi_id', '=', existing.record.ogi_id).execute();
          for (const att of payload.attachments) {
-            const originalName = att.file_name || att.fileName;
+            const originalName = att.fileName;
             if (!originalName) continue;
             
             const uploadedFile = files.find(f => f.originalname === originalName);
@@ -234,8 +263,7 @@ export class OgiService {
     const existing = await ogiRepository.findByIdDetailed(idOrControlNo);
     if (!existing) throw new NotFoundError('OGI Record not found');
 
-    const currentStatus = mapStatusFromDB(existing.record.request_status);
-    console.log(`[OGI] submitRecord: id=${idOrControlNo}, ogi_id=${existing.record.ogi_id}, currentStatus=${currentStatus}, dbStatus=${existing.record.request_status}`);
+    const currentStatus = mapOgiStatusFromDB(existing.record.request_status);
 
     if (currentStatus !== 'DRAFT') {
       throw new Error(`Cannot submit: record is in ${currentStatus}, expected DRAFT`);
@@ -245,7 +273,7 @@ export class OgiService {
     return await ogiRepository.executeTransaction(async (trx) => {
       await trx.updateTable('OGI')
         .set({
-          request_status: mapStatusToDB('SUBMITTED'),
+          request_status: OGI_DB_STATUS.SUBMITTED,
           submit_date: now,
           last_update: now,
           updateby: userId
@@ -253,7 +281,6 @@ export class OgiService {
         .where('ogi_id', '=', existing.record.ogi_id)
         .execute();
 
-      console.log(`[OGI] submitRecord: SUCCESS — status changed to SU for ogi_id=${existing.record.ogi_id}`);
       return { success: true, data: { id: existing.record.ogi_id }, message: 'OGI Record submitted successfully' };
     });
   }

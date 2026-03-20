@@ -260,7 +260,7 @@ export function getFiveM1EWorkflowStageFormIds(stage: FiveM1EWorkflowStage) {
       return ['5M1EMAIN-11-01', '5M1ESupplier_Submition'];
     case FIVE_M1E_WORKFLOW_STAGE.RAR:
     case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
-      return ['5M1ESupplier_Submition'];
+      return ['5M1ERAR-06-17', '5M1ESupplier_Submition'];
     case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
     case FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER:
       return ['5M1EApprovalSecDes-06-17'];
@@ -274,13 +274,13 @@ export function getFiveM1EWorkflowStageFormIds(stage: FiveM1EWorkflowStage) {
     case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
       return ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17'];
     case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
-      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+      return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
-      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+      return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
-      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+      return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
     case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
-      return ['5M1EJudgementSec-06-17'];
+      return ['5M1ERELEASE-06-17', '5M1EJudgementSec-06-17'];
     default:
       return [];
   }

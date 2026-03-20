@@ -34,6 +34,36 @@ export class AuthRepository extends BaseRepository<'USERS'> {
       .executeTakeFirst();
   }
 
+  async findRoleBasedAccessibleForms(userId: string): Promise<string[]> {
+    const user = await this.findUserById(userId);
+
+    if (!user?.role_id) {
+      return [];
+    }
+
+    const records = await db
+      .selectFrom('ROLE_ACCESS as ra')
+      .innerJoin('FORMS as f', 'ra.form_id', 'f.form_id')
+      .select('f.form_name as formName')
+      .where('ra.role_id', '=', user.role_id)
+      .where('ra.active_flag', '=', 1)
+      .where((eb) =>
+        eb.or([
+          eb('ra.can_view', '=', 1),
+          eb('ra.can_viewlist', '=', 1),
+        ]),
+      )
+      .execute();
+
+    return Array.from(
+      new Set(
+        records
+          .map((record) => record.formName)
+          .filter((formName): formName is string => Boolean(formName)),
+      ),
+    );
+  }
+
   // NOTE: If your users are authenticated against AD (Active Directory), 
   // you might just insert them or fetch them, rather than storing their password_hash.
   // For the sake of the blueprint, we assume standard JWT + local storage.
@@ -219,14 +249,14 @@ export class AuthRepository extends BaseRepository<'USERS'> {
 
         SELECT 'OGI-01-03' AS form_id
         FROM OGI o
-        WHERE o.request_status IN ('SU', 'AA', 'AC', 'AP')
+        WHERE o.request_status IN ('SB', 'SU')
           AND o.incharge_id = ${userId}
 
         UNION ALL
 
         SELECT 'OGI-01-04' AS form_id
         FROM OGI o
-        WHERE o.request_status IN ('SU', 'AA', 'AC', 'AP', 'RE')
+        WHERE o.request_status IN ('SB', 'SU')
           AND o.incharge_id = ${userId}
       ) ogi_access
     `.execute(db);
@@ -983,8 +1013,11 @@ export class AuthRepository extends BaseRepository<'USERS'> {
 
       switch (stage) {
         case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
-        case FIVE_M1E_WORKFLOW_STAGE.RAR:
         case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
+          accessibleForms.add('5M1ESupplier_Submition');
+          break;
+        case FIVE_M1E_WORKFLOW_STAGE.RAR:
+          accessibleForms.add('5M1ERAR-06-17');
           accessibleForms.add('5M1ESupplier_Submition');
           break;
         case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
@@ -1003,15 +1036,18 @@ export class AuthRepository extends BaseRepository<'USERS'> {
           accessibleForms.add('5M1EApprovalSecQA-06-17');
           break;
         case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
+          accessibleForms.add('5M1ERELEASE-06-17');
           accessibleForms.add('5M1EApprovalSecSQE-06-17');
           accessibleForms.add('5M1EJudgementSec-06-17');
           break;
         case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
         case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
+          accessibleForms.add('5M1ERELEASE-06-17');
           accessibleForms.add('5M1EApprovalSecSQE-06-17');
           accessibleForms.add('5M1EJudgementSec-06-17');
           break;
         case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
+          accessibleForms.add('5M1ERELEASE-06-17');
           accessibleForms.add('5M1EJudgementSec-06-17');
           break;
         default:

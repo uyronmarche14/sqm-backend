@@ -1,5 +1,5 @@
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors/AppError.js';
-import { permissionService } from '../../../shared/services/permission.service.js';
+import { permissionService, type PermissionAction } from '../../../shared/services/permission.service.js';
 import { fiveM1ERepository } from '../fiveM1E.repository.js';
 import {
   buildFiveM1EWorkflowMetadata,
@@ -78,7 +78,7 @@ export class FiveM1EWorkflowService {
   private async hasPermissionOnStageForms(
     userId: string,
     stage: ReturnType<typeof normalizeFiveM1EWorkflowStage>,
-    action: string,
+    action: PermissionAction,
   ) {
     const formIds = getFiveM1EWorkflowStageFormIds(stage);
 
@@ -97,7 +97,7 @@ export class FiveM1EWorkflowService {
 
   private async findStageEligibleUsers(
     stage: ReturnType<typeof normalizeFiveM1EWorkflowStage>,
-    permissionAction?: string,
+    permissionAction?: PermissionAction,
   ) {
     const action = permissionAction ?? getFiveM1EWorkflowActionForStage(stage);
     const formIds = getFiveM1EWorkflowStageFormIds(stage);

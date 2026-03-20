@@ -194,14 +194,14 @@ export class AuthRepository extends BaseRepository {
 
         SELECT 'OGI-01-03' AS form_id
         FROM OGI o
-        WHERE o.request_status IN ('SU', 'AA', 'AC', 'AP')
+        WHERE o.request_status IN ('SB', 'SU')
           AND o.incharge_id = ${userId}
 
         UNION ALL
 
         SELECT 'OGI-01-04' AS form_id
         FROM OGI o
-        WHERE o.request_status IN ('SU', 'AA', 'AC', 'AP', 'RE')
+        WHERE o.request_status IN ('SB', 'SU')
           AND o.incharge_id = ${userId}
       ) ogi_access
     `.execute(db);
@@ -909,8 +909,11 @@ export class AuthRepository extends BaseRepository {
             }
             switch (stage) {
                 case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
-                case FIVE_M1E_WORKFLOW_STAGE.RAR:
                 case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
+                    accessibleForms.add('5M1ESupplier_Submition');
+                    break;
+                case FIVE_M1E_WORKFLOW_STAGE.RAR:
+                    accessibleForms.add('5M1ERAR-06-17');
                     accessibleForms.add('5M1ESupplier_Submition');
                     break;
                 case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
@@ -929,15 +932,18 @@ export class AuthRepository extends BaseRepository {
                     accessibleForms.add('5M1EApprovalSecQA-06-17');
                     break;
                 case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
+                    accessibleForms.add('5M1ERELEASE-06-17');
                     accessibleForms.add('5M1EApprovalSecSQE-06-17');
                     accessibleForms.add('5M1EJudgementSec-06-17');
                     break;
                 case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
                 case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
+                    accessibleForms.add('5M1ERELEASE-06-17');
                     accessibleForms.add('5M1EApprovalSecSQE-06-17');
                     accessibleForms.add('5M1EJudgementSec-06-17');
                     break;
                 case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
+                    accessibleForms.add('5M1ERELEASE-06-17');
                     accessibleForms.add('5M1EJudgementSec-06-17');
                     break;
                 default:

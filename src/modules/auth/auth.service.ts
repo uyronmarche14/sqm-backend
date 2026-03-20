@@ -55,7 +55,20 @@ export class AuthService {
   }
 
   private async buildAccessibleForms(userId: string) {
-    return await getAssignedWorkflowAccessibleForms(userId);
+    const [assignedForms, roleBasedForms] = await Promise.all([
+      getAssignedWorkflowAccessibleForms(userId),
+      authRepository.findRoleBasedAccessibleForms(userId),
+    ]);
+
+    const accessibleForms = new Set<string>(assignedForms);
+
+    roleBasedForms.forEach((formCode) => {
+      if (getLegacyFormMapping(formCode)) {
+        accessibleForms.add(formCode);
+      }
+    });
+
+    return Array.from(accessibleForms);
   }
 
   async refreshTokens(refreshToken: string) {

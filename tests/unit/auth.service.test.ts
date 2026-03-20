@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const authRepositoryMock = vi.hoisted(() => ({
   findByEmail: vi.fn(),
   findUserById: vi.fn(),
+  findRoleBasedAccessibleForms: vi.fn(),
   findAssignedSqmpAccessibleForms: vi.fn(),
   findAssignedNpiAccessibleForms: vi.fn(),
+  findAssignedOgiAccessibleForms: vi.fn(),
   findAssignedMnrAccessibleForms: vi.fn(),
   findAssignedQmqaAccessibleForms: vi.fn(),
+  findAssignedQmqaMediaAccessibleForms: vi.fn(),
   findAssignedSqprAccessibleForms: vi.fn(),
   findAssignedFiveM1EAccessibleForms: vi.fn(),
 }));
@@ -59,10 +62,13 @@ describe('AuthService login SQMP assignment access', () => {
     };
     authRepositoryMock.findByEmail.mockResolvedValue(mockUser);
     authRepositoryMock.findUserById.mockResolvedValue(mockUser);
+    authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedOgiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedMnrAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedQmqaMediaAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
     hashMock.verifyPassword.mockResolvedValue(true);
@@ -81,6 +87,19 @@ describe('AuthService login SQMP assignment access', () => {
 
     expect(result.accessibleForms).toEqual(['SQMP-09-03']);
     expect(result.userMenu).toEqual(['Supplier Quality Management Plan']);
+  });
+
+  it('merges role-access workflow forms into auth accessibleForms and module menu', async () => {
+    authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue(['OGI-01-01', 'MNR-12-03']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['OGI-01-01', 'MNR-12-03']);
+    expect(result.userMenu).toEqual(['OGI', 'MNR Tracking']);
   });
 
   it('includes NPI accessibleForms and menu when the user is assigned to NPI approval queues', async () => {
