@@ -11,7 +11,6 @@ import {
   NpiUpdateSchema,
 } from './npi.schema.js';
 import { createResponse, successResponse } from '../../shared/utils/api-response.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 const repository = new NpiRepository();
@@ -117,7 +116,7 @@ export class NpiController {
       const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
       const files = ((req as unknown as { files?: unknown[] }).files || []) as any[];
       const actor = await this.getActor(req);
-      const result = await crudService.updateRecord(parsed.params.id, parsed.body, actor.userId, files);
+      const result = await crudService.updateRecord(parsed.params.id, parsed.body, actor, files);
       res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[NPI] UPDATE error:', error);
@@ -159,7 +158,10 @@ export class NpiController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { attachmentId } = NpiAttachmentParamSchema.parse({ params: req.params }).params;
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('npi-main', attachmentId);
+      const { filePath, fileName, mimeType } = await crudService.downloadAttachment(
+        attachmentId,
+        await this.getActor(req),
+      );
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       res.download(filePath);

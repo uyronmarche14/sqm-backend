@@ -8,6 +8,7 @@ import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 import { SQMP_STAGE_CODE } from '../workflow/workflow.constants.js';
 import { buildSqmpWorkflowMetadata } from '../workflow/workflow.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
 import {
   assertWorkflowRecordAccess,
   filterWorkflowRecordsByScope,
@@ -61,6 +62,15 @@ const SQMP_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
 };
 
 const SQMP_QUEUE_FORM_CODES = getModuleFormCodes('SQM_PLAN').filter((formId) => formId.startsWith('SQMP-09-'));
+const SQMP_HISTORY_STAGE_CODES = new Set<string>([
+  SQMP_STAGE_CODE.CLOSED,
+  SQMP_STAGE_CODE.CANCELLED,
+]);
+const SQMP_EDITABLE_STAGE_CODES = new Set<string>([
+  SQMP_STAGE_CODE.DRAFT,
+  SQMP_STAGE_CODE.REJECTED_BY_CHECKER,
+  SQMP_STAGE_CODE.REJECTED_BY_APPROVER,
+]);
 
 export class MainSqmpService {
   private isGlobalRole(roleName?: string) {
@@ -121,6 +131,24 @@ export class MainSqmpService {
     return supplierIds.includes(record.supplier_id) || record.attention_id === userId;
   }
 
+  private buildWorkflowMetadata(
+    record: any,
+    latestResponse: any,
+    userId?: string,
+    roleName?: string,
+    supplierIds: string[] = [],
+    userSiteId?: string | null,
+  ) {
+    return buildSqmpWorkflowMetadata({
+      record,
+      latestResponse,
+      userId,
+      roleName,
+      userSiteId: userSiteId || null,
+      supplierIds,
+    });
+  }
+
   private canReadRecord(
     record: any,
     latestResponse: any,
@@ -138,35 +166,34 @@ export class MainSqmpService {
       return true;
     }
 
-    if (this.isSupplierRole(roleName)) {
-      return this.hasSupplierAccess(record, userId, supplierIds);
-    }
-
-    if (this.hasRoleViewListAccessForRecord(record, latestResponse, roleViewListForms)) {
-      return true;
-    }
-
-    const metadata = buildSqmpWorkflowMetadata({
+    const metadata = this.buildWorkflowMetadata(
       record,
       latestResponse,
       userId,
       roleName,
-      userSiteId: userSiteId || null,
       supplierIds,
-    });
+      userSiteId,
+    );
+
+    if (this.isSupplierRole(roleName)) {
+      return this.hasSupplierAccess(record, userId, supplierIds) && (
+        (Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0) ||
+        SQMP_HISTORY_STAGE_CODES.has(metadata.workflowStageCode)
+      );
+    }
 
     if (Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0) {
       return true;
     }
 
-    return [
-      record.encoder_id,
-      record.issuer_id,
-      record.checker_id,
-      record.approver_id,
-      latestResponse?.checker_id,
-      latestResponse?.approver_id,
-    ].includes(userId);
+    if (!SQMP_HISTORY_STAGE_CODES.has(metadata.workflowStageCode)) {
+      return false;
+    }
+
+    return (
+      this.hasRoleViewListAccessForRecord(record, latestResponse, roleViewListForms) ||
+      this.isMineRecord(record, latestResponse, userId, roleName, supplierIds)
+    );
   }
 
   private isMineRecord(record: any, latestResponse: any, userId?: string, roleName?: string, supplierIds: string[] = []) {
@@ -197,7 +224,47 @@ export class MainSqmpService {
   /**
    * Internal Helper: Enforce RBAC/ABAC Context Guards
    */
-  private async validateAccess(record: any, roleName: string, userId: string): Promise<void> {
+  private canUpdateRecord(record: any, latestResponse: any, roleName: string, userId: string): boolean {
+    if (!userId) {
+      return false;
+    }
+
+    if (this.isGlobalRole(roleName)) {
+      return true;
+    }
+
+    if (this.isSupplierRole(roleName)) {
+      return false;
+    }
+
+    const metadata = this.buildWorkflowMetadata(record, latestResponse, userId, roleName);
+    return (
+      SQMP_EDITABLE_STAGE_CODES.has(metadata.workflowStageCode) &&
+      (record.encoder_id === userId || record.issuer_id === userId)
+    );
+  }
+
+  private canDeleteRecord(record: any, latestResponse: any, roleName: string, userId: string): boolean {
+    if (!userId) {
+      return false;
+    }
+
+    if (this.isGlobalRole(roleName)) {
+      return true;
+    }
+
+    if (this.isSupplierRole(roleName)) {
+      return false;
+    }
+
+    const metadata = this.buildWorkflowMetadata(record, latestResponse, userId, roleName);
+    return (
+      metadata.workflowStageCode === SQMP_STAGE_CODE.DRAFT &&
+      (record.encoder_id === userId || record.issuer_id === userId)
+    );
+  }
+
+  private async validateAccess(record: any, latestResponse: any, roleName: string, userId: string): Promise<void> {
     const isSupplier = roleName.toUpperCase().includes('SUPPLIER');
     if (this.isGlobalRole(roleName)) return;
 
@@ -205,14 +272,7 @@ export class MainSqmpService {
       throw new ForbiddenError('Suppliers are not permitted to edit SQM Plan issuance content.');
     }
 
-    const metadata = buildSqmpWorkflowMetadata({
-      record,
-      latestResponse: null,
-      userId,
-      roleName,
-      userSiteId: null,
-      supplierIds: [],
-    });
+    const metadata = this.buildWorkflowMetadata(record, latestResponse, userId, roleName);
 
     if (!Array.isArray(metadata.availableActions) || metadata.availableActions.length === 0) {
       throw new ForbiddenError('Access Denied: You do not have permission to access or modify this record.');
@@ -298,14 +358,14 @@ export class MainSqmpService {
       : filterWorkflowRecordsByScope(records, scope, {
           isAssigned: (record) => {
             const latestResponse = latestResponseBySqmpId.get((record as any).sqmp_id);
-            const metadata = buildSqmpWorkflowMetadata({
+            const metadata = this.buildWorkflowMetadata(
               record,
               latestResponse,
               userId,
               roleName,
-              userSiteId: userObj?.site_id || null,
               supplierIds,
-            });
+              userObj?.site_id || null,
+            );
             return Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0;
           },
           isMine: (record) =>
@@ -324,14 +384,14 @@ export class MainSqmpService {
 
     return visibleRecords.map((r: any) => {
       const latestResponse = latestResponseBySqmpId.get(r.sqmp_id);
-      const metadata = buildSqmpWorkflowMetadata({
-        record: r,
+      const metadata = this.buildWorkflowMetadata(
+        r,
         latestResponse,
         userId,
         roleName,
-        userSiteId: userObj?.site_id || null,
         supplierIds,
-      });
+        userObj?.site_id || null,
+      );
 
       return {
         ...r,
@@ -368,14 +428,14 @@ export class MainSqmpService {
       action: 'view',
       moduleName: 'SQM Plan',
     });
-    const metadata = buildSqmpWorkflowMetadata({
+    const metadata = this.buildWorkflowMetadata(
       record,
       latestResponse,
       userId,
       roleName,
-      userSiteId: userObj?.site_id || null,
       supplierIds,
-    });
+      userObj?.site_id || null,
+    );
 
     return {
       ...record,
@@ -499,7 +559,12 @@ export class MainSqmpService {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    await this.validateAccess(existing.record, roleName, userId);
+    const latestResponse = existing.responses?.[existing.responses.length - 1] || null;
+    assertWorkflowRecordAccess({
+      allowed: this.canUpdateRecord(existing.record, latestResponse, roleName, userId),
+      action: 'update',
+      moduleName: 'SQM Plan',
+    });
 
     const record = existing.record;
     const now = new Date();
@@ -629,7 +694,12 @@ export class MainSqmpService {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    await this.validateAccess(existing.record, roleName, userId);
+    const latestResponse = existing.responses?.[existing.responses.length - 1] || null;
+    assertWorkflowRecordAccess({
+      allowed: this.canDeleteRecord(existing.record, latestResponse, roleName, userId),
+      action: 'delete',
+      moduleName: 'SQM Plan',
+    });
 
     return await sqmpRepository.executeTransaction(async (trx) => {
         await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
@@ -645,7 +715,7 @@ export class MainSqmpService {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    await this.validateAccess(existing.record, roleName, userId);
+    await this.validateAccess(existing.record, existing.responses?.[existing.responses.length - 1] || null, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
@@ -680,7 +750,7 @@ export class MainSqmpService {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    await this.validateAccess(existing.record, roleName, userId);
+    await this.validateAccess(existing.record, existing.responses?.[existing.responses.length - 1] || null, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
@@ -714,7 +784,7 @@ export class MainSqmpService {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    await this.validateAccess(existing.record, roleName, userId);
+    await this.validateAccess(existing.record, existing.responses?.[existing.responses.length - 1] || null, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
@@ -748,7 +818,7 @@ export class MainSqmpService {
     const existing = await sqmpRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('Record not found');
 
-    await this.validateAccess(existing.record, roleName, userId);
+    await this.validateAccess(existing.record, existing.responses?.[existing.responses.length - 1] || null, roleName, userId);
 
     const now = new Date();
     return await sqmpRepository.executeTransaction(async (trx) => {
@@ -774,6 +844,76 @@ export class MainSqmpService {
 
       return { success: true, data: { id }, message: 'Record closed successfully' };
     });
+  }
+
+  async downloadMainAttachment(attachmentId: string, userId?: string, roleId?: string) {
+    const owner = await sqmpRepository.findMainAttachmentOwner(attachmentId);
+    if (!owner) {
+      throw new NotFoundError('Attachment not found');
+    }
+
+    const roleName = await this.getRoleName(roleId);
+    const userObj = userId ? await userRepository.findById(userId) : null;
+    const supplierIds = userId && this.isSupplierRole(roleName)
+      ? await sqmpRepository.findSupplierIdsByUserId(userId)
+      : [];
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(userId);
+    const data = await sqmpRepository.findByIdDetailed(owner.sqmp_id);
+    if (!data) {
+      throw new NotFoundError('SQM Plan not found');
+    }
+
+    const latestResponse = data.responses?.[data.responses.length - 1];
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(
+        data.record,
+        latestResponse,
+        userId,
+        roleName,
+        supplierIds,
+        roleViewListForms,
+        userObj?.site_id || null,
+      ),
+      action: 'view',
+      moduleName: 'SQM Plan',
+    });
+
+    return attachmentService.downloadAttachment(owner.moduleType, attachmentId);
+  }
+
+  async downloadResponseAttachment(attachmentId: string, userId?: string, roleId?: string) {
+    const owner = await sqmpRepository.findResponseAttachmentOwner(attachmentId);
+    if (!owner) {
+      throw new NotFoundError('Attachment not found');
+    }
+
+    const roleName = await this.getRoleName(roleId);
+    const userObj = userId ? await userRepository.findById(userId) : null;
+    const supplierIds = userId && this.isSupplierRole(roleName)
+      ? await sqmpRepository.findSupplierIdsByUserId(userId)
+      : [];
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(userId);
+    const data = await sqmpRepository.findByIdDetailed(owner.sqmp_id);
+    if (!data) {
+      throw new NotFoundError('SQM Plan not found');
+    }
+
+    const latestResponse = data.responses?.[data.responses.length - 1];
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(
+        data.record,
+        latestResponse,
+        userId,
+        roleName,
+        supplierIds,
+        roleViewListForms,
+        userObj?.site_id || null,
+      ),
+      action: 'view',
+      moduleName: 'SQM Plan',
+    });
+
+    return attachmentService.downloadAttachment(owner.moduleType, attachmentId);
   }
 }
 

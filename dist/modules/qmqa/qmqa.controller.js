@@ -5,6 +5,9 @@ import { successResponse, createResponse } from '../../shared/utils/api-response
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 export class QmqaController {
+    getVariant(req) {
+        return req.qmqaVariant === 'QMQA_MEDIA' ? 'QMQA_MEDIA' : 'QMQA';
+    }
     getUserId(req) {
         return req.user?.userId || req.user?.id || 'SYSTEM';
     }
@@ -73,7 +76,7 @@ export class QmqaController {
                 scope: req.query.scope,
                 assignedToMe: req.query.assignedToMe,
             });
-            const records = await qmqaService.getAllRecords({ status, scope }, { userId: this.getUserId(req), roleName: this.getRoleName(req) });
+            const records = await qmqaService.getAllRecords({ status, scope }, { userId: this.getUserId(req), roleName: this.getRoleName(req) }, this.getVariant(req));
             res.json({ data: records });
         }
         catch (error) {
@@ -86,7 +89,7 @@ export class QmqaController {
             const record = await qmqaService.getRecordById(id, {
                 userId: this.getUserId(req),
                 roleName: this.getRoleName(req),
-            });
+            }, this.getVariant(req));
             res.json({ data: record });
         }
         catch (error) {

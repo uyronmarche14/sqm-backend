@@ -4,7 +4,6 @@ import { NpiRepository } from './npi.repository.js';
 import { NpiMapper } from './services/NpiMapper.js';
 import { NpiActionSchema, NpiAttachmentParamSchema, NpiCreateSchema, NpiIdParamSchema, NpiUpdateSchema, } from './npi.schema.js';
 import { createResponse, successResponse } from '../../shared/utils/api-response.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 const repository = new NpiRepository();
 const mapper = new NpiMapper();
@@ -52,9 +51,10 @@ export class NpiController {
                 status: req.query.status,
                 siteId: req.query.siteId,
                 supplierId: req.query.supplierId,
+                partCode: req.query.partCode,
                 keyword: req.query.keyword,
-                dateFrom: req.query.dateFrom,
-                dateTo: req.query.dateTo,
+                dateFrom: (req.query.dateFrom || req.query.startDate),
+                dateTo: (req.query.dateTo || req.query.endDate),
                 scope: resolveWorkflowListScope({
                     scope: req.query.scope,
                     assignedToMe: req.query.assignedToMe,
@@ -101,7 +101,7 @@ export class NpiController {
             const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
             const files = (req.files || []);
             const actor = await this.getActor(req);
-            const result = await crudService.updateRecord(parsed.params.id, parsed.body, actor.userId, files);
+            const result = await crudService.updateRecord(parsed.params.id, parsed.body, actor, files);
             res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
@@ -141,7 +141,7 @@ export class NpiController {
     async downloadAttachment(req, res, next) {
         try {
             const { attachmentId } = NpiAttachmentParamSchema.parse({ params: req.params }).params;
-            const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('npi-main', attachmentId);
+            const { filePath, fileName, mimeType } = await crudService.downloadAttachment(attachmentId, await this.getActor(req));
             res.setHeader('Content-Type', mimeType);
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             res.download(filePath);

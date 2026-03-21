@@ -5,8 +5,24 @@ const controlNumberServiceMock = vi.hoisted(() => ({
   getControlNoState: vi.fn(),
 }));
 
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
+
+const attachmentServiceMock = vi.hoisted(() => ({
+  downloadAttachment: vi.fn(),
+}));
+
 vi.mock('../../src/shared/services/control-number.service.js', () => ({
   controlNumberService: controlNumberServiceMock,
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
+}));
+
+vi.mock('../../src/shared/services/attachment.service.js', () => ({
+  attachmentService: attachmentServiceMock,
 }));
 
 import { NpiCrudService } from '../../src/modules/npi/services/NpiCrudService.js';
@@ -55,6 +71,7 @@ describe('NpiCrudService legacy child-table parity', () => {
   const repository = {
     findAllDetailed: vi.fn(),
     findByIdDetailed: vi.fn(),
+    findAttachmentOwner: vi.fn(),
     findDefaultInspector: vi.fn(),
     getNextSequence: vi.fn(),
     executeTransaction: vi.fn(),
@@ -67,7 +84,40 @@ describe('NpiCrudService legacy child-table parity', () => {
     repository.getNextSequence.mockResolvedValue(null);
     controlNumberServiceMock.buildNpiDraft.mockResolvedValue('DRF-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('draft');
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    attachmentServiceMock.downloadAttachment.mockResolvedValue({
+      filePath: '/tmp/npi.txt',
+      fileName: 'npi.txt',
+      mimeType: 'text/plain',
+    });
   });
+
+  function createListRecord(overrides: Record<string, unknown> = {}) {
+    return {
+      npi_lot_id: 'npi-1',
+      control_no: 'NPI-001',
+      request_status: 'SU',
+      datecreated: new Date('2026-03-20'),
+      site_id: 'site-1',
+      site_name: 'Site 1',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier 1',
+      part_id: 'part-1',
+      part_name: 'Part 1',
+      part_code: 'PART-001',
+      model_id: 'model-1',
+      model_name: 'Model 1',
+      lot_no: 'LOT-1',
+      lot_size: 10,
+      inspection_date: new Date('2026-03-20'),
+      inspector_id: 'originator-1',
+      checker_id: 'checker-1',
+      approver_id: 'approver-1',
+      checker_name: 'Checker',
+      approver_name: 'Approver',
+      ...overrides,
+    };
+  }
 
   it('persists restored noise categories and material certificates on create', async () => {
     const tx = createTransactionRecorder();
@@ -167,7 +217,7 @@ describe('NpiCrudService legacy child-table parity', () => {
           },
         ],
       } as any,
-      'originator-1',
+      { userId: 'originator-1', roleName: 'INTERNAL USER' },
       [],
     );
 
@@ -200,7 +250,7 @@ describe('NpiCrudService legacy child-table parity', () => {
         checker_remarks: 'checked',
         approver_remarks: 'approved',
       } as any,
-      'originator-1',
+      { userId: 'originator-1', roleName: 'INTERNAL USER' },
       [],
     );
 
@@ -213,6 +263,223 @@ describe('NpiCrudService legacy child-table parity', () => {
         approver_remarks: 'approved',
       }),
       where: ['npi_lot_id', '=', 'npi-1'],
+    });
+  });
+
+  it('returns the full NPI queue to admin users', async () => {
+    repository.findAllDetailed.mockResolvedValue([createListRecord()]);
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.getAllRecords(
+      { userId: 'admin-1', roleName: 'TIP ADMIN' },
+      { status: 'PENDING' },
+    );
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('returns history rows to users with explicit search viewList access', async () => {
+    repository.findAllDetailed.mockResolvedValue([createListRecord()]);
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'NPILOT-09-05' && action === 'viewlist',
+    );
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.getAllRecords(
+      { userId: 'viewer-1', roleName: 'INTERNAL USER' },
+      { status: 'PENDING' },
+    );
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('keeps non-admin users scoped when they do not have queue viewList access', async () => {
+    repository.findAllDetailed.mockResolvedValue([createListRecord()]);
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.getAllRecords(
+      { userId: 'viewer-1', roleName: 'INTERNAL USER' },
+      { status: 'PENDING' },
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('keeps assigned checker access on assigned scope without queue viewList', async () => {
+    repository.findAllDetailed.mockResolvedValue([createListRecord()]);
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.getAllRecords(
+      { userId: 'checker-1', roleName: 'INTERNAL USER' },
+      { status: 'PENDING', scope: 'assigned' },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      workflowStage: 'CHECKER',
+      availableActions: ['check', 'reject'],
+    }));
+  });
+
+  it('does not let queue viewList widen mine scope', async () => {
+    repository.findAllDetailed.mockResolvedValue([createListRecord()]);
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'NPILOT-09-03' && action === 'viewlist',
+    );
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.getAllRecords(
+      { userId: 'viewer-1', roleName: 'INTERNAL USER' },
+      { status: 'PENDING', scope: 'mine' },
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('allows detail reads when the user has explicit search viewList access', async () => {
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createListRecord(),
+      attachments: [],
+      visual_categories: [],
+      data_categories: [],
+      dimension_categories: [],
+      noise_categories: [],
+      material_certificates: [],
+      cc_list: [],
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'NPILOT-09-05' && action === 'viewlist',
+    );
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.getRecordById('npi-1', {
+      userId: 'viewer-1',
+      roleName: 'INTERNAL USER',
+    });
+
+    expect(result.control_no).toBe('NPI-001');
+    expect(result.workflowStage).toBe('CHECKER');
+  });
+
+  it('does not let queue viewList widen detail access for unrelated users', async () => {
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createListRecord(),
+      attachments: [],
+      visual_categories: [],
+      data_categories: [],
+      dimension_categories: [],
+      noise_categories: [],
+      material_certificates: [],
+      cc_list: [],
+    });
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'NPILOT-09-03' && action === 'viewlist',
+    );
+
+    const service = new NpiCrudService(repository as any, mapper);
+
+    await expect(
+      service.getRecordById('npi-1', {
+        userId: 'viewer-1',
+        roleName: 'INTERNAL USER',
+      }),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to view this NPI record.',
+    });
+  });
+
+  it('rejects updates from unrelated users even when they know the record id', async () => {
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createListRecord({ request_status: 'DR' }),
+    });
+
+    const service = new NpiCrudService(repository as any, mapper);
+
+    await expect(
+      service.updateRecord(
+        'npi-1',
+        { remarks: 'unauthorized change' } as any,
+        { userId: 'outsider-1', roleName: 'INTERNAL USER' },
+        [],
+      ),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to update this NPI record.',
+    });
+  });
+
+  it('blocks deletes once the record has entered an active approval stage', async () => {
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createListRecord({ request_status: 'SU', inspector_id: 'originator-1' }),
+    });
+
+    const service = new NpiCrudService(repository as any, mapper);
+
+    await expect(
+      service.deleteRecord('npi-1', { userId: 'originator-1', roleName: 'INTERNAL USER' }),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to delete this NPI record.',
+    });
+  });
+
+  it('downloads attachments for readable records only', async () => {
+    repository.findAttachmentOwner.mockResolvedValue({
+      npi_attachment_id: 'att-1',
+      npi_lot_id: 'npi-1',
+    });
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createListRecord({ request_status: 'DR', inspector_id: 'originator-1' }),
+      attachments: [],
+      visual_categories: [],
+      data_categories: [],
+      dimension_categories: [],
+      noise_categories: [],
+      material_certificates: [],
+      cc_list: [],
+    });
+
+    const service = new NpiCrudService(repository as any, mapper);
+    const result = await service.downloadAttachment('att-1', {
+      userId: 'originator-1',
+      roleName: 'INTERNAL USER',
+    });
+
+    expect(result).toEqual({
+      filePath: '/tmp/npi.txt',
+      fileName: 'npi.txt',
+      mimeType: 'text/plain',
+    });
+    expect(attachmentServiceMock.downloadAttachment).toHaveBeenCalledWith('npi-main', 'att-1');
+  });
+
+  it('rejects attachment downloads for unrelated users', async () => {
+    repository.findAttachmentOwner.mockResolvedValue({
+      npi_attachment_id: 'att-1',
+      npi_lot_id: 'npi-1',
+    });
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createListRecord({ request_status: 'DR', inspector_id: 'originator-1' }),
+      attachments: [],
+      visual_categories: [],
+      data_categories: [],
+      dimension_categories: [],
+      noise_categories: [],
+      material_certificates: [],
+      cc_list: [],
+    });
+
+    const service = new NpiCrudService(repository as any, mapper);
+
+    await expect(
+      service.downloadAttachment('att-1', {
+        userId: 'outsider-1',
+        roleName: 'INTERNAL USER',
+      }),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to download this NPI record.',
     });
   });
 });

@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { sqmpWorkflowService } from '../workflow/workflow.service.js';
 import { SqmpResponseUpsertSchema, SqmpResponseActionSchema, SqmpResponseAttachmentParamSchema } from './response.schema.js';
 import { successResponse } from '../../../shared/utils/api-response.js';
-import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { mainSqmpService } from '../main/main.service.js';
 
 export class SqmpResponseController {
@@ -211,7 +210,12 @@ export class SqmpResponseController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = SqmpResponseAttachmentParamSchema.parse({ params: req.params }).params;
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('sqmp-response', attachmentId as string);
+      const { userId, roleId } = this.getActor(req);
+      const { filePath, fileName, mimeType } = await mainSqmpService.downloadResponseAttachment(
+        attachmentId as string,
+        userId,
+        roleId,
+      );
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

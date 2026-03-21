@@ -8,7 +8,6 @@ import {
   MnrWorkflowActionSchema,
   MnrResponseWorkflowSchema,
 } from './mnr.schema.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { mnrWorkflowService } from './workflow/mnr-workflow.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
@@ -413,8 +412,7 @@ export class MnrController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = MnrAttachmentParamSchema.parse({ params: req.params }).params;
-      
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('mnr-main', attachmentId);
+      const { filePath, fileName, mimeType } = await mnrService.downloadAttachment(attachmentId, this.getActor(req));
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

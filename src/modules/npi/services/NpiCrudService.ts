@@ -5,6 +5,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import type { Transaction } from 'kysely';
 import type { Database } from '../../../shared/infrastructure/db.types.js';
 import { NpiRepository } from '../npi.repository.js';
@@ -29,15 +30,58 @@ import {
   UploadedFile
 } from '../types/npi.types.js';
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
-import { getNpiDbStatus, getNpiDbStatusesForFilter } from '../workflow/npi-workflow.utils.js';
+import { buildNpiWorkflowMetadata, getNpiDbStatus, getNpiDbStatusesForFilter } from '../workflow/npi-workflow.utils.js';
 import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
-import { getNpiStageOwnerId } from '../workflow/npi-workflow.utils.js';
 import {
   assertWorkflowRecordAccess,
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../../shared/utils/workflow-access.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { permissionService } from '../../../shared/services/permission.service.js';
+
+const NPI_QUEUE_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
+  NEW: ['NPILOT-09-01'],
+  DRAFT: ['NPILOT-09-02'],
+  CHECKER: ['NPILOT-09-03'],
+  APPROVER: ['NPILOT-09-03'],
+  PENDING: ['NPILOT-09-03'],
+  AAPPROVAL: ['NPILOT-09-03'],
+  AWAITING_CHECKED: ['NPILOT-09-03'],
+  AWAITING_APPROVAL: ['NPILOT-09-03'],
+  REJECTED: ['NPILOT-09-04'],
+  REJECT_CHECKER: ['NPILOT-09-04'],
+  REJECT_APPROVER: ['NPILOT-09-04'],
+  ACCEPT: ['NPILOT-09-06'],
+  APPROVED: ['NPILOT-09-06'],
+  LOTTRACKING: ['NPILOT-09-06'],
+  LOT_TRACKING: ['NPILOT-09-06'],
+  SEARCH: ['NPILOT-09-05'],
+};
+
+const NPI_QUEUE_STAGES = [
+  'NEW',
+  'DRAFT',
+  'AAPPROVAL',
+  'REJECTED',
+  'LOTTRACKING',
+  'SEARCH',
+] as const;
+
+function uniqueFormCodes(formIds: string[]) {
+  return Array.from(new Set(formIds.filter(Boolean)));
+}
+
+function resolveNpiQueueFormUniverse() {
+  const contractCodes = NPI_QUEUE_STAGES.flatMap((stage) => getSubFormFormCodes('NEWPARTS', stage));
+  const fallbackCodes = Object.values(NPI_QUEUE_STATUS_FORM_FALLBACKS).flat();
+  return uniqueFormCodes([...contractCodes, ...fallbackCodes]);
+}
+
+const NPI_QUEUE_FORM_CODES = resolveNpiQueueFormUniverse();
+const NPI_SEARCH_FORM_CODE = 'NPILOT-09-05';
+const NPI_REFERENCE_FORM_CODE = 'NPILOT-09-06';
 
 export class NpiCrudService implements INpiService {
   constructor(
@@ -49,17 +93,72 @@ export class NpiCrudService implements INpiService {
     return (actor?.roleName || '').toUpperCase().includes('ADMIN');
   }
 
+  private async resolveRoleViewListFormCodes(userId?: string | null) {
+    if (!userId) {
+      return new Set<string>();
+    }
+
+    const checks = await Promise.all(
+      NPI_QUEUE_FORM_CODES.map(async (formId) => ({
+        formId,
+        allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+      })),
+    );
+
+    return new Set(
+      checks
+        .filter((entry) => entry.allowed)
+        .map((entry) => entry.formId),
+    );
+  }
+
+  private getWorkflowStage(record: Record<string, unknown>) {
+    return buildNpiWorkflowMetadata({
+      ...record,
+      request_status: record.request_status ?? record.status,
+    }).workflowStage;
+  }
+
+  private isEditableOriginatorStage(stage: string) {
+    return (
+      stage === NPI_WORKFLOW_STAGE.DRAFT ||
+      stage === NPI_WORKFLOW_STAGE.REJECT_CHECKER ||
+      stage === NPI_WORKFLOW_STAGE.REJECT_APPROVER
+    );
+  }
+
+  private isReferenceVisibleStage(stage: string) {
+    return (
+      stage === NPI_WORKFLOW_STAGE.ACCEPT ||
+      stage === NPI_WORKFLOW_STAGE.LOT_TRACKING ||
+      stage === NPI_WORKFLOW_STAGE.CANCELLED
+    );
+  }
+
+  private hasReferenceViewListAccess(
+    record: Record<string, unknown>,
+    roleViewListForms: Set<string>,
+  ) {
+    if (roleViewListForms.has(NPI_SEARCH_FORM_CODE)) {
+      return true;
+    }
+
+    const stage = this.getWorkflowStage(record);
+    return this.isReferenceVisibleStage(stage) && roleViewListForms.has(NPI_REFERENCE_FORM_CODE);
+  }
+
   private isAssignedRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
-    return Boolean(actor?.userId && getNpiStageOwnerId(record) === actor.userId);
+    if (!actor?.userId) {
+      return false;
+    }
+
+    const workflow = buildNpiWorkflowMetadata(record, actor);
+    return Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
   }
 
   private isMineRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
-    return Boolean(actor?.userId && record.inspector_id === actor.userId);
-  }
-
-  private canReadRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
-    if (!actor?.userId || this.isAdminActor(actor)) {
-      return true;
+    if (!actor?.userId) {
+      return false;
     }
 
     return [
@@ -69,12 +168,50 @@ export class NpiCrudService implements INpiService {
     ].includes(actor.userId);
   }
 
-  private canMutateMainRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
-    if (!actor?.userId || this.isAdminActor(actor)) {
+  private canReadRecord(
+    record: Record<string, unknown>,
+    actor?: NpiWorkflowActorContext,
+    roleViewListForms: Set<string> = new Set(),
+  ) {
+    if (!actor?.userId) {
+      return false;
+    }
+
+    if (this.isAdminActor(actor)) {
       return true;
     }
 
-    return record.inspector_id === actor.userId;
+    if (this.isAssignedRecord(record, actor)) {
+      return true;
+    }
+
+    return this.hasReferenceViewListAccess(record, roleViewListForms);
+  }
+
+  private canMutateMainRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (!actor?.userId) {
+      return false;
+    }
+
+    const stage = this.getWorkflowStage(record);
+    return this.isEditableOriginatorStage(stage) && record.inspector_id === actor.userId;
+  }
+
+  private canDeleteRecord(record: Record<string, unknown>, actor?: NpiWorkflowActorContext) {
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (!actor?.userId) {
+      return false;
+    }
+
+    const stage = this.getWorkflowStage(record);
+    return this.isEditableOriginatorStage(stage) && record.inspector_id === actor.userId;
   }
 
   private getActorId(
@@ -143,12 +280,13 @@ export class NpiCrudService implements INpiService {
         ? normalizedStatuses.join(',')
         : undefined,
     });
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(actor?.userId);
     const visibleRecords = this.isAdminActor(actor)
       ? records
       : filterWorkflowRecordsByScope(records, filters?.scope || 'history', {
           isAssigned: (record) => this.isAssignedRecord(record, actor),
           isMine: (record) => this.isMineRecord(record, actor),
-          isHistoryVisible: (record) => this.canReadRecord(record, actor),
+          isHistoryVisible: (record) => this.canReadRecord(record, actor, roleViewListForms),
         });
     return this.mapper.toListDTOs(visibleRecords, actor);
   }
@@ -161,8 +299,9 @@ export class NpiCrudService implements INpiService {
     if (!data) {
       throw new NotFoundError('NPI Record not found');
     }
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(actor?.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(data.record, actor),
+      allowed: this.canReadRecord(data.record, actor, roleViewListForms),
       action: 'view',
       moduleName: 'NPI',
     });
@@ -237,7 +376,7 @@ export class NpiCrudService implements INpiService {
   async updateRecord(
     id: string, 
     payload: NPIUpdateInput, 
-    userId: string, 
+    actor?: NpiWorkflowActorContext,
     files: UploadedFile[] = []
   ): Promise<ServiceResponse<{ id: string }>> {
     const existing = await this.repository.findByIdDetailed(id);
@@ -245,13 +384,13 @@ export class NpiCrudService implements INpiService {
       throw new NotFoundError('Record not found');
     }
     assertWorkflowRecordAccess({
-      allowed: this.canMutateMainRecord(existing.record, { userId }),
+      allowed: this.canMutateMainRecord(existing.record, actor),
       action: 'update',
       moduleName: 'NPI',
     });
     
     const now = new Date();
-    const effectiveUserId = userId || 'SYSTEM';
+    const effectiveUserId = actor?.userId || 'SYSTEM';
     const npiLotId = existing.record.npi_lot_id;
 
     const dbUpdates = this.buildUpdatePayload(
@@ -323,7 +462,7 @@ export class NpiCrudService implements INpiService {
       throw new NotFoundError('NPI Record not found');
     }
     assertWorkflowRecordAccess({
-      allowed: this.canMutateMainRecord(existing.record, actor),
+      allowed: this.canDeleteRecord(existing.record, actor),
       action: 'delete',
       moduleName: 'NPI',
     });
@@ -347,6 +486,27 @@ export class NpiCrudService implements INpiService {
         message: 'NPI Record deleted successfully' 
       };
     });
+  }
+
+  async downloadAttachment(attachmentId: string, actor?: NpiWorkflowActorContext) {
+    const owner = await this.repository.findAttachmentOwner(attachmentId);
+    if (!owner) {
+      throw new NotFoundError('Attachment not found');
+    }
+
+    const data = await this.repository.findByIdDetailed(owner.npi_lot_id);
+    if (!data) {
+      throw new NotFoundError('NPI Record not found');
+    }
+
+    const roleViewListForms = await this.resolveRoleViewListFormCodes(actor?.userId);
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(data.record, actor, roleViewListForms),
+      action: 'download',
+      moduleName: 'NPI',
+    });
+
+    return attachmentService.downloadAttachment('npi-main', attachmentId);
   }
 
   /**

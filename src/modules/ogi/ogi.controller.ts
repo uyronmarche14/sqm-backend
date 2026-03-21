@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
 import { successResponse } from '../../shared/utils/api-response.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class OgiController {
@@ -91,7 +90,10 @@ export class OgiController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = OgiAttachmentParamSchema.parse({ params: req.params }).params;
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('ogi-main', attachmentId as string);
+      const { filePath, fileName, mimeType } = await ogiService.downloadAttachment(
+        attachmentId as string,
+        this.getActor(req),
+      );
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

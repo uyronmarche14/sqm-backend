@@ -18,10 +18,15 @@ const repositoryMock = vi.hoisted(() => ({
   findResponseInitialAttachments: vi.fn(),
   findResponseFinalAttachments: vi.fn(),
   findResponseVerificationAttachments: vi.fn(),
+  findAttachmentOwner: vi.fn(),
 }));
 
 const permissionServiceMock = vi.hoisted(() => ({
   checkRolePermission: vi.fn(),
+}));
+
+const attachmentServiceMock = vi.hoisted(() => ({
+  downloadAttachment: vi.fn(),
 }));
 
 vi.mock('../../src/modules/qmqa/qmqa.repository.js', () => ({
@@ -34,6 +39,10 @@ vi.mock('../../src/shared/services/control-number.service.js', () => ({
 
 vi.mock('../../src/shared/services/permission.service.js', () => ({
   permissionService: permissionServiceMock,
+}));
+
+vi.mock('../../src/shared/services/attachment.service.js', () => ({
+  attachmentService: attachmentServiceMock,
 }));
 
 import { qmqaService } from '../../src/modules/qmqa/qmqa.service.js';
@@ -50,9 +59,15 @@ describe('QmqaService workflow metadata hydration', () => {
     repositoryMock.findResponseInitialAttachments.mockResolvedValue([]);
     repositoryMock.findResponseFinalAttachments.mockResolvedValue([]);
     repositoryMock.findResponseVerificationAttachments.mockResolvedValue([]);
+    repositoryMock.findAttachmentOwner.mockResolvedValue(null);
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
     controlNumberServiceMock.buildQmqaAuditPlan.mockResolvedValue('AUDIT-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('final');
+    attachmentServiceMock.downloadAttachment.mockResolvedValue({
+      filePath: '/tmp/test.pdf',
+      fileName: 'test.pdf',
+      mimeType: 'application/pdf',
+    });
   });
 
   it('includes workflow metadata on detail reads', async () => {
@@ -246,7 +261,7 @@ describe('QmqaService workflow metadata hydration', () => {
     }));
   });
 
-  it('allows non-admin full queue visibility when the user has variant-specific viewList for the queue form', async () => {
+  it('does not let non-admin queue viewList widen active queue visibility', async () => {
     repositoryMock.findAllRecordsDetailed.mockResolvedValue([
       {
         qmqa_id: 'qmqa-4',
@@ -280,11 +295,7 @@ describe('QmqaService workflow metadata hydration', () => {
       'QMQA',
     );
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual(expect.objectContaining({
-      qmqa_id: 'qmqa-4',
-      status: 'AWAITING_APPROVAL',
-    }));
+    expect(result).toHaveLength(0);
   });
 
   it('does not let standard QMQA role viewList unlock QMQA media detail access', async () => {
@@ -339,6 +350,117 @@ describe('QmqaService workflow metadata hydration', () => {
         'QMQA_MEDIA',
       ),
     ).rejects.toThrow(/do not have permission to view/i);
+  });
+
+  it('does not let standard QMQA role viewList unlock active QMQA detail access', async () => {
+    repositoryMock.findRecordByIdDetailed.mockResolvedValue({
+      qmqa_id: 'qmqa-1',
+      control_no: 'QMQA-001',
+      request_status: '4',
+      created_date: new Date('2026-03-14'),
+      site_id: 'site-1',
+      site_name: 'Site',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier',
+      audit_category_id: 'category-1',
+      category_name: 'Category',
+      audit_plan_date: new Date('2026-03-14'),
+      sqe_pic_id: 'sqe-1',
+      sqe_pic_name: 'SQE',
+      audit_type_id: 'type-1',
+      audit_type_name: 'Type',
+      attention_id: 'attention-1',
+      attention_name: 'Attention',
+      pic_auditor_id: 'auditor-1',
+      pic_auditor_name: 'Auditor',
+      audit_rating: 95,
+      due_date: new Date('2026-03-20'),
+      audit_date: new Date('2026-03-14'),
+      issued_date: null,
+      auditees: 'Team',
+      auditors: 'Auditors',
+      attendees: 'Attendees',
+      remarks: 'Remarks',
+      encoder_id: 'encoder-1',
+      encoder_name: 'Encoder',
+      issuer_id: 'issuer-1',
+      issuer_name: 'Issuer',
+      checker_id: 'checker-1',
+      checker_name: 'Checker',
+      approver_id: 'approver-1',
+      approver_name: 'Approver',
+      last_update: new Date('2026-03-14'),
+      updateby: 'issuer-1',
+    });
+    repositoryMock.findResponseByQmqaId.mockResolvedValue(null);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) => {
+      return formId === 'QMQA-05-03';
+    });
+
+    await expect(
+      qmqaService.getRecordById(
+        'qmqa-1',
+        { userId: 'viewer-1', roleName: 'QMQA VIEWER' },
+        'QMQA',
+      ),
+    ).rejects.toThrow(/do not have permission to view/i);
+  });
+
+  it('blocks attachment downloads when the user only has queue viewList for an active record', async () => {
+    repositoryMock.findAttachmentOwner.mockResolvedValue({ qmqa_id: 'qmqa-1' });
+    repositoryMock.findRecordByIdDetailed.mockResolvedValue({
+      qmqa_id: 'qmqa-1',
+      control_no: 'QMQA-001',
+      request_status: '4',
+      created_date: new Date('2026-03-14'),
+      site_id: 'site-1',
+      site_name: 'Site',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier',
+      audit_category_id: 'category-1',
+      category_name: 'Category',
+      audit_plan_date: new Date('2026-03-14'),
+      sqe_pic_id: 'sqe-1',
+      sqe_pic_name: 'SQE',
+      audit_type_id: 'type-1',
+      audit_type_name: 'Type',
+      attention_id: 'attention-1',
+      attention_name: 'Attention',
+      pic_auditor_id: 'auditor-1',
+      pic_auditor_name: 'Auditor',
+      audit_rating: 95,
+      due_date: new Date('2026-03-20'),
+      audit_date: new Date('2026-03-14'),
+      issued_date: null,
+      auditees: 'Team',
+      auditors: 'Auditors',
+      attendees: 'Attendees',
+      remarks: 'Remarks',
+      encoder_id: 'encoder-1',
+      encoder_name: 'Encoder',
+      issuer_id: 'issuer-1',
+      issuer_name: 'Issuer',
+      checker_id: 'checker-1',
+      checker_name: 'Checker',
+      approver_id: 'approver-1',
+      approver_name: 'Approver',
+      last_update: new Date('2026-03-14'),
+      updateby: 'issuer-1',
+    });
+    repositoryMock.findResponseByQmqaId.mockResolvedValue(null);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) => {
+      return formId === 'QMQA-05-03';
+    });
+
+    await expect(
+      qmqaService.downloadAttachment(
+        'qmqa-record',
+        'attachment-1',
+        { userId: 'viewer-1', roleName: 'QMQA VIEWER' },
+        'QMQA',
+      ),
+    ).rejects.toThrow(/do not have permission to view/i);
+    expect(attachmentServiceMock.downloadAttachment).not.toHaveBeenCalled();
   });
 
   it('retries schedule control number generation after a duplicate-key collision', async () => {

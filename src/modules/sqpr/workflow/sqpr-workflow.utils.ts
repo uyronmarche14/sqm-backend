@@ -339,6 +339,8 @@ export function matchesSqprStatusFilter(
   const compatibilityStatus = getSqprCompatibilityStatus(stage, record);
   const compatibilityCode = getSqprCompatibilityRequestStatus(stage, record);
   const legacyFormCode = getSqprLegacyFormCodeForStage(stage, record);
+  const isTrackingSurfaceStage =
+    stage === SQPR_WORKFLOW_STAGE.ISSUER || stage === SQPR_WORKFLOW_STAGE.ACCEPT;
 
   return values.some((rawValue) => {
     const value = rawValue.toUpperCase();
@@ -364,8 +366,12 @@ export function matchesSqprStatusFilter(
       case 'IS':
       case 'ISSUED':
       case 'TRACKING':
+      case 'SEARCH':
+      case 'REPORT':
+      case 'REPORTS':
+      case 'ACHIEVEMENT':
       case 'CLOSED':
-        return stage === SQPR_WORKFLOW_STAGE.ACCEPT;
+        return isTrackingSurfaceStage;
       case 'RJ':
       case 'REJECTED':
         return stage === SQPR_WORKFLOW_STAGE.REJECT_CHECKER || stage === SQPR_WORKFLOW_STAGE.REJECT_APPROVER;

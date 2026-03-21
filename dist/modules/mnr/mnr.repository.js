@@ -234,5 +234,31 @@ export class MnrRepository extends BaseRepository {
             .orderBy('r.last_update', 'desc')
             .execute();
     }
+    async findAttachmentOwner(attachmentId) {
+        const mainAttachment = await db
+            .selectFrom('MNR_ATTACHMENT')
+            .select('mnr_id')
+            .where('mnr_attachment_id', '=', attachmentId)
+            .executeTakeFirst();
+        if (mainAttachment?.mnr_id) {
+            return {
+                moduleType: 'mnr-main',
+                mnrId: mainAttachment.mnr_id,
+            };
+        }
+        const responseAttachment = await db
+            .selectFrom('MNR_RESPONSE_ATTACHMENT as ra')
+            .innerJoin('MNR_RESPONSE as r', 'ra.mnr_response_id', 'r.mnr_response_id')
+            .select('r.mnr_id as mnrId')
+            .where('ra.mnr_response_attachment_id', '=', attachmentId)
+            .executeTakeFirst();
+        if (responseAttachment?.mnrId) {
+            return {
+                moduleType: 'mnr-response',
+                mnrId: responseAttachment.mnrId,
+            };
+        }
+        return null;
+    }
 }
 export const mnrRepository = new MnrRepository();

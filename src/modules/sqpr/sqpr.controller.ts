@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sqprService } from './sqpr.service.js';
 import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema, SqprAttachmentParamSchema } from './sqpr.schema.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { sqprWorkflowService } from './workflow/sqpr-workflow.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
@@ -262,13 +261,15 @@ export class SqprController {
 
   async batchDelete(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = this.getUserId(req);
       const { ids } = req.body;
       if (!Array.isArray(ids)) {
         res.status(400).json({ error: 'ids must be an array' });
         return;
       }
-      const result = await sqprService.batchDelete(ids, userId);
+      const result = await sqprService.batchDelete(ids, {
+        userId: this.getUserId(req),
+        roleName: this.getRoleName(req),
+      });
       res.json(result);
     } catch (error) {
       console.error('[SQPR] BATCH DELETE error:', error);
@@ -279,7 +280,10 @@ export class SqprController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = SqprAttachmentParamSchema.parse({ params: req.params }).params;
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('sqpr-main', attachmentId as string);
+      const { filePath, fileName, mimeType } = await sqprService.downloadAttachment(attachmentId as string, {
+        userId: this.getUserId(req),
+        roleName: this.getRoleName(req),
+      });
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

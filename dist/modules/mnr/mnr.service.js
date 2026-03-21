@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { mnrRepository } from './mnr.repository.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusToDB, mapStatusFromDB } from '../../shared/utils/status-mapper.js';
@@ -6,15 +7,143 @@ import { buildMnrWorkflowMetadata } from './workflow/mnr-workflow.utils.js';
 import { MNR_WORKFLOW_STAGE } from './workflow/mnr-workflow.constants.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
+import { permissionService } from '../../shared/services/permission.service.js';
+const MNR_QUEUE_STATUS_FORM_FALLBACKS = {
+    NEW: ['MNR-12-01'],
+    DRAFT: ['MNR-12-02'],
+    SUBMITTED: ['MNR-12-03'],
+    CHECKED: ['MNR-12-03'],
+    AAPPROVAL: ['MNR-12-03'],
+    AWAITING_CHECKED: ['MNR-12-03'],
+    AWAITING_APPROVAL: ['MNR-12-03'],
+    APPROVED: ['MNR-12-07'],
+    ISSUED: ['MNR-12-06'],
+    IR: ['MNR-12-09'],
+    FR: ['MNR-12-09'],
+    REPORT: ['MNR-12-09'],
+    WITH_INITIAL_REPORT: ['MNR-12-09'],
+    WITH_FINAL_REPORT: ['MNR-12-09'],
+    RESPONSE_SUBMITTED: ['MNR-12-10'],
+    RESPONSE_RECEIVED: ['MNR-12-10'],
+    RESPONSE_AWAITING_CHECKED: ['MNR-12-10'],
+    RESPONSE_CHECKED: ['MNR-12-10'],
+    RESPONSE_AWAITING_APPROVAL: ['MNR-12-10'],
+    RESPONSE_AWAIT_APPROVAL: ['MNR-12-10'],
+    RESPONSE_AAPPROVAL: ['MNR-12-10'],
+    RESPONSE_REJECTED: ['MNR-12-11'],
+    RREJECTED: ['MNR-12-11'],
+    LOT_TRACKING: ['MNR-12-12'],
+    LOTTRACKING: ['MNR-12-12'],
+    CLOSED: ['MNR-12-12'],
+    SEARCH: ['MNR-12-13'],
+};
+const MNR_QUEUE_STAGES = [
+    'NEW',
+    'DRAFT',
+    'AAPPROVAL',
+    'APPROVED',
+    'ISSUED',
+    'REPORT',
+    'RESPONSE_AWAIT_APPROVAL',
+    'RREJECTED',
+    'LOTTRACKING',
+    'SEARCH',
+];
+function uniqueFormCodes(formIds) {
+    return Array.from(new Set(formIds.filter(Boolean)));
+}
+function resolveMnrQueueFormUniverse() {
+    const contractCodes = MNR_QUEUE_STAGES.flatMap((stage) => getSubFormFormCodes('MNR', stage));
+    const fallbackCodes = Object.values(MNR_QUEUE_STATUS_FORM_FALLBACKS).flat();
+    return uniqueFormCodes([...contractCodes, ...fallbackCodes]);
+}
+const MNR_QUEUE_FORM_CODES = resolveMnrQueueFormUniverse();
 export class MnrService {
     isAdminActor(actor) {
         return (actor?.roleName || '').toUpperCase().includes('ADMIN');
     }
+    isSupplierActor(actor) {
+        return (actor?.roleName || '').toUpperCase().includes('SUPPLIER');
+    }
+    resolveQueueFormCodes(stageOrStatus) {
+        const normalized = String(stageOrStatus || '').trim().toUpperCase();
+        return uniqueFormCodes([
+            ...getSubFormFormCodes('MNR', normalized),
+            ...(MNR_QUEUE_STATUS_FORM_FALLBACKS[normalized] || []),
+        ]);
+    }
+    resolveRecordFormCodes(record, latestResponse) {
+        const workflow = this.buildWorkflow({
+            ...record,
+            request_status: record.request_status ?? record.status,
+        }, latestResponse);
+        const displayStatus = this.mapWorkflowStageToDisplayStatus(workflow.workflowStage);
+        const resolved = this.resolveQueueFormCodes(displayStatus);
+        return resolved.length > 0 ? resolved : MNR_QUEUE_FORM_CODES;
+    }
+    async resolveRoleViewListFormCodes(userId) {
+        if (!userId) {
+            return new Set();
+        }
+        const checks = await Promise.all(MNR_QUEUE_FORM_CODES.map(async (formId) => ({
+            formId,
+            allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+        })));
+        return new Set(checks
+            .filter((entry) => entry.allowed)
+            .map((entry) => entry.formId));
+    }
+    hasRoleViewListAccessForRecord(record, latestResponse, roleViewListForms) {
+        if (roleViewListForms.size === 0) {
+            return false;
+        }
+        return this.resolveRecordFormCodes(record, latestResponse).some((formId) => roleViewListForms.has(formId));
+    }
+    hasSupplierAccess(record, actor) {
+        if (!actor?.userId) {
+            return false;
+        }
+        return (record.attention_id === actor.userId ||
+            Boolean(record.supplier_id && actor.supplierId && record.supplier_id === actor.supplierId));
+    }
+    isParticipantRecord(record, latestResponse, actor) {
+        if (!actor?.userId) {
+            return false;
+        }
+        return [
+            record.encoder_id,
+            record.issuer_id,
+            record.checker_id,
+            record.approver_id,
+            record.attention_id,
+            latestResponse?.checker_id,
+            latestResponse?.approver_id,
+        ].includes(actor.userId);
+    }
     buildWorkflow(record, latestResponse, actor) {
-        return buildMnrWorkflowMetadata(record, {
+        return buildMnrWorkflowMetadata({
+            ...record,
+            request_status: record.request_status ?? record.status,
+        }, {
             latestResponse: latestResponse || undefined,
             actor,
         });
+    }
+    getWorkflowStage(record, latestResponse) {
+        return this.buildWorkflow(record, latestResponse, undefined).workflowStage;
+    }
+    isReferenceVisibleStage(stage) {
+        return (stage === MNR_WORKFLOW_STAGE.ACCEPT ||
+            stage === MNR_WORKFLOW_STAGE.CANCEL ||
+            stage === MNR_WORKFLOW_STAGE.LOT_TRACKING);
+    }
+    isSupplierVisibleStage(stage) {
+        return (stage === MNR_WORKFLOW_STAGE.SUPPLIER ||
+            stage === MNR_WORKFLOW_STAGE.INITIAL_RESPONSE ||
+            stage === MNR_WORKFLOW_STAGE.REJECT_ISSUER_2ND ||
+            stage === MNR_WORKFLOW_STAGE.NOT_ACCEPT ||
+            this.isReferenceVisibleStage(stage));
     }
     isAssignedRecord(record, latestResponse, actor) {
         if (!actor?.userId) {
@@ -27,32 +156,85 @@ export class MnrService {
         if (!actor?.userId) {
             return false;
         }
-        return (record.encoder_id === actor.userId ||
-            record.issuer_id === actor.userId ||
-            this.isAssignedRecord(record, latestResponse, actor));
+        if (this.isSupplierActor(actor)) {
+            return this.hasSupplierAccess(record, actor);
+        }
+        return this.isParticipantRecord(record, latestResponse, actor);
     }
-    canReadRecord(record, latestResponse, actor) {
-        if (!actor?.userId || this.isAdminActor(actor)) {
+    canReadRecord(record, latestResponse, actor, roleViewListForms = new Set()) {
+        if (!actor?.userId) {
+            return false;
+        }
+        if (this.isAdminActor(actor)) {
+            return true;
+        }
+        if (this.isSupplierActor(actor)) {
+            return this.hasSupplierAccess(record, actor) && this.isSupplierVisibleStage(this.getWorkflowStage(record, latestResponse));
+        }
+        if (this.hasRoleViewListAccessForRecord(record, latestResponse, roleViewListForms)) {
+            return true;
+        }
+        return this.isParticipantRecord(record, latestResponse, actor);
+    }
+    canReadDetailRecord(record, latestResponse, actor) {
+        if (!actor?.userId) {
+            return false;
+        }
+        if (this.isAdminActor(actor)) {
             return true;
         }
         if (this.isAssignedRecord(record, latestResponse, actor)) {
             return true;
         }
-        return [
-            record.encoder_id,
-            record.issuer_id,
-            record.checker_id,
-            record.approver_id,
-            record.attention_id,
-            latestResponse?.checker_id,
-            latestResponse?.approver_id,
-        ].includes(actor.userId) || Boolean(record.supplier_id && actor.supplierId && record.supplier_id === actor.supplierId);
+        const stage = this.getWorkflowStage(record, latestResponse);
+        if (!this.isReferenceVisibleStage(stage)) {
+            return false;
+        }
+        if (this.isSupplierActor(actor)) {
+            return this.hasSupplierAccess(record, actor) && this.isSupplierVisibleStage(stage);
+        }
+        return this.isParticipantRecord(record, latestResponse, actor);
     }
     canMutateMainRecord(record, actor) {
-        if (!actor?.userId || this.isAdminActor(actor)) {
+        if (this.isAdminActor(actor)) {
             return true;
         }
-        return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
+        if (!actor?.userId) {
+            return false;
+        }
+        const stage = this.getWorkflowStage(record);
+        switch (stage) {
+            case MNR_WORKFLOW_STAGE.DRAFT:
+            case MNR_WORKFLOW_STAGE.REJECT_CHECKER:
+            case MNR_WORKFLOW_STAGE.REJECT_APPROVER:
+            case MNR_WORKFLOW_STAGE.CANCEL:
+                return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
+            case MNR_WORKFLOW_STAGE.ISSUER:
+                return record.issuer_id === actor.userId;
+            default:
+                return false;
+        }
+    }
+    canMutateResponseRecord(record, latestResponse, actor) {
+        if (this.isAdminActor(actor)) {
+            return true;
+        }
+        const stage = this.getWorkflowStage(record, latestResponse);
+        switch (stage) {
+            case MNR_WORKFLOW_STAGE.SUPPLIER:
+            case MNR_WORKFLOW_STAGE.INITIAL_RESPONSE:
+            case MNR_WORKFLOW_STAGE.REJECT_ISSUER_2ND:
+            case MNR_WORKFLOW_STAGE.NOT_ACCEPT:
+            case MNR_WORKFLOW_STAGE.REJECT_SUPPLIER:
+                return this.hasSupplierAccess(record, actor);
+            case MNR_WORKFLOW_STAGE.FINAL_RESPONSE:
+            case MNR_WORKFLOW_STAGE.ISSUER_2ND:
+            case MNR_WORKFLOW_STAGE.REJECT_CHECKER_2ND:
+            case MNR_WORKFLOW_STAGE.REJECT_APPROVER_2ND:
+                return Boolean(actor?.userId && record.issuer_id === actor.userId);
+            default:
+                return false;
+        }
     }
     canDeleteRecord(record, actor) {
         if (this.isAdminActor(actor)) {
@@ -62,7 +244,10 @@ export class MnrService {
             return false;
         }
         const stage = buildMnrWorkflowMetadata(record).workflowStage;
-        return stage === MNR_WORKFLOW_STAGE.DRAFT || stage === MNR_WORKFLOW_STAGE.CANCEL;
+        return (stage === MNR_WORKFLOW_STAGE.DRAFT ||
+            stage === MNR_WORKFLOW_STAGE.REJECT_CHECKER ||
+            stage === MNR_WORKFLOW_STAGE.REJECT_APPROVER ||
+            stage === MNR_WORKFLOW_STAGE.CANCEL);
     }
     /**
      * Helper: Format Date consistently
@@ -228,8 +413,17 @@ export class MnrService {
             }
         }
     }
-    async saveResponseContent(id, responsePayload, userId) {
+    async saveResponseContent(id, responsePayload, actor = {}) {
         const now = new Date();
+        const existingRecord = await mnrRepository.findByIdDetailed(id);
+        if (!existingRecord) {
+            throw new NotFoundError('MNR Record not found');
+        }
+        assertWorkflowRecordAccess({
+            allowed: this.canMutateResponseRecord(existingRecord.record, existingRecord.response, actor),
+            action: 'save',
+            moduleName: 'MNR',
+        });
         return await mnrRepository.executeTransaction(async (trx) => {
             const currentRecord = await trx.selectFrom('MNR_LOTS')
                 .select(['mnr_id'])
@@ -240,7 +434,7 @@ export class MnrService {
                 .executeTakeFirst();
             if (!currentRecord)
                 throw new NotFoundError('MNR Record not found');
-            await this.persistResponseArtifacts(trx, currentRecord.mnr_id, responsePayload, userId, now);
+            await this.persistResponseArtifacts(trx, currentRecord.mnr_id, responsePayload, actor.userId || 'SYSTEM', now);
             return {
                 success: true,
                 message: 'Response content saved successfully',
@@ -263,13 +457,14 @@ export class MnrService {
         const records = await mnrRepository.findAllDetailed(dbFilter);
         const latestResponses = await mnrRepository.findLatestResponsesByMnrIds(records.map((record) => record.id));
         const latestResponseMap = new Map(latestResponses.map((response) => [response.mnr_id, response]));
+        const roleViewListForms = await this.resolveRoleViewListFormCodes(actor.userId);
         // Map DB flat rows back to expected DTO shape
         const visibleRecords = this.isAdminActor(actor)
             ? records
             : filterWorkflowRecordsByScope(records, filters.scope || 'history', {
                 isAssigned: (record) => this.isAssignedRecord(record, latestResponseMap.get(record.id), actor),
                 isMine: (record) => this.isMineRecord(record, latestResponseMap.get(record.id), actor),
-                isHistoryVisible: (record) => this.canReadRecord(record, latestResponseMap.get(record.id), actor),
+                isHistoryVisible: (record) => this.canReadRecord(record, latestResponseMap.get(record.id), actor, roleViewListForms),
             });
         return visibleRecords.map(r => {
             const workflow = buildMnrWorkflowMetadata({
@@ -343,7 +538,7 @@ export class MnrService {
         if (!data)
             throw new NotFoundError('MNR Record not found');
         assertWorkflowRecordAccess({
-            allowed: this.canReadRecord(data.record, data.response, actor),
+            allowed: this.canReadDetailRecord(data.record, data.response, actor),
             action: 'view',
             moduleName: 'MNR',
         });
@@ -861,11 +1056,6 @@ export class MnrService {
                         dbUpdates.other_remarks = u.otherRemarks;
                 }
             }
-            // 4. Response 8D + Verification (Update/Upsert)
-            const responsePayload = updates.response8D;
-            if (responsePayload && typeof responsePayload === 'object') {
-                await this.persistResponseArtifacts(trx, realId, responsePayload, actor.userId || 'SYSTEM', now);
-            }
             // 5. Attachments (Update)
             const updateAtts = updates.attachments;
             if (updateAtts !== undefined && Array.isArray(updateAtts)) {
@@ -970,6 +1160,22 @@ export class MnrService {
             }
             return { success: true, message: 'Record updated successfully' };
         });
+    }
+    async downloadAttachment(attachmentId, actor = {}) {
+        const owner = await mnrRepository.findAttachmentOwner(attachmentId);
+        if (!owner) {
+            throw new NotFoundError('Attachment not found');
+        }
+        const record = await mnrRepository.findByIdDetailed(owner.mnrId);
+        if (!record) {
+            throw new NotFoundError('MNR Record not found');
+        }
+        assertWorkflowRecordAccess({
+            allowed: this.canReadDetailRecord(record.record, record.response, actor),
+            action: 'download',
+            moduleName: 'MNR',
+        });
+        return attachmentService.downloadAttachment(owner.moduleType, attachmentId);
     }
     async deleteRecord(id, actor = {}) {
         return await mnrRepository.executeTransaction(async (trx) => {

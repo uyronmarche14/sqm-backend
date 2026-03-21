@@ -5,6 +5,8 @@ import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
+import { permissionService } from '../../shared/services/permission.service.js';
+import { ForbiddenError, UnauthorizedError } from '../../shared/errors/AppError.js';
 const router = Router();
 const upload = createModuleUpload('npi', { attachmentType: 'npi-main' });
 // Health check (no auth required for monitoring)
@@ -37,7 +39,22 @@ router.get('/health', async (_req, res) => {
 router.use(requireAuth);
 router.get('/stats', requireModuleAccess('NEWPARTS', 'view'), npiController.getStats);
 router.get('/sequence', requireModuleAccess('NEWPARTS', 'view'), npiController.generateSequence);
-router.get('/', requireModuleAccess('NEWPARTS', 'viewlist'), npiController.getAll);
+router.get('/', async (req, _res, next) => {
+    try {
+        if (!req.user?.userId) {
+            return next(new UnauthorizedError('Authentication required.'));
+        }
+        const hasAccess = (await permissionService.checkModulePermission(req.user.userId, 'NEWPARTS', 'view')) ||
+            (await permissionService.checkModulePermission(req.user.userId, 'NEWPARTS', 'viewlist'));
+        if (!hasAccess) {
+            return next(new ForbiddenError("Access Denied: You do not have 'view' access to NEWPARTS."));
+        }
+        next();
+    }
+    catch (error) {
+        next(error);
+    }
+}, npiController.getAll);
 router.get('/:id', requireModuleAccess('NEWPARTS', 'view'), npiController.getById);
 // Document Downloader
 router.get('/download/:attachmentId', requireModuleAccess('NEWPARTS', 'view'), npiController.downloadAttachment);

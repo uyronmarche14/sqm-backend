@@ -3,12 +3,29 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const repositoryMock = vi.hoisted(() => ({
   findAllDetailed: vi.fn(),
   findByIdDetailed: vi.fn(),
+  findAttachmentOwner: vi.fn(),
   findSiteCode: vi.fn(),
   executeTransaction: vi.fn(),
 }));
 
+const attachmentServiceMock = vi.hoisted(() => ({
+  downloadAttachment: vi.fn(),
+}));
+
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
+
 vi.mock('../../src/modules/sqpr/sqpr.repository.js', () => ({
   sqprRepository: repositoryMock,
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
+}));
+
+vi.mock('../../src/shared/services/attachment.service.js', () => ({
+  attachmentService: attachmentServiceMock,
 }));
 
 import { SqprService } from '../../src/modules/sqpr/sqpr.service.js';
@@ -16,6 +33,12 @@ import { SqprService } from '../../src/modules/sqpr/sqpr.service.js';
 describe('SqprService workflow metadata hydration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    attachmentServiceMock.downloadAttachment.mockResolvedValue({
+      filePath: '/tmp/sqpr.txt',
+      fileName: 'sqpr.txt',
+      mimeType: 'text/plain',
+    });
   });
 
   it('adds workflow metadata on list reads for the assigned actor', async () => {
@@ -92,6 +115,91 @@ describe('SqprService workflow metadata hydration', () => {
     }));
   });
 
+  it('does not widen active queue history visibility from SQPR queue viewList alone', async () => {
+    repositoryMock.findAllDetailed.mockResolvedValue([
+      {
+        sqpr_id: 'sqpr-1',
+        control_no: 'SQPR-2026-01-SITE',
+        request_status: '3',
+        site_id: 'site-1',
+        site_name: 'Site One',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        date_created: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+        updateby: 'issuer-1',
+      },
+    ]);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) =>
+      formId === 'SQPR-03-02',
+    );
+
+    const service = new SqprService();
+    const result = await service.getAllRecords(
+      { status: 'AWAITING_APPROVAL', scope: 'history' },
+      { userId: 'viewer-1', roleName: 'USER' },
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('keeps issued history visible only when the role has the SQPR reference viewList form', async () => {
+    repositoryMock.findAllDetailed.mockResolvedValue([
+      {
+        sqpr_id: 'sqpr-accept',
+        control_no: 'SQPR-2026-99-SITE',
+        request_status: '1',
+        site_id: 'site-1',
+        site_name: 'Site One',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        date_created: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+        updateby: 'issuer-1',
+      },
+    ]);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) =>
+      formId === 'SQPR-03-04',
+    );
+
+    const service = new SqprService();
+    const result = await service.getAllRecords(
+      { status: 'ISSUED', scope: 'history' },
+      { userId: 'viewer-1', roleName: 'USER' },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.workflowStage).toBe('ACCEPT');
+  });
+
+  it('rejects detail access when the actor is neither a participant nor queue-wide viewer', async () => {
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-2',
+        control_no: 'SQPR-2026-02-SITE',
+        request_status: '3',
+        site_id: 'site-1',
+        site_name: 'Site One',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        date_created: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+        updateby: 'issuer-1',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService();
+
+    await expect(service.getRecordById('sqpr-2', { userId: 'viewer-1', roleName: 'USER' })).rejects.toMatchObject({
+      message: 'You do not have permission to view this SQPR record.',
+    });
+  });
+
   it('creates draft records with legacy DRF control numbers and numeric storage stages', async () => {
     const inserted: Record<string, any>[] = [];
     repositoryMock.findSiteCode.mockResolvedValue({
@@ -136,5 +244,99 @@ describe('SqprService workflow metadata hydration', () => {
       workflowStage: 'DRAFT',
       workflowStageCode: '2',
     }));
+  });
+
+  it('rejects update attempts outside the incharge draft-or-returned owner stages', async () => {
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-approve',
+        request_status: '10',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService();
+
+    await expect(
+      service.updateRecord(
+        'sqpr-approve',
+        { remarks: 'blocked' } as any,
+        { userId: 'issuer-1', roleName: 'USER' },
+        [],
+      ),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to update this SQPR record.',
+    });
+  });
+
+  it('rejects deleting issued records even for the originator', async () => {
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-issued',
+        request_status: '11',
+        incharge_id: 'issuer-1',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService();
+
+    await expect(
+      service.deleteRecord('sqpr-issued', { userId: 'issuer-1', roleName: 'USER' }),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to delete this SQPR record.',
+    });
+  });
+
+  it('allows attachment download only when the actor can read the owning record', async () => {
+    repositoryMock.findAttachmentOwner.mockResolvedValue({ sqpr_id: 'sqpr-1' });
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-1',
+        request_status: '2',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService();
+    const result = await service.downloadAttachment('att-1', { userId: 'issuer-1', roleName: 'USER' });
+
+    expect(attachmentServiceMock.downloadAttachment).toHaveBeenCalledWith('sqpr-main', 'att-1');
+    expect(result).toEqual(expect.objectContaining({
+      fileName: 'sqpr.txt',
+    }));
+  });
+
+  it('rejects attachment download for unrelated actors', async () => {
+    repositoryMock.findAttachmentOwner.mockResolvedValue({ sqpr_id: 'sqpr-1' });
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-1',
+        request_status: '3',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService();
+
+    await expect(
+      service.downloadAttachment('att-1', { userId: 'viewer-1', roleName: 'USER' }),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to download this SQPR record.',
+    });
+    expect(attachmentServiceMock.downloadAttachment).not.toHaveBeenCalled();
   });
 });

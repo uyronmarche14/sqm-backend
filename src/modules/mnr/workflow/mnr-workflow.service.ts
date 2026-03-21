@@ -573,7 +573,10 @@ export class MnrWorkflowService {
     
     await this.ensureSupplierActor(record, userId, roleId, supplierId, 'save_initial_response', 'Only the assigned supplier can save the initial response.');
 
-    const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
+    const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
+      userId,
+      supplierId,
+    });
     return {
       ...result,
       data: {
@@ -604,7 +607,10 @@ export class MnrWorkflowService {
       throw new ForbiddenError('Only the assigned supplier can submit the initial response.');
     }
 
-    await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
+    await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
+      userId,
+      supplierId,
+    });
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
       request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.INITIAL_RESPONSE),
@@ -643,7 +649,10 @@ export class MnrWorkflowService {
       throw new ForbiddenError('Only the assigned supplier can save the final response.');
     }
 
-    const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
+    const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
+      userId,
+      supplierId,
+    });
     return {
       ...result,
       data: {
@@ -670,7 +679,10 @@ export class MnrWorkflowService {
       throw new ForbiddenError('Only the assigned supplier can submit the final response.');
     }
 
-    await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
+    await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
+      userId,
+      supplierId,
+    });
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
       request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.FINAL_RESPONSE),
@@ -713,7 +725,9 @@ export class MnrWorkflowService {
       throw new ForbiddenError('Only the assigned issuer can save response review content.');
     }
 
-    await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
+    await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
+      userId,
+    });
     const nextStage = MNR_WORKFLOW_STAGE.ISSUER_2ND;
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -761,7 +775,9 @@ export class MnrWorkflowService {
       throw new ForbiddenError('Only the assigned issuer can submit response review.');
     }
 
-    await mnrService.saveResponseContent(record.mnr_id, responsePayload, userId);
+    await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
+      userId,
+    });
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
       request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER_2ND),

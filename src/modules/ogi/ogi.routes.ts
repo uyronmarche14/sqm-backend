@@ -4,6 +4,8 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
+import { permissionService } from '../../shared/services/permission.service.js';
+import { ForbiddenError, UnauthorizedError } from '../../shared/errors/AppError.js';
 
 const router = Router();
 const upload = createModuleUpload('ogi', { attachmentType: 'ogi-main' });
@@ -13,7 +15,25 @@ router.use(requireAuth);
 
 router.get('/sequence', requireModuleAccess('OGI', 'view'), ogiController.generateSequence);
 
-router.get('/', requireModuleAccess('OGI', 'viewlist'), ogiController.getAll);
+router.get('/', async (req, _res, next) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const canView = await permissionService.checkModulePermission(userId, 'OGI', 'view');
+    const canViewList = await permissionService.checkModulePermission(userId, 'OGI', 'viewlist');
+
+    if (!canView && !canViewList) {
+      throw new ForbiddenError('Access denied to OGI module');
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}, ogiController.getAll);
 router.get('/:id', requireModuleAccess('OGI', 'view'), ogiController.getById);
 
 // Document Downloader (both paths supported for frontend compatibility)

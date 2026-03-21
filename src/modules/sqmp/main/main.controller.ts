@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { mainSqmpService } from './main.service.js';
 import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema, SqmpControlNoPreviewSchema } from './main.schema.js';
 import { successResponse } from '../../../shared/utils/api-response.js';
-import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { sqmpWorkflowService } from '../workflow/workflow.service.js';
 import { resolveWorkflowListScope } from '../../../shared/utils/workflow-access.js';
 
@@ -215,7 +214,12 @@ export class MainSqmpController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = req.params;
-      const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment('sqmp-main', attachmentId as string);
+      const user = (req as any).user;
+      const { filePath, fileName, mimeType } = await mainSqmpService.downloadMainAttachment(
+        attachmentId as string,
+        user?.userId || user?.id,
+        user?.roleId,
+      );
       
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

@@ -41,6 +41,10 @@ export function createQmqaRoutes(variant = 'QMQA') {
     const formCodes = getQmqaFormCodes(variant);
     // Protect all routes
     router.use(requireAuth);
+    router.use((req, _res, next) => {
+        req.qmqaVariant = variant;
+        next();
+    });
     // Document Downloader
     router.get('/download/:moduleType/:attachmentId', requireModuleAccess(variant, 'view'), qmqaController.downloadAttachment);
     router.get('/attachments/:moduleType/:attachmentId', requireModuleAccess(variant, 'view'), qmqaController.downloadAttachment);

@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { sqprRepository } from './sqpr.repository.js';
 import { SQPRCreationInput, SQPRUpdateInput } from './sqpr.schema.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import {
   buildSqprWorkflowMetadata,
-  getSqprStageOwnerId,
   getSqprCompatibilityRequestStatus,
   getSqprCompatibilityStatus,
   matchesSqprStatusFilter,
@@ -17,39 +17,155 @@ import {
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../shared/utils/workflow-access.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { permissionService } from '../../shared/services/permission.service.js';
+
+const SQPR_QUEUE_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
+  NEW: ['SQPR-03-01'],
+  DRAFT: ['SQPR-03-01'],
+  SUBMITTED: ['SQPR-03-02'],
+  SU: ['SQPR-03-02'],
+  CHECKED: ['SQPR-03-02'],
+  CK: ['SQPR-03-02'],
+  AWAITING_CHECKED: ['SQPR-03-02'],
+  AWAITING_APPROVAL: ['SQPR-03-02'],
+  AAPPROVAL: ['SQPR-03-02'],
+  CHECKER: ['SQPR-03-02'],
+  APPROVER: ['SQPR-03-02'],
+  REJECTED: ['SQPR-03-03'],
+  REJECT_CHECKER: ['SQPR-03-03'],
+  REJECT_APPROVER: ['SQPR-03-03'],
+  APPROVED: ['SQPR-03-04'],
+  ISSUED: ['SQPR-03-04'],
+  ISSUER: ['SQPR-03-04'],
+  ACCEPT: ['SQPR-03-04'],
+  SEARCH: ['SQPR-03-04'],
+  REPORT: ['SQPR-03-04'],
+  REPORTS: ['SQPR-03-04'],
+  ACHIEVEMENT: ['SQPR-03-04'],
+};
+
+function uniqueFormCodes(formIds: string[]) {
+  return Array.from(new Set(formIds.filter(Boolean)));
+}
+
+function resolveSqprQueueFormUniverse() {
+  const contractCodes = Object.keys(SQPR_QUEUE_STATUS_FORM_FALLBACKS).flatMap((stage) =>
+    getSubFormFormCodes('SQPR', stage),
+  );
+  const fallbackCodes = Object.values(SQPR_QUEUE_STATUS_FORM_FALLBACKS).flat();
+  return uniqueFormCodes([...contractCodes, ...fallbackCodes]);
+}
+
+const SQPR_QUEUE_FORM_CODES = resolveSqprQueueFormUniverse();
+const SQPR_REFERENCE_FORM_CODE = 'SQPR-03-04';
 
 export class SqprService {
   private isAdminActor(actor?: SqprWorkflowActorContext) {
     return (actor?.roleName || '').toUpperCase().includes('ADMIN');
   }
 
+  private getWorkflowStage(record: Record<string, any>) {
+    return buildSqprWorkflowMetadata(record, {}).workflowStage;
+  }
+
+  private isEditableOriginatorStage(stage: string) {
+    return stage === 'DRAFT' || stage === 'REJECT_CHECKER' || stage === 'REJECT_APPROVER';
+  }
+
+  private isReferenceVisibleStage(stage: string) {
+    return stage === 'ACCEPT';
+  }
+
+  private async resolveRoleViewListFormCodes(userId?: string | null) {
+    if (!userId) {
+      return new Set<string>();
+    }
+
+    const checks = await Promise.all(
+      SQPR_QUEUE_FORM_CODES.map(async (formId) => ({
+        formId,
+        allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+      })),
+    );
+
+    return new Set(
+      checks
+        .filter((entry) => entry.allowed)
+        .map((entry) => entry.formId),
+    );
+  }
+
+  private hasReferenceViewListAccessForRecord(record: Record<string, any>, roleViewListForms: Set<string>) {
+    if (roleViewListForms.size === 0 || !roleViewListForms.has(SQPR_REFERENCE_FORM_CODE)) {
+      return false;
+    }
+
+    return this.isReferenceVisibleStage(this.getWorkflowStage(record));
+  }
+
   private isAssignedRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
-    return Boolean(actor.userId && getSqprStageOwnerId(record) === actor.userId);
+    if (!actor.userId) {
+      return false;
+    }
+
+    const workflow = buildSqprWorkflowMetadata(record, { actor });
+    return Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
   }
 
   private isMineRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
-    return Boolean(actor.userId && record.incharge_id === actor.userId);
+    if (!actor.userId) {
+      return false;
+    }
+
+    return [record.incharge_id, record.checker_id, record.approver_id].includes(actor.userId);
   }
 
-  private canReadRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
-    if (!actor.userId || this.isAdminActor(actor)) {
+  private canReadRecord(
+    record: Record<string, any>,
+    actor: SqprWorkflowActorContext = {},
+    roleViewListForms: Set<string> = new Set(),
+  ) {
+    if (!actor.userId) {
+      return false;
+    }
+
+    if (this.isAdminActor(actor)) {
       return true;
     }
 
-    return [
-      record.incharge_id,
-      record.checker_id,
-      record.approver_id,
-    ].includes(actor.userId);
+    if (this.isAssignedRecord(record, actor)) {
+      return true;
+    }
+
+    return this.hasReferenceViewListAccessForRecord(record, roleViewListForms);
   }
 
   private canMutateMainRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
-    if (!actor.userId || this.isAdminActor(actor)) {
+    if (this.isAdminActor(actor)) {
       return true;
     }
 
-    return record.incharge_id === actor.userId;
+    if (!actor.userId) {
+      return false;
+    }
+
+    const stage = this.getWorkflowStage(record);
+    return this.isEditableOriginatorStage(stage) && record.incharge_id === actor.userId;
+  }
+
+  private canDeleteRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (!actor.userId) {
+      return false;
+    }
+
+    const stage = this.getWorkflowStage(record);
+    return this.isEditableOriginatorStage(stage) && record.incharge_id === actor.userId;
   }
 
   /**
@@ -88,12 +204,15 @@ export class SqprService {
     actor: SqprWorkflowActorContext = {},
   ) {
     const records = await sqprRepository.findAllDetailed();
+    const roleViewListForms = this.isAdminActor(actor)
+      ? new Set<string>()
+      : await this.resolveRoleViewListFormCodes(actor.userId);
     const visibleRecords = this.isAdminActor(actor)
       ? records
       : filterWorkflowRecordsByScope(records, filters.scope || 'history', {
           isAssigned: (record) => this.isAssignedRecord(record, actor),
           isMine: (record) => this.isMineRecord(record, actor),
-          isHistoryVisible: (record) => this.canReadRecord(record, actor),
+          isHistoryVisible: (record) => this.canReadRecord(record, actor, roleViewListForms),
         });
 
     return visibleRecords
@@ -104,8 +223,11 @@ export class SqprService {
   async getRecordById(id: string, actor: SqprWorkflowActorContext = {}) {
     const data = await sqprRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('SQPR Record not found');
+    const roleViewListForms = this.isAdminActor(actor)
+      ? new Set<string>()
+      : await this.resolveRoleViewListFormCodes(actor.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(data.record, actor),
+      allowed: this.canReadRecord(data.record, actor, roleViewListForms),
       action: 'view',
       moduleName: 'SQPR',
     });
@@ -391,7 +513,7 @@ export class SqprService {
       const existing = await sqprRepository.findByIdDetailed(id);
       if (!existing) throw new NotFoundError('Record not found');
       assertWorkflowRecordAccess({
-        allowed: this.canMutateMainRecord(existing.record, actor),
+        allowed: this.canDeleteRecord(existing.record, actor),
         action: 'delete',
         moduleName: 'SQPR',
       });
@@ -407,17 +529,25 @@ export class SqprService {
   /**
    * Batch delete multiple SQPR records
    */
-  async batchDelete(ids: string[], _userId: string) {
+  async batchDelete(ids: string[], actor: SqprWorkflowActorContext = {}) {
+    const records = await Promise.all(ids.map((id) => sqprRepository.findByIdDetailed(id)));
+    const deletableRecords = records.filter((record): record is NonNullable<typeof record> => Boolean(record));
+
+    deletableRecords.forEach((existing) => {
+      assertWorkflowRecordAccess({
+        allowed: this.canDeleteRecord(existing.record, actor),
+        action: 'delete',
+        moduleName: 'SQPR',
+      });
+    });
+
     return await sqprRepository.executeTransaction(async (trx) => {
       let deletedCount = 0;
-      for (const id of ids) {
-        const existing = await sqprRepository.findByIdDetailed(id);
-        if (existing) {
+      for (const existing of deletableRecords) {
           await trx.deleteFrom('SQPR_ATTACHMENT').where('sqpr_id', '=', existing.record.sqpr_id).execute();
           await trx.deleteFrom('SQPR_CC').where('sqpr_id', '=', existing.record.sqpr_id).execute();
           await trx.deleteFrom('SQPR').where('sqpr_id', '=', existing.record.sqpr_id).execute();
           deletedCount++;
-        }
       }
       return { success: true, message: `${deletedCount} records deleted successfully` };
     });
@@ -436,6 +566,29 @@ export class SqprService {
     
     if (!attachment) throw new NotFoundError('Attachment not found');
     return attachment;
+  }
+
+  async downloadAttachment(attachmentId: string, actor: SqprWorkflowActorContext = {}) {
+    const owner = await sqprRepository.findAttachmentOwner(attachmentId);
+    if (!owner?.sqpr_id) {
+      throw new NotFoundError('Attachment not found');
+    }
+
+    const existing = await sqprRepository.findByIdDetailed(owner.sqpr_id);
+    if (!existing) {
+      throw new NotFoundError('SQPR Record not found');
+    }
+
+    const roleViewListForms = this.isAdminActor(actor)
+      ? new Set<string>()
+      : await this.resolveRoleViewListFormCodes(actor.userId);
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(existing.record, actor, roleViewListForms),
+      action: 'download',
+      moduleName: 'SQPR',
+    });
+
+    return attachmentService.downloadAttachment('sqpr-main', attachmentId);
   }
 }
 

@@ -57,12 +57,32 @@ export class NpiRepository extends BaseRepository {
         if (filters?.supplierId) {
             query = query.where('n.supplier_id', '=', filters.supplierId);
         }
+        if (filters?.partCode) {
+            query = query.where((eb) => eb.or([
+                eb('n.part_id', '=', filters.partCode),
+                eb('p.part_code', '=', filters.partCode),
+            ]));
+        }
         if (filters?.keyword) {
             const kw = `%${filters.keyword}%`;
             query = query.where((eb) => eb.or([
                 eb('n.control_no', 'like', kw),
                 eb('n.lot_no', 'like', kw),
+                eb('p.part_code', 'like', kw),
+                eb('sup.supplier_name', 'like', kw),
             ]));
+        }
+        if (filters?.dateFrom) {
+            const dateFrom = new Date(filters.dateFrom);
+            if (!Number.isNaN(dateFrom.getTime())) {
+                query = query.where('n.datecreated', '>=', dateFrom);
+            }
+        }
+        if (filters?.dateTo) {
+            const dateTo = new Date(filters.dateTo);
+            if (!Number.isNaN(dateTo.getTime())) {
+                query = query.where('n.datecreated', '<=', dateTo);
+            }
         }
         return await query.orderBy('n.datecreated', 'desc').execute();
     }
@@ -158,6 +178,13 @@ export class NpiRepository extends BaseRepository {
             material_certificates,
             cc_list,
         };
+    }
+    async findAttachmentOwner(attachmentId) {
+        return await db
+            .selectFrom('NPI_ATTACHMENT')
+            .select(['npi_attachment_id', 'npi_lot_id'])
+            .where('npi_attachment_id', '=', attachmentId)
+            .executeTakeFirst();
     }
     async getNextSequence(prefix) {
         const result = await db.selectFrom('NPI_LOTS')

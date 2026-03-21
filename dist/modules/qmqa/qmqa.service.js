@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { db } from '../../shared/infrastructure/db.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
@@ -6,11 +7,89 @@ import { qmqaRepository } from './qmqa.repository.js';
 import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, resolveWorkflowListScope, } from '../../shared/utils/workflow-access.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { permissionService } from '../../shared/services/permission.service.js';
 const sanitizeUUID = (value) => {
     return value && value.trim() !== '' ? value : null;
 };
 const QMQA_DUPLICATE_KEY_NUMBERS = new Set([2601, 2627]);
+const QMQA_QUEUE_STATUS_FORM_FALLBACKS = {
+    QMQA: {
+        WITH_INITIAL_REPORT: ['QMQA-05-05'],
+        RESPONSE_AWAITING_CHECKED: ['QMQA-05-09'],
+        RESPONSE_AWAITING_APPROVAL: ['QMQA-05-09'],
+        RESPONSE_AWAIT_APPROVAL: ['QMQA-05-09'],
+        CLOSED: ['QMQA-05-01'],
+    },
+    QMQA_MEDIA: {
+        WITH_INITIAL_REPORT: ['QMQA-MEDIA-05'],
+        RESPONSE_AWAITING_CHECKED: ['QMQA-MEDIA-09'],
+        RESPONSE_AWAITING_APPROVAL: ['QMQA-MEDIA-09'],
+        RESPONSE_AWAIT_APPROVAL: ['QMQA-MEDIA-09'],
+        CLOSED: ['QMQA-MEDIA-11'],
+    },
+};
+const QMQA_QUEUE_STAGES = [
+    'NEW',
+    'DRAFT',
+    'AWAITING_CHECKED',
+    'AWAITING_APPROVAL',
+    'REJECTED',
+    'ISSUED',
+    'APPROVED',
+    'CANCELLED',
+    'WITH_INITIAL_REPORT',
+    'WITH_FINAL_REPORT',
+    'RESPONSE_AWAITING_CHECKED',
+    'RESPONSE_AWAITING_APPROVAL',
+    'RESPONSE_AWAIT_APPROVAL',
+    'RESPONSE_REJECTED',
+    'CLOSED',
+    'ACHIEVEMENT',
+    'SEARCH',
+];
+function uniqueFormCodes(formIds) {
+    return Array.from(new Set(formIds.filter(Boolean)));
+}
+function resolveQmqaQueueFormUniverse(variant) {
+    const contractCodes = QMQA_QUEUE_STAGES.flatMap((stage) => getSubFormFormCodes(variant, stage));
+    const fallbackCodes = Object.values(QMQA_QUEUE_STATUS_FORM_FALLBACKS[variant]).flat();
+    return uniqueFormCodes([...contractCodes, ...fallbackCodes]);
+}
+const QMQA_QUEUE_FORM_CODES = {
+    QMQA: resolveQmqaQueueFormUniverse('QMQA'),
+    QMQA_MEDIA: resolveQmqaQueueFormUniverse('QMQA_MEDIA'),
+};
 export class QmqaService {
+    resolveQueueFormCodes(variant, stageOrStatus) {
+        const normalized = String(stageOrStatus || '').trim().toUpperCase();
+        return uniqueFormCodes([
+            ...getSubFormFormCodes(variant, normalized),
+            ...(QMQA_QUEUE_STATUS_FORM_FALLBACKS[variant][normalized] || []),
+        ]);
+    }
+    resolveRecordFormCodes(record, latestResponse, variant) {
+        const compatibilityStatus = getQmqaCompatibilityStatus(record?.request_status, latestResponse || null, record);
+        const resolved = this.resolveQueueFormCodes(variant, compatibilityStatus);
+        return resolved.length > 0 ? resolved : QMQA_QUEUE_FORM_CODES[variant];
+    }
+    async resolveRoleViewListFormCodes(userId, variant) {
+        if (!userId) {
+            return new Set();
+        }
+        const checks = await Promise.all(QMQA_QUEUE_FORM_CODES[variant].map(async (formId) => ({
+            formId,
+            allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+        })));
+        return new Set(checks
+            .filter((entry) => entry.allowed)
+            .map((entry) => entry.formId));
+    }
+    hasRoleViewListAccessForRecord(record, latestResponse, variant, roleViewListForms) {
+        if (roleViewListForms.size === 0) {
+            return false;
+        }
+        return this.resolveRecordFormCodes(record, latestResponse, variant).some((formId) => roleViewListForms.has(formId));
+    }
     assertScheduleControlNoInputs(payload) {
         if (!payload.site_id) {
             throw new BadRequestError('Site is required before creating a QMQA schedule.');
@@ -95,11 +174,23 @@ export class QmqaService {
         }
         return (record.encoder_id === actor.userId ||
             record.issuer_id === actor.userId ||
+            record.checker_id === actor.userId ||
+            record.approver_id === actor.userId ||
+            record.attention_id === actor.userId ||
             record.sqe_pic_id === actor.userId ||
-            this.isAssignedRecord(record, latestResponse, actor));
+            record.pic_auditor_id === actor.userId ||
+            latestResponse?.checker_id === actor.userId ||
+            latestResponse?.approver_id === actor.userId ||
+            latestResponse?.updateby === actor.userId);
     }
-    canReadRecord(record, latestResponse, actor) {
+    canReadRecord(record, latestResponse, actor, variant, roleViewListForms = new Set()) {
         if (!actor.userId || this.isAdminActor(actor)) {
+            return true;
+        }
+        if ((actor.roleName || '').toUpperCase().includes('SUPPLIER')) {
+            return isQmqaSupplierActor(record, actor);
+        }
+        if (this.hasRoleViewListAccessForRecord(record, latestResponse, variant, roleViewListForms)) {
             return true;
         }
         if (this.isAssignedRecord(record, latestResponse, actor) || isQmqaSupplierActor(record, actor)) {
@@ -250,10 +341,11 @@ export class QmqaService {
             return { success: true, message: 'Schedule updated' };
         });
     }
-    async getAllRecords(filters, actor) {
+    async getAllRecords(filters, actor, variant = 'QMQA') {
         const mappedStatus = resolveQmqaStatusFilter(filters?.status);
         const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
         const scope = resolveWorkflowListScope({ scope: filters?.scope }, 'history');
+        const roleViewListForms = await this.resolveRoleViewListFormCodes(actorContext.userId, variant);
         const records = await qmqaRepository.findAllRecordsDetailed({
             mappedStatus,
             actorContext,
@@ -264,11 +356,11 @@ export class QmqaService {
             : filterWorkflowRecordsByScope(records, scope, {
                 isAssigned: (record) => this.isAssignedRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext),
                 isMine: (record) => this.isMineRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext),
-                isHistoryVisible: (record) => this.canReadRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext),
+                isHistoryVisible: (record) => this.canReadRecord(record, latestResponseMap.get(record.qmqa_id) || null, actorContext, variant, roleViewListForms),
             });
         return visibleRecords.map((record) => this.decorateRecord(record, actorContext, latestResponseMap.get(record.qmqa_id) || null));
     }
-    async getRecordById(id, actor) {
+    async getRecordById(id, actor, variant = 'QMQA') {
         const data = await qmqaRepository.findRecordByIdDetailed(id);
         if (!data) {
             throw new NotFoundError('QMQA Record not found');
@@ -278,10 +370,11 @@ export class QmqaService {
         const ccList = await qmqaRepository.findCcList(data.qmqa_id);
         const response = await qmqaRepository.findResponseByQmqaId(data.qmqa_id);
         const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
+        const roleViewListForms = await this.resolveRoleViewListFormCodes(actorContext.userId, variant);
         assertWorkflowRecordAccess({
-            allowed: this.canReadRecord(data, response, actorContext),
+            allowed: this.canReadRecord(data, response, actorContext, variant, roleViewListForms),
             action: 'view',
-            moduleName: 'QMQA',
+            moduleName: variant,
         });
         let responseInitialAttachments = [];
         let responseFinalAttachments = [];

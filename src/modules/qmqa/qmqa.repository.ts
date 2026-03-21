@@ -274,6 +274,41 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
       .execute();
   }
 
+  async findAttachmentOwner(moduleType: string, attachmentId: string) {
+    const handlers: Record<string, () => Promise<{ qmqa_id: string } | undefined>> = {
+      'qmqa-plan': () => db.selectFrom('QMQA_PLAN_ATTACHMENT')
+        .select(['qmqa_id'])
+        .where('qmqa_plan_attachment_id', '=', attachmentId)
+        .executeTakeFirst(),
+      'qmqa-record': () => db.selectFrom('QMQA_ATTACHMENT')
+        .select(['qmqa_id'])
+        .where('qmqa_attachment_id', '=', attachmentId)
+        .executeTakeFirst(),
+      'qmqa-response-initial': () => db.selectFrom('QMQA_RESPONSE_INITIAL as i')
+        .innerJoin('QMQA_RESPONSE as r', 'i.qmqa_response_id', 'r.qmqa_response_id')
+        .select(['r.qmqa_id as qmqa_id'])
+        .where('i.qmqa_response_initial_attachment_id', '=', attachmentId)
+        .executeTakeFirst(),
+      'qmqa-response-final': () => db.selectFrom('QMQA_RESPONSE_FINAL as f')
+        .innerJoin('QMQA_RESPONSE as r', 'f.qmqa_response_id', 'r.qmqa_response_id')
+        .select(['r.qmqa_id as qmqa_id'])
+        .where('f.qmqa_response_final_attachment_id', '=', attachmentId)
+        .executeTakeFirst(),
+      'qmqa-response-verification': () => db.selectFrom('QMQA_RESPONSE_VERIFICATION as v')
+        .innerJoin('QMQA_RESPONSE as r', 'v.qmqa_response_id', 'r.qmqa_response_id')
+        .select(['r.qmqa_id as qmqa_id'])
+        .where('v.qmqa_response_verification_attachment_id', '=', attachmentId)
+        .executeTakeFirst(),
+    };
+
+    const lookup = handlers[moduleType];
+    if (!lookup) {
+      return null;
+    }
+
+    return (await lookup()) || null;
+  }
+
   // ==========================================
   // Utils
   // ==========================================

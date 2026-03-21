@@ -206,6 +206,14 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
     };
   }
 
+  async findAttachmentOwner(attachmentId: string) {
+    return await db
+      .selectFrom('NPI_ATTACHMENT')
+      .select(['npi_attachment_id', 'npi_lot_id'])
+      .where('npi_attachment_id', '=', attachmentId)
+      .executeTakeFirst();
+  }
+
   async getNextSequence(prefix: string) {
     const result = await db.selectFrom('NPI_LOTS')
       .select('control_no')

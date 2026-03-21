@@ -11,6 +11,8 @@ const repositoryMock = vi.hoisted(() => ({
   findAllDetailed: vi.fn(),
   findLatestResponsesBySqmpIds: vi.fn(),
   findSupplierIdsByUserId: vi.fn(),
+  findMainAttachmentOwner: vi.fn(),
+  findResponseAttachmentOwner: vi.fn(),
 }));
 
 const userRepositoryMock = vi.hoisted(() => ({
@@ -20,6 +22,10 @@ const userRepositoryMock = vi.hoisted(() => ({
 
 const permissionServiceMock = vi.hoisted(() => ({
   checkRolePermission: vi.fn(),
+}));
+
+const attachmentServiceMock = vi.hoisted(() => ({
+  downloadAttachment: vi.fn(),
 }));
 
 vi.mock('../../src/modules/sqmp/sqmp.repository.js', () => ({
@@ -36,6 +42,10 @@ vi.mock('../../src/shared/services/control-number.service.js', () => ({
 
 vi.mock('../../src/shared/services/permission.service.js', () => ({
   permissionService: permissionServiceMock,
+}));
+
+vi.mock('../../src/shared/services/attachment.service.js', () => ({
+  attachmentService: attachmentServiceMock,
 }));
 
 import { MainSqmpService } from '../../src/modules/sqmp/main/main.service';
@@ -95,6 +105,11 @@ describe('MainSqmpService attention resolution', () => {
     controlNumberServiceMock.previewSqmp.mockResolvedValue('SQMP-2026-SITE-0-1ST');
     controlNumberServiceMock.getControlNoState.mockReturnValue('manual');
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    attachmentServiceMock.downloadAttachment.mockResolvedValue({
+      filePath: '/tmp/test.pdf',
+      fileName: 'test.pdf',
+      mimeType: 'application/pdf',
+    });
   });
 
   it('resolves SUPPLIERSUSER.Id to USERS.user_id during create', async () => {
@@ -256,7 +271,7 @@ describe('MainSqmpService attention resolution', () => {
     expect(records).toHaveLength(0);
   });
 
-  it('allows non-admin users with SQM Plan viewList to see the full queue', async () => {
+  it('does not let non-admin SQM Plan viewList widen active queues', async () => {
     permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
       action === 'viewlist' && formId === 'SQMP-09-03'
     ));
@@ -281,7 +296,7 @@ describe('MainSqmpService attention resolution', () => {
     const service = new MainSqmpService();
     const records = await service.getAllRecords('AWAITING_APPROVAL', 'viewer-1', 'role-viewlist');
 
-    expect(records).toHaveLength(2);
+    expect(records).toHaveLength(0);
   });
 
   it('keeps assigned approver visibility even without SQM Plan viewList', async () => {
@@ -318,7 +333,7 @@ describe('MainSqmpService attention resolution', () => {
     ]);
   });
 
-  it('allows detail access when the user has role-based viewList for the record queue', async () => {
+  it('does not allow detail access when the user only has role-based viewList for an active queue record', async () => {
     permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
       action === 'viewlist' && formId === 'SQMP-09-03'
     ));
@@ -340,12 +355,36 @@ describe('MainSqmpService attention resolution', () => {
     userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
 
     const service = new MainSqmpService();
-    const record = await service.getRecordById('sqmp-1', 'viewer-1', 'role-viewlist');
+    await expect(service.getRecordById('sqmp-1', 'viewer-1', 'role-viewlist')).rejects.toThrow(/permission to view/i);
+  });
 
-    expect(record).toEqual(expect.objectContaining({
+  it('blocks attachment downloads when the user only has queue viewList for an active record', async () => {
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
+      action === 'viewlist' && formId === 'SQMP-09-03'
+    ));
+    repositoryMock.findMainAttachmentOwner.mockResolvedValue({
       sqmp_id: 'sqmp-1',
-      workflowStageCode: '4',
-      status: 'AWAITING_APPROVAL',
-    }));
+      moduleType: 'sqmp-document',
+    });
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqmp_id: 'sqmp-1',
+        control_no: 'SQMP-1',
+        request_status: '4',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+      mainDocuments: [],
+      appendixDocuments: [],
+      ccList: [],
+      responses: [],
+      statusRemarks: [],
+    });
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
+
+    const service = new MainSqmpService();
+    await expect(service.downloadMainAttachment('att-1', 'viewer-1', 'role-viewlist')).rejects.toThrow(/permission to view/i);
+    expect(attachmentServiceMock.downloadAttachment).not.toHaveBeenCalled();
   });
 });

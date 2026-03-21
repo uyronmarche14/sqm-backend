@@ -10,7 +10,8 @@ import {
   NpiDetailDTO, 
   ServiceResponse, 
   CreateRecordResponse,
-  UploadedFile 
+  UploadedFile,
+  NpiWorkflowActorContext,
 } from '../types/npi.types.js';
 
 export interface INpiService {
@@ -25,10 +26,10 @@ export interface INpiService {
   updateRecord(
     id: string, 
     payload: NPIUpdateInput, 
-    userId: string, 
+    actor?: NpiWorkflowActorContext, 
     files?: UploadedFile[]
   ): Promise<ServiceResponse<{ id: string }>>;
-  deleteRecord(id: string): Promise<ServiceResponse<{ id: string }>>;
+  deleteRecord(id: string, actor?: NpiWorkflowActorContext): Promise<ServiceResponse<{ id: string }>>;
   
   // Utility Operations
   generateSequence(siteId: string): Promise<string>;

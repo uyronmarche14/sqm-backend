@@ -228,7 +228,10 @@ describe('MnrWorkflowService', () => {
     const service = new MnrWorkflowService(repository as any);
     const result = await service.saveInitialResponse('mnr-1', 'supplier-attn-1', undefined, { d1: 'team' });
 
-    expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, 'supplier-attn-1');
+    expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, {
+      userId: 'supplier-attn-1',
+      supplierId: undefined,
+    });
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
       status: 'IS',
@@ -246,7 +249,10 @@ describe('MnrWorkflowService', () => {
     const service = new MnrWorkflowService(repository as any);
     const result = await service.submitInitialResponse('mnr-1', 'supplier-attn-1', { d1: 'team' });
 
-    expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, 'supplier-attn-1');
+    expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, {
+      userId: 'supplier-attn-1',
+      supplierId: undefined,
+    });
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: 'IR',
       updateby: 'supplier-attn-1',
@@ -273,7 +279,9 @@ describe('MnrWorkflowService', () => {
     expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', {
       cycle2CheckerId: 'checker-2',
       cycle2ApproverId: 'approver-2',
-    }, 'issuer-1');
+    }, {
+      userId: 'issuer-1',
+    });
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: 'RW',
       updateby: 'issuer-1',

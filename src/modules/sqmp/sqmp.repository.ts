@@ -275,6 +275,77 @@ export class SqmpRepository extends BaseRepository<'SQMP'> {
       .execute();
   }
 
+  async findMainAttachmentOwner(attachmentId: string) {
+    const documentOwner = await db.selectFrom('SQMP_DOCUMENT')
+      .select(['sqmp_id'])
+      .where('sqmp_document_id', '=', attachmentId)
+      .executeTakeFirst();
+
+    if (documentOwner?.sqmp_id) {
+      return {
+        sqmp_id: documentOwner.sqmp_id,
+        moduleType: 'sqmp-document' as const,
+      };
+    }
+
+    const appendixOwner = await db.selectFrom('SQMP_APPENDIX')
+      .select(['sqmp_id'])
+      .where('sqmp_appendix_id', '=', attachmentId)
+      .executeTakeFirst();
+
+    if (appendixOwner?.sqmp_id) {
+      return {
+        sqmp_id: appendixOwner.sqmp_id,
+        moduleType: 'sqmp-appendix' as const,
+      };
+    }
+
+    return null;
+  }
+
+  async findResponseAttachmentOwner(attachmentId: string) {
+    const documentOwner = await db.selectFrom('SQMP_RESPONSE_DOCUMENT as d')
+      .innerJoin('SQMP_RESPONSE as r', 'd.sqmp_response_id', 'r.sqmp_response_id')
+      .select(['r.sqmp_id as sqmp_id'])
+      .where('d.sqmp_response_document_id', '=', attachmentId)
+      .executeTakeFirst();
+
+    if (documentOwner?.sqmp_id) {
+      return {
+        sqmp_id: documentOwner.sqmp_id,
+        moduleType: 'sqmp-response-document' as const,
+      };
+    }
+
+    const appendixOwner = await db.selectFrom('SQMP_RESPONSE_APPENDIX as a')
+      .innerJoin('SQMP_RESPONSE as r', 'a.sqmp_response_id', 'r.sqmp_response_id')
+      .select(['r.sqmp_id as sqmp_id'])
+      .where('a.sqmp_response_appendix_id', '=', attachmentId)
+      .executeTakeFirst();
+
+    if (appendixOwner?.sqmp_id) {
+      return {
+        sqmp_id: appendixOwner.sqmp_id,
+        moduleType: 'sqmp-response-appendix' as const,
+      };
+    }
+
+    const closureOwner = await db.selectFrom('SQMP_RESPONSE_CLOSURE as c')
+      .innerJoin('SQMP_RESPONSE as r', 'c.sqmp_response_id', 'r.sqmp_response_id')
+      .select(['r.sqmp_id as sqmp_id'])
+      .where('c.sqmp_response_closure_id', '=', attachmentId)
+      .executeTakeFirst();
+
+    if (closureOwner?.sqmp_id) {
+      return {
+        sqmp_id: closureOwner.sqmp_id,
+        moduleType: 'sqmp-response-closure' as const,
+      };
+    }
+
+    return null;
+  }
+
   async findSupplierIdsByUserId(userId: string): Promise<string[]> {
     const rows = await db.selectFrom('SUPPLIERSUSER as su')
       .select('su.supplier_id')

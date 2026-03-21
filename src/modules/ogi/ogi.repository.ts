@@ -59,6 +59,16 @@ export class OgiRepository extends BaseRepository<'OGI'> {
     return { record, lots, attachments };
   }
 
+  async findAttachmentOwner(attachmentId: string) {
+    const attachment = await db
+      .selectFrom('OGI_ATTACHMENT')
+      .select(['ogi_id'])
+      .where('ogi_attachment_id', '=', attachmentId)
+      .executeTakeFirst();
+
+    return attachment || null;
+  }
+
   async fetchLotsByOgiIds(ogiIds: string[]) {
     if (ogiIds.length === 0) return [];
     return await db.selectFrom('OGI_LOTS')

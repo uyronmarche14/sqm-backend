@@ -3,6 +3,7 @@ import {
   buildSqprWorkflowMetadata,
   getSqprCompatibilityRequestStatus,
   getSqprCompatibilityStatus,
+  matchesSqprStatusFilter,
   normalizeSqprWorkflowStage,
 } from '../../src/modules/sqpr/workflow/sqpr-workflow.utils.js';
 import {
@@ -79,5 +80,13 @@ describe('SQPR workflow utils', () => {
     expect(getSqprCompatibilityStatus(SQPR_WORKFLOW_STAGE.ACCEPT)).toBe('ISSUED');
     expect(getSqprCompatibilityRequestStatus(SQPR_WORKFLOW_STAGE.DRAFT)).toBe('DRFT');
     expect(getSqprCompatibilityRequestStatus(SQPR_WORKFLOW_STAGE.REJECT_CHECKER)).toBe('RJCT');
+  });
+
+  it('maps search and reporting aliases to the canonical SQPR-03-04 surface', () => {
+    expect(matchesSqprStatusFilter({ request_status: '10' }, 'SEARCH')).toBe(true);
+    expect(matchesSqprStatusFilter({ request_status: '10' }, 'REPORTS')).toBe(true);
+    expect(matchesSqprStatusFilter({ request_status: '10' }, 'ACHIEVEMENT')).toBe(true);
+    expect(matchesSqprStatusFilter({ request_status: '1' }, 'TRACKING')).toBe(true);
+    expect(matchesSqprStatusFilter({ request_status: '1' }, 'SEARCH')).toBe(true);
   });
 });

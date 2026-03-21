@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { ogiRepository } from './ogi.repository.js';
 import { OGICreationInput, OGIUpdateInput } from './ogi.schema.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
@@ -9,11 +10,38 @@ import {
   type WorkflowListScope,
 } from '../../shared/utils/workflow-access.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
+import { permissionService } from '../../shared/services/permission.service.js';
 
 const OGI_DB_STATUS = {
   DRAFT: 'DR',
   SUBMITTED: 'SB',
 } as const;
+
+const OGI_QUEUE_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
+  NEW: ['OGI-01-01'],
+  DRAFT: ['OGI-01-02'],
+  DR: ['OGI-01-02'],
+  SUBMITTED: ['OGI-01-03'],
+  SB: ['OGI-01-03'],
+  SU: ['OGI-01-03'],
+  SEARCH: ['OGI-01-04'],
+};
+
+function uniqueFormCodes(formIds: string[]) {
+  return Array.from(new Set(formIds.filter(Boolean)));
+}
+
+function resolveOgiQueueFormUniverse() {
+  const contractCodes = Object.keys(OGI_QUEUE_STATUS_FORM_FALLBACKS).flatMap((stage) =>
+    getSubFormFormCodes('OGI', stage),
+  );
+  const fallbackCodes = Object.values(OGI_QUEUE_STATUS_FORM_FALLBACKS).flat();
+  return uniqueFormCodes([...contractCodes, ...fallbackCodes]);
+}
+
+const OGI_QUEUE_FORM_CODES = resolveOgiQueueFormUniverse();
+const OGI_REFERENCE_FORM_CODE = 'OGI-01-04';
 
 function mapOgiStatusToDB(status?: string): string {
   const normalized = String(status || 'DRAFT').toUpperCase();
@@ -50,20 +78,92 @@ export class OgiService {
     return (actor?.roleName || '').toUpperCase().includes('ADMIN');
   }
 
-  private canReadRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
+  private async resolveRoleViewListFormCodes(userId?: string | null) {
+    if (!userId) {
+      return new Set<string>();
+    }
+
+    const checks = await Promise.all(
+      OGI_QUEUE_FORM_CODES.map(async (formId) => ({
+        formId,
+        allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+      })),
+    );
+
+    return new Set(
+      checks
+        .filter((entry) => entry.allowed)
+        .map((entry) => entry.formId),
+    );
+  }
+
+  private hasReferenceViewListAccess(record: Record<string, any>, roleViewListForms: Set<string>) {
+    if (roleViewListForms.size === 0 || !roleViewListForms.has(OGI_REFERENCE_FORM_CODE)) {
+      return false;
+    }
+
+    return mapOgiStatusFromDB(record.request_status ?? record.status) === 'SUBMITTED';
+  }
+
+  private isAssignedRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
     if (!actor?.userId || this.isAdminActor(actor)) {
-      return true;
+      return false;
     }
 
     return record.incharge_id === actor.userId;
   }
 
-  private canMutateRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
+  private isMineRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
     if (!actor?.userId || this.isAdminActor(actor)) {
-      return true;
+      return false;
     }
 
     return record.incharge_id === actor.userId;
+  }
+
+  private canReadRecord(
+    record: Record<string, any>,
+    actor?: { userId?: string; roleName?: string | null },
+    roleViewListForms: Set<string> = new Set(),
+  ) {
+    if (!actor?.userId) {
+      return false;
+    }
+
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (this.isMineRecord(record, actor)) {
+      return true;
+    }
+
+    return this.hasReferenceViewListAccess(record, roleViewListForms);
+  }
+
+  private canMutateRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (!actor?.userId || record.incharge_id !== actor.userId) {
+      return false;
+    }
+
+    const status = mapOgiStatusFromDB(record.request_status ?? record.status);
+    return status === 'DRAFT' || status === 'SUBMITTED';
+  }
+
+  private canDeleteRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    if (!actor?.userId || record.incharge_id !== actor.userId) {
+      return false;
+    }
+
+    return mapOgiStatusFromDB(record.request_status ?? record.status) === 'DRAFT';
   }
 
   
@@ -82,12 +182,15 @@ export class OgiService {
     const allLots = await ogiRepository.fetchLotsByOgiIds(ogiIds);
     const allAttachments = await ogiRepository.fetchAttachmentsByOgiIds(ogiIds);
 
+    const roleViewListForms = this.isAdminActor(actor)
+      ? new Set<string>()
+      : await this.resolveRoleViewListFormCodes(actor?.userId);
     const visibleRecords = this.isAdminActor(actor)
       ? records
       : filterWorkflowRecordsByScope(records, scope, {
-          isAssigned: (record) => this.canReadRecord(record as any, actor),
-          isMine: (record) => this.canReadRecord(record as any, actor),
-          isHistoryVisible: (record) => this.canReadRecord(record as any, actor),
+          isAssigned: (record) => this.isAssignedRecord(record as any, actor),
+          isMine: (record) => this.isMineRecord(record as any, actor),
+          isHistoryVisible: (record) => this.canReadRecord(record as any, actor, roleViewListForms),
         });
 
     return visibleRecords.map((r: any) => {
@@ -118,8 +221,11 @@ export class OgiService {
   async getRecordById(id: string, actor?: { userId?: string; roleName?: string | null }) {
     const data = await ogiRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('OGI Record not found');
+    const roleViewListForms = this.isAdminActor(actor)
+      ? new Set<string>()
+      : await this.resolveRoleViewListFormCodes(actor?.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(data.record, actor),
+      allowed: this.canReadRecord(data.record, actor, roleViewListForms),
       action: 'view',
       moduleName: 'OGI',
     });
@@ -417,7 +523,7 @@ export class OgiService {
     const existing = await ogiRepository.findByIdDetailed(id);
     if (!existing) throw new NotFoundError('OGI Record not found');
     assertWorkflowRecordAccess({
-      allowed: this.canMutateRecord(existing.record, actor),
+      allowed: this.canDeleteRecord(existing.record, actor),
       action: 'delete',
       moduleName: 'OGI',
     });
@@ -430,6 +536,29 @@ export class OgiService {
       await trx.deleteFrom('OGI').where('ogi_id', '=', ogiId).execute();
       return { success: true, data: { id }, message: 'OGI Record deleted successfully' };
     });
+  }
+
+  async downloadAttachment(attachmentId: string, actor?: { userId?: string; roleName?: string | null }) {
+    const owner = await ogiRepository.findAttachmentOwner(attachmentId);
+    if (!owner?.ogi_id) {
+      throw new NotFoundError('Attachment not found');
+    }
+
+    const existing = await ogiRepository.findByIdDetailed(owner.ogi_id);
+    if (!existing) {
+      throw new NotFoundError('OGI Record not found');
+    }
+
+    const roleViewListForms = this.isAdminActor(actor)
+      ? new Set<string>()
+      : await this.resolveRoleViewListFormCodes(actor?.userId);
+    assertWorkflowRecordAccess({
+      allowed: this.canReadRecord(existing.record, actor, roleViewListForms),
+      action: 'download',
+      moduleName: 'OGI',
+    });
+
+    return attachmentService.downloadAttachment('ogi-main', attachmentId);
   }
 }
 
