@@ -89,6 +89,14 @@ export class SqprRepository extends BaseRepository {
             .execute();
         return { record, attachments, ccList };
     }
+    async findAttachmentOwner(attachmentId) {
+        const attachment = await db
+            .selectFrom('SQPR_ATTACHMENT')
+            .select(['sqpr_id'])
+            .where('sqpr_attachment_id', '=', attachmentId)
+            .executeTakeFirst();
+        return attachment || null;
+    }
     /**
      * Wraps operations in an atomic transaction
      */

@@ -30,6 +30,7 @@ router.get('/', async (req, _res, next) => {
 router.get('/:id', requireModuleAccess('SQPR', 'view'), sqprController.getById);
 // Document Downloader
 router.get('/download/:attachmentId', requireModuleAccess('SQPR', 'view'), sqprController.downloadAttachment);
+router.get('/attachments/:attachmentId', requireModuleAccess('SQPR', 'view'), sqprController.downloadAttachment);
 // Create / Update with Multer File handling
 router.post('/', requirePermission('SQPR-03-01', 'add'), upload.any(), logUploads, handleUploadError, sqprController.create);
 router.put('/:id', requirePermission('SQPR-03-01', 'edit'), upload.any(), logUploads, handleUploadError, sqprController.update);

@@ -5,6 +5,7 @@ import { NotFoundError } from '../../shared/errors/AppError.js';
 import { buildSqprWorkflowMetadata, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, normalizeSqprWorkflowStage, } from './workflow/sqpr-workflow.utils.js';
 import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
 const SQPR_QUEUE_STATUS_FORM_FALLBACKS = {
@@ -40,26 +41,19 @@ function resolveSqprQueueFormUniverse() {
     return uniqueFormCodes([...contractCodes, ...fallbackCodes]);
 }
 const SQPR_QUEUE_FORM_CODES = resolveSqprQueueFormUniverse();
+const SQPR_REFERENCE_FORM_CODE = 'SQPR-03-04';
 export class SqprService {
     isAdminActor(actor) {
         return (actor?.roleName || '').toUpperCase().includes('ADMIN');
     }
-    resolveQueueFormCodes(stageOrStatus) {
-        const normalized = String(stageOrStatus || '').trim().toUpperCase();
-        return uniqueFormCodes([
-            ...getSubFormFormCodes('SQPR', normalized),
-            ...(SQPR_QUEUE_STATUS_FORM_FALLBACKS[normalized] || []),
-        ]);
+    getWorkflowStage(record) {
+        return buildSqprWorkflowMetadata(record, {}).workflowStage;
     }
-    resolveRecordFormCodes(record) {
-        const workflow = buildSqprWorkflowMetadata(record, {});
-        const compatibilityStatus = getSqprCompatibilityStatus(workflow.workflowStage, record);
-        const resolved = uniqueFormCodes([
-            ...this.resolveQueueFormCodes(workflow.workflowStage),
-            ...this.resolveQueueFormCodes(compatibilityStatus),
-            ...this.resolveQueueFormCodes(record.request_status),
-        ]);
-        return resolved.length > 0 ? resolved : SQPR_QUEUE_FORM_CODES;
+    isEditableOriginatorStage(stage) {
+        return stage === 'DRAFT' || stage === 'REJECT_CHECKER' || stage === 'REJECT_APPROVER';
+    }
+    isReferenceVisibleStage(stage) {
+        return stage === 'ACCEPT';
     }
     async resolveRoleViewListFormCodes(userId) {
         if (!userId) {
@@ -73,11 +67,11 @@ export class SqprService {
             .filter((entry) => entry.allowed)
             .map((entry) => entry.formId));
     }
-    hasRoleViewListAccessForRecord(record, roleViewListForms) {
-        if (roleViewListForms.size === 0) {
+    hasReferenceViewListAccessForRecord(record, roleViewListForms) {
+        if (roleViewListForms.size === 0 || !roleViewListForms.has(SQPR_REFERENCE_FORM_CODE)) {
             return false;
         }
-        return this.resolveRecordFormCodes(record).some((formId) => roleViewListForms.has(formId));
+        return this.isReferenceVisibleStage(this.getWorkflowStage(record));
     }
     isAssignedRecord(record, actor = {}) {
         if (!actor.userId) {
@@ -99,16 +93,30 @@ export class SqprService {
         if (this.isAdminActor(actor)) {
             return true;
         }
-        if (this.hasRoleViewListAccessForRecord(record, roleViewListForms)) {
+        if (this.isAssignedRecord(record, actor)) {
             return true;
         }
-        return this.isMineRecord(record, actor);
+        return this.hasReferenceViewListAccessForRecord(record, roleViewListForms);
     }
     canMutateMainRecord(record, actor = {}) {
-        if (!actor.userId || this.isAdminActor(actor)) {
+        if (this.isAdminActor(actor)) {
             return true;
         }
-        return record.incharge_id === actor.userId;
+        if (!actor.userId) {
+            return false;
+        }
+        const stage = this.getWorkflowStage(record);
+        return this.isEditableOriginatorStage(stage) && record.incharge_id === actor.userId;
+    }
+    canDeleteRecord(record, actor = {}) {
+        if (this.isAdminActor(actor)) {
+            return true;
+        }
+        if (!actor.userId) {
+            return false;
+        }
+        const stage = this.getWorkflowStage(record);
+        return this.isEditableOriginatorStage(stage) && record.incharge_id === actor.userId;
     }
     /**
      * Safe Date Parser
@@ -433,7 +441,7 @@ export class SqprService {
         if (!existing)
             throw new NotFoundError('Record not found');
         assertWorkflowRecordAccess({
-            allowed: this.canMutateMainRecord(existing.record, actor),
+            allowed: this.canDeleteRecord(existing.record, actor),
             action: 'delete',
             moduleName: 'SQPR',
         });
@@ -447,17 +455,23 @@ export class SqprService {
     /**
      * Batch delete multiple SQPR records
      */
-    async batchDelete(ids, _userId) {
+    async batchDelete(ids, actor = {}) {
+        const records = await Promise.all(ids.map((id) => sqprRepository.findByIdDetailed(id)));
+        const deletableRecords = records.filter((record) => Boolean(record));
+        deletableRecords.forEach((existing) => {
+            assertWorkflowRecordAccess({
+                allowed: this.canDeleteRecord(existing.record, actor),
+                action: 'delete',
+                moduleName: 'SQPR',
+            });
+        });
         return await sqprRepository.executeTransaction(async (trx) => {
             let deletedCount = 0;
-            for (const id of ids) {
-                const existing = await sqprRepository.findByIdDetailed(id);
-                if (existing) {
-                    await trx.deleteFrom('SQPR_ATTACHMENT').where('sqpr_id', '=', existing.record.sqpr_id).execute();
-                    await trx.deleteFrom('SQPR_CC').where('sqpr_id', '=', existing.record.sqpr_id).execute();
-                    await trx.deleteFrom('SQPR').where('sqpr_id', '=', existing.record.sqpr_id).execute();
-                    deletedCount++;
-                }
+            for (const existing of deletableRecords) {
+                await trx.deleteFrom('SQPR_ATTACHMENT').where('sqpr_id', '=', existing.record.sqpr_id).execute();
+                await trx.deleteFrom('SQPR_CC').where('sqpr_id', '=', existing.record.sqpr_id).execute();
+                await trx.deleteFrom('SQPR').where('sqpr_id', '=', existing.record.sqpr_id).execute();
+                deletedCount++;
             }
             return { success: true, message: `${deletedCount} records deleted successfully` };
         });
@@ -475,6 +489,25 @@ export class SqprService {
         if (!attachment)
             throw new NotFoundError('Attachment not found');
         return attachment;
+    }
+    async downloadAttachment(attachmentId, actor = {}) {
+        const owner = await sqprRepository.findAttachmentOwner(attachmentId);
+        if (!owner?.sqpr_id) {
+            throw new NotFoundError('Attachment not found');
+        }
+        const existing = await sqprRepository.findByIdDetailed(owner.sqpr_id);
+        if (!existing) {
+            throw new NotFoundError('SQPR Record not found');
+        }
+        const roleViewListForms = this.isAdminActor(actor)
+            ? new Set()
+            : await this.resolveRoleViewListFormCodes(actor.userId);
+        assertWorkflowRecordAccess({
+            allowed: this.canReadRecord(existing.record, actor, roleViewListForms),
+            action: 'download',
+            moduleName: 'SQPR',
+        });
+        return attachmentService.downloadAttachment('sqpr-main', attachmentId);
     }
 }
 export const sqprService = new SqprService();

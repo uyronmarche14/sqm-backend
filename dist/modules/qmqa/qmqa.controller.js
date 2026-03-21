@@ -2,7 +2,6 @@ import { qmqaService } from './qmqa.service.js';
 import { qmqaWorkflowService } from './workflow/qmqa-workflow.service.js';
 import { QmqaAttachmentParamSchema, QmqaIdParamSchema, QmqaRecordCreateSchema, QmqaRecordUpdateSchema, QmqaScheduleCreateSchema, QmqaScheduleUpdateSchema, } from './qmqa.schema.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
-import { attachmentService } from '../../shared/services/attachment.service.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 export class QmqaController {
     getVariant(req) {
@@ -449,7 +448,10 @@ export class QmqaController {
     downloadAttachment = async (req, res, next) => {
         try {
             const { moduleType, attachmentId } = QmqaAttachmentParamSchema.parse({ params: req.params }).params;
-            const { filePath, fileName, mimeType } = await attachmentService.downloadAttachment(moduleType, attachmentId);
+            const { filePath, fileName, mimeType } = await qmqaService.downloadAttachment(moduleType, attachmentId, {
+                userId: this.getUserId(req),
+                roleName: this.getRoleName(req),
+            }, this.getVariant(req));
             res.setHeader('Content-Type', mimeType);
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             res.download(filePath);

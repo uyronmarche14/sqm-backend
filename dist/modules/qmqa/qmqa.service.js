@@ -4,10 +4,12 @@ import { db } from '../../shared/infrastructure/db.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
 import { qmqaRepository } from './qmqa.repository.js';
-import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
+import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, normalizeQmqaWorkflowStage, resolveQmqaStatusFilter, } from './workflow/qmqa-workflow.utils.js';
+import { QMQA_WORKFLOW_STAGE } from './workflow/qmqa-workflow.constants.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, resolveWorkflowListScope, } from '../../shared/utils/workflow-access.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
+import { attachmentService } from '../../shared/services/attachment.service.js';
 const sanitizeUUID = (value) => {
     return value && value.trim() !== '' ? value : null;
 };
@@ -59,6 +61,12 @@ const QMQA_QUEUE_FORM_CODES = {
     QMQA: resolveQmqaQueueFormUniverse('QMQA'),
     QMQA_MEDIA: resolveQmqaQueueFormUniverse('QMQA_MEDIA'),
 };
+const QMQA_HISTORY_STATUSES = new Set(['CLOSED', 'CANCELLED']);
+const QMQA_EDITABLE_MAIN_STAGES = new Set([
+    QMQA_WORKFLOW_STAGE.DRAFT,
+    QMQA_WORKFLOW_STAGE.REJECT_CHECKER,
+    QMQA_WORKFLOW_STAGE.REJECT_APPROVER,
+]);
 export class QmqaService {
     resolveQueueFormCodes(variant, stageOrStatus) {
         const normalized = String(stageOrStatus || '').trim().toUpperCase();
@@ -168,6 +176,12 @@ export class QmqaService {
         });
         return Array.isArray(workflow.availableActions) && workflow.availableActions.length > 0;
     }
+    resolveCompatibilityStatus(record, latestResponse) {
+        return getQmqaCompatibilityStatus(record?.request_status, latestResponse || null, record);
+    }
+    isHistoryRecord(record, latestResponse) {
+        return QMQA_HISTORY_STATUSES.has(this.resolveCompatibilityStatus(record, latestResponse));
+    }
     isMineRecord(record, latestResponse, actor) {
         if (!actor.userId) {
             return false;
@@ -184,36 +198,45 @@ export class QmqaService {
             latestResponse?.updateby === actor.userId);
     }
     canReadRecord(record, latestResponse, actor, variant, roleViewListForms = new Set()) {
-        if (!actor.userId || this.isAdminActor(actor)) {
+        if (this.isAdminActor(actor)) {
             return true;
+        }
+        if (!actor.userId) {
+            return false;
         }
         if ((actor.roleName || '').toUpperCase().includes('SUPPLIER')) {
-            return isQmqaSupplierActor(record, actor);
+            return isQmqaSupplierActor(record, actor) && (this.isAssignedRecord(record, latestResponse, actor) ||
+                this.isHistoryRecord(record, latestResponse));
         }
-        if (this.hasRoleViewListAccessForRecord(record, latestResponse, variant, roleViewListForms)) {
+        if (this.isAssignedRecord(record, latestResponse, actor)) {
             return true;
         }
-        if (this.isAssignedRecord(record, latestResponse, actor) || isQmqaSupplierActor(record, actor)) {
-            return true;
+        if (!this.isHistoryRecord(record, latestResponse)) {
+            return false;
         }
-        return [
-            record.encoder_id,
-            record.issuer_id,
-            record.checker_id,
-            record.approver_id,
-            record.attention_id,
-            record.sqe_pic_id,
-            record.pic_auditor_id,
-            latestResponse?.checker_id,
-            latestResponse?.approver_id,
-            latestResponse?.updateby,
-        ].includes(actor.userId);
+        return (this.hasRoleViewListAccessForRecord(record, latestResponse, variant, roleViewListForms) ||
+            this.isMineRecord(record, latestResponse, actor));
     }
-    canMutateMainRecord(record, actor) {
-        if (!actor.userId || this.isAdminActor(actor)) {
+    canMutateMainRecord(record, latestResponse, actor) {
+        if (this.isAdminActor(actor)) {
             return true;
         }
-        return record.encoder_id === actor.userId || record.issuer_id === actor.userId;
+        if (!actor.userId) {
+            return false;
+        }
+        const workflowStage = normalizeQmqaWorkflowStage(record.request_status, latestResponse || null, record);
+        return (QMQA_EDITABLE_MAIN_STAGES.has(workflowStage) &&
+            (record.encoder_id === actor.userId || record.issuer_id === actor.userId));
+    }
+    canDeleteMainRecord(record, latestResponse, actor) {
+        if (this.isAdminActor(actor)) {
+            return true;
+        }
+        if (!actor.userId) {
+            return false;
+        }
+        return (normalizeQmqaWorkflowStage(record.request_status, latestResponse || null, record) === QMQA_WORKFLOW_STAGE.DRAFT &&
+            (record.encoder_id === actor.userId || record.issuer_id === actor.userId));
     }
     async findLatestResponseMap(qmqaIds) {
         const latestResponseMap = new Map();
@@ -578,8 +601,9 @@ export class QmqaService {
             throw new NotFoundError('QMQA Record not found');
         }
         const actorContext = await this.resolveActorContextWithRole(actor.userId, actor.roleName);
+        const latestResponse = await qmqaRepository.findResponseByQmqaId(existing.qmqa_id);
         assertWorkflowRecordAccess({
-            allowed: this.canMutateMainRecord(existing, actorContext),
+            allowed: this.canMutateMainRecord(existing, latestResponse, actorContext),
             action: 'update',
             moduleName: 'QMQA',
         });
@@ -818,8 +842,9 @@ export class QmqaService {
             throw new NotFoundError('QMQA Record not found');
         }
         const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
+        const latestResponse = await qmqaRepository.findResponseByQmqaId(existing.qmqa_id);
         assertWorkflowRecordAccess({
-            allowed: this.canMutateMainRecord(existing, actorContext),
+            allowed: this.canDeleteMainRecord(existing, latestResponse, actorContext),
             action: 'delete',
             moduleName: 'QMQA',
         });
@@ -847,6 +872,25 @@ export class QmqaService {
             await trx.deleteFrom('QMQA').where('qmqa_id', '=', id).execute();
             return { success: true, message: 'QMQA Record deleted successfully' };
         });
+    }
+    async downloadAttachment(moduleType, attachmentId, actor, variant = 'QMQA') {
+        const owner = await qmqaRepository.findAttachmentOwner(moduleType, attachmentId);
+        if (!owner) {
+            throw new NotFoundError('Attachment not found');
+        }
+        const actorContext = await this.resolveActorContextWithRole(actor?.userId, actor?.roleName);
+        const record = await qmqaRepository.findRecordByIdDetailed(owner.qmqa_id);
+        if (!record) {
+            throw new NotFoundError('QMQA Record not found');
+        }
+        const response = await qmqaRepository.findResponseByQmqaId(owner.qmqa_id);
+        const roleViewListForms = await this.resolveRoleViewListFormCodes(actorContext.userId, variant);
+        assertWorkflowRecordAccess({
+            allowed: this.canReadRecord(record, response, actorContext, variant, roleViewListForms),
+            action: 'view',
+            moduleName: variant,
+        });
+        return attachmentService.downloadAttachment(moduleType, attachmentId);
     }
 }
 export const qmqaService = new QmqaService();
