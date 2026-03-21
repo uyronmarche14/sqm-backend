@@ -105,6 +105,16 @@ export class QmqaController {
     }
   }
 
+  cancelSchedule = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+      const result = await qmqaService.cancelSchedule(id, this.getUserId(req));
+      res.json(successResponse(result));
+    } catch (error) {
+      next(error);
+    }
+  }
+
   getAllRecords = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const status = req.query.status as string | undefined;

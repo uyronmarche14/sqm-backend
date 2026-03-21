@@ -6,6 +6,7 @@ export class QmqaRepository extends BaseRepository {
     constructor() {
         super('QMQA');
     }
+    scheduleSurfaceStatuses = ['PL', 'CA', 'CC'];
     // ==========================================
     // 1. SCHEDULES (Audit Plan)
     // ==========================================
@@ -27,6 +28,7 @@ export class QmqaRepository extends BaseRepository {
             'q.qmqa_id as record_id',
             'q.request_status as record_status'
         ])
+            .where('ap.request_status', 'in', [...this.scheduleSurfaceStatuses])
             .orderBy('ap.audit_plan_date', 'desc')
             .orderBy('ap.created_date', 'desc')
             .execute();

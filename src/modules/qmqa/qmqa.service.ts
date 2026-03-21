@@ -95,8 +95,33 @@ const QMQA_EDITABLE_MAIN_STAGES = new Set<string>([
   QMQA_WORKFLOW_STAGE.REJECT_CHECKER,
   QMQA_WORKFLOW_STAGE.REJECT_APPROVER,
 ]);
+const QMQA_ACTIVE_SCHEDULE_DB_STATUSES = new Set(['PL', 'CO']);
+const QMQA_CANCELLED_SCHEDULE_DB_STATUSES = new Set(['CA', 'CC']);
 
 export class QmqaService {
+  private isLinkedSchedule(schedule: Record<string, any> | null | undefined) {
+    return Boolean(schedule?.record_id);
+  }
+
+  private assertScheduleEditable(
+    schedule: Record<string, any>,
+    action: 'update' | 'delete' | 'cancel',
+  ) {
+    const status = String(schedule?.request_status || '').trim().toUpperCase();
+
+    if (this.isLinkedSchedule(schedule)) {
+      throw new BadRequestError(`Cannot ${action} a QMQA schedule after the audit report has been created.`);
+    }
+
+    if (QMQA_CANCELLED_SCHEDULE_DB_STATUSES.has(status)) {
+      throw new BadRequestError(`Cannot ${action} a cancelled QMQA schedule.`);
+    }
+
+    if (!QMQA_ACTIVE_SCHEDULE_DB_STATUSES.has(status)) {
+      throw new BadRequestError(`Cannot ${action} QMQA schedule while it is outside the planned phase.`);
+    }
+  }
+
   private resolveQueueFormCodes(
     variant: QmqaModuleVariant,
     stageOrStatus: string | null | undefined,
@@ -427,8 +452,9 @@ export class QmqaService {
       ...schedule,
       status: mapStatusFromDB(schedule.request_status),
       recordId: schedule.record_id || null,
-      recordStatus: schedule.record_status ? mapStatusFromDB(schedule.record_status) : null,
+      recordStatus: schedule.record_status ? getQmqaCompatibilityStatus(schedule.record_status) : null,
       created_at: schedule.created_date,
+      updated_at: schedule.last_update,
     }));
   }
 
@@ -442,8 +468,9 @@ export class QmqaService {
       ...schedule,
       status: mapStatusFromDB(schedule.request_status),
       recordId: schedule.record_id || null,
-      recordStatus: schedule.record_status ? mapStatusFromDB(schedule.record_status) : null,
+      recordStatus: schedule.record_status ? getQmqaCompatibilityStatus(schedule.record_status) : null,
       created_at: schedule.created_date,
+      updated_at: schedule.last_update,
     };
   }
 
@@ -503,6 +530,7 @@ export class QmqaService {
     if (!existing) {
       throw new NotFoundError('Schedule not found');
     }
+    this.assertScheduleEditable(existing, 'update');
 
     const dbUpdates: Record<string, any> = {
       last_update: new Date(),
@@ -703,7 +731,7 @@ export class QmqaService {
 
             await trx.updateTable('QMQA_AUDIT_PLAN')
               .set({
-                request_status: 'CO',
+                request_status: 'PL',
                 last_update: now,
                 updateby: effectiveUserId,
               })
@@ -1073,6 +1101,7 @@ export class QmqaService {
     if (!existing) {
       throw new NotFoundError('Schedule not found');
     }
+    this.assertScheduleEditable(existing, 'delete');
 
     return qmqaRepository.executeTransaction(async (trx) => {
       await trx.deleteFrom('QMQA_AUDIT_PLAN')
@@ -1080,6 +1109,27 @@ export class QmqaService {
         .execute();
 
       return { success: true, message: 'Schedule deleted successfully' };
+    });
+  }
+
+  async cancelSchedule(id: string, userId: string) {
+    const existing = await qmqaRepository.findScheduleById(id);
+    if (!existing) {
+      throw new NotFoundError('Schedule not found');
+    }
+    this.assertScheduleEditable(existing, 'cancel');
+
+    return qmqaRepository.executeTransaction(async (trx) => {
+      await trx.updateTable('QMQA_AUDIT_PLAN')
+        .set({
+          request_status: 'CA',
+          last_update: new Date(),
+          updateby: userId || 'SYSTEM',
+        })
+        .where('qmqa_audit_plan_id', '=', id)
+        .execute();
+
+      return { success: true, message: 'Schedule cancelled successfully' };
     });
   }
 

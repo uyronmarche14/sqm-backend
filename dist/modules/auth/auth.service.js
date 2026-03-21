@@ -4,7 +4,12 @@ import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 import { getLegacyFormMapping, getModulePermissionManifest } from '@sqm/permissions-contract';
 import { getAssignedWorkflowAccessibleForms } from './assigned-form-access.js';
+import { authNotificationService, } from '../../shared/notifications/auth-notification.service.js';
 export class AuthService {
+    notifications;
+    constructor(notifications = authNotificationService) {
+        this.notifications = notifications;
+    }
     buildAuthContextResponse(user, accessibleForms, roleAccessRecords) {
         console.log('🏗️ [Auth] Building auth context for accessible forms:', accessibleForms);
         const userMenuSet = new Set();
@@ -155,6 +160,28 @@ export class AuthService {
         }
         const passwordHash = await hashPassword(input.newPassword);
         await authRepository.updatePassword(user.user_id, passwordHash);
+        try {
+            const result = await this.notifications.sendPasswordChanged({
+                fullName: user.full_name || user.email || 'SQM User',
+                email: user.email || '',
+            });
+            console.log('[auth] password-changed email notification processed', JSON.stringify({
+                userId: user.user_id,
+                email: user.email,
+                eventKey: 'auth.password.changed',
+                delivered: result.delivered,
+                skipped: result.skipped ?? false,
+                transport: result.transport,
+                referenceId: result.referenceId ?? null,
+            }));
+        }
+        catch (error) {
+            console.error('[auth] failed to send password-changed email notification', JSON.stringify({
+                userId: user.user_id,
+                email: user.email,
+                eventKey: 'auth.password.changed',
+            }), error);
+        }
         return {
             success: true,
             message: 'Password changed successfully',

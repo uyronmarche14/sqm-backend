@@ -6,8 +6,10 @@ const controlNumberServiceMock = vi.hoisted(() => ({
 }));
 
 const repositoryMock = vi.hoisted(() => ({
+  findAllSchedules: vi.fn(),
   findAllRecordsDetailed: vi.fn(),
   findRecordByIdDetailed: vi.fn(),
+  findScheduleById: vi.fn(),
   findLatestResponsesByQmqaIds: vi.fn(),
   findSupplierIdsByUserId: vi.fn(),
   executeTransaction: vi.fn(),
@@ -540,16 +542,22 @@ describe('QmqaService workflow metadata hydration', () => {
   it('reuses the selected audit plan when schedule_id is provided even without from_schedule', async () => {
     const insertedTables: string[] = [];
     const updatedTables: string[] = [];
+    const updatedPlanPayloads: Array<Record<string, unknown>> = [];
 
     repositoryMock.executeTransaction.mockImplementationOnce(async (callback: any) => callback({
       updateTable: (table: string) => {
         updatedTables.push(table);
         return {
-          set: () => ({
-            where: () => ({
-              execute: async () => undefined,
-            }),
-          }),
+          set: (values: Record<string, unknown>) => {
+            if (table === 'QMQA_AUDIT_PLAN') {
+              updatedPlanPayloads.push(values);
+            }
+            return {
+              where: () => ({
+                execute: async () => undefined,
+              }),
+            };
+          },
         };
       },
       selectFrom: () => ({
@@ -586,6 +594,50 @@ describe('QmqaService workflow metadata hydration', () => {
       controlNo: 'AUD-2026-3-9-SITE',
       controlNoState: 'final',
     }));
+    expect(updatedPlanPayloads[0]).toEqual(expect.objectContaining({
+      request_status: 'PL',
+    }));
+  });
+
+  it('returns canonical linked schedule metadata for schedule reads', async () => {
+    repositoryMock.findScheduleById.mockResolvedValue({
+      qmqa_audit_plan_id: 'plan-1',
+      control_no: 'P-2026-001',
+      request_status: 'PL',
+      record_id: 'record-1',
+      record_status: '2',
+      created_date: new Date('2026-03-10'),
+      last_update: new Date('2026-03-12'),
+      site_id: 'site-1',
+      supplier_id: 'supplier-1',
+      audit_category_id: 'category-1',
+      sqe_pic_id: 'sqe-1',
+      audit_plan_date: new Date('2026-03-20'),
+    });
+
+    const result = await qmqaService.getScheduleById('plan-1');
+
+    expect(result).toEqual(expect.objectContaining({
+      status: 'PLANNED',
+      recordId: 'record-1',
+      recordStatus: 'DRAFT',
+      created_at: expect.any(Date),
+      updated_at: expect.any(Date),
+    }));
+  });
+
+  it('blocks schedule updates once a linked audit report exists', async () => {
+    repositoryMock.findScheduleById.mockResolvedValue({
+      qmqa_audit_plan_id: 'plan-1',
+      request_status: 'PL',
+      record_id: 'record-1',
+    });
+
+    await expect(qmqaService.updateSchedule('plan-1', {
+      remarks: 'Updated remark',
+    }, 'admin-1')).rejects.toMatchObject({
+      message: 'Cannot update a QMQA schedule after the audit report has been created.',
+    });
   });
 
   it('blocks ad hoc QMQA creation when control-number source fields are missing', async () => {

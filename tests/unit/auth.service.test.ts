@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const authRepositoryMock = vi.hoisted(() => ({
   findByEmail: vi.fn(),
   findUserById: vi.fn(),
+  updatePassword: vi.fn(),
   findRoleBasedAccessibleForms: vi.fn(),
   findCurrentUserRoleAccessRecords: vi.fn(),
   findAssignedSqmpAccessibleForms: vi.fn(),
@@ -17,6 +18,7 @@ const authRepositoryMock = vi.hoisted(() => ({
 
 const hashMock = vi.hoisted(() => ({
   verifyPassword: vi.fn(),
+  hashPassword: vi.fn(),
 }));
 
 const jwtMock = vi.hoisted(() => ({
@@ -25,18 +27,27 @@ const jwtMock = vi.hoisted(() => ({
   verifyRefreshToken: vi.fn(),
 }));
 
+const notificationMock = vi.hoisted(() => ({
+  sendPasswordChanged: vi.fn(),
+}));
+
 vi.mock('../../src/modules/auth/auth.repository.js', () => ({
   authRepository: authRepositoryMock,
 }));
 
 vi.mock('../../src/shared/utils/hash.js', () => ({
   verifyPassword: hashMock.verifyPassword,
+  hashPassword: hashMock.hashPassword,
 }));
 
 vi.mock('../../src/shared/utils/jwt.js', () => ({
   generateAccessToken: jwtMock.generateAccessToken,
   generateRefreshToken: jwtMock.generateRefreshToken,
   verifyRefreshToken: jwtMock.verifyRefreshToken,
+}));
+
+vi.mock('../../src/shared/notifications/auth-notification.service.js', () => ({
+  authNotificationService: notificationMock,
 }));
 
 import { AuthService } from '../../src/modules/auth/auth.service.js';
@@ -65,6 +76,7 @@ describe('AuthService login SQMP assignment access', () => {
     authRepositoryMock.findUserById.mockResolvedValue(mockUser);
     authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findCurrentUserRoleAccessRecords.mockResolvedValue([]);
+    authRepositoryMock.updatePassword.mockResolvedValue(undefined);
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedOgiAccessibleForms.mockResolvedValue([]);
@@ -74,8 +86,18 @@ describe('AuthService login SQMP assignment access', () => {
     authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
     hashMock.verifyPassword.mockResolvedValue(true);
+    hashMock.hashPassword.mockResolvedValue('new-hash');
     jwtMock.generateAccessToken.mockReturnValue('access-token');
     jwtMock.generateRefreshToken.mockReturnValue('refresh-token');
+    notificationMock.sendPasswordChanged.mockResolvedValue({
+      delivered: true,
+      transport: 'smtp',
+      referenceId: '<message-id@example.com>',
+      subject: 'Password Change Confirmation',
+      recipient: 'checker@example.com',
+      localUrl: 'http://localhost:5000/auth/login',
+      internetUrl: 'https://sqm.example.com/auth/login',
+    });
   });
 
   it('includes SQMP accessibleForms and module menu when the user is assigned to SQMP approval queues', async () => {
@@ -253,6 +275,43 @@ describe('AuthService login SQMP assignment access', () => {
         canApprove: 1,
       }),
     ]);
+  });
+
+  it('sends a password-changed email after a successful password update', async () => {
+    const service = new AuthService();
+
+    const result = await service.changePassword('user-1', {
+      currentPassword: 'secret',
+      newPassword: 'NewSecret123',
+    });
+
+    expect(hashMock.hashPassword).toHaveBeenCalledWith('NewSecret123');
+    expect(authRepositoryMock.updatePassword).toHaveBeenCalledWith('user-1', 'new-hash');
+    expect(notificationMock.sendPasswordChanged).toHaveBeenCalledWith({
+      fullName: 'Checker User',
+      email: 'checker@example.com',
+    });
+    expect(result).toEqual({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  });
+
+  it('does not fail password change when the notification send fails', async () => {
+    notificationMock.sendPasswordChanged.mockRejectedValueOnce(new Error('smtp unavailable'));
+    const service = new AuthService();
+
+    await expect(
+      service.changePassword('user-1', {
+        currentPassword: 'secret',
+        newPassword: 'NewSecret123',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Password changed successfully',
+    });
+
+    expect(authRepositoryMock.updatePassword).toHaveBeenCalledWith('user-1', 'new-hash');
   });
 
   it('includes MNR accessibleForms and module menu when the user is assigned to MNR approval queues', async () => {

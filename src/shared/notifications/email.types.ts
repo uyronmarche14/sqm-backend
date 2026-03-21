@@ -1,4 +1,8 @@
-export type EmailEventKey = 'auth.registration.notification';
+export type EmailEventKey =
+  | 'auth.registration.notification'
+  | 'auth.password.changed'
+  | 'auth.password.reset.requested'
+  | 'auth.account.verification';
 
 export interface EmailAddress {
   email: string;
@@ -28,4 +32,3 @@ export interface EmailTransport {
   readonly name: string;
   send(message: EmailMessage): Promise<EmailSendResult>;
 }
-
