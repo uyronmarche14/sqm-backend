@@ -3,6 +3,7 @@ import { sqmpResponseController } from './response.controller.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../../middleware/upload.middleware.js';
 import { requirePermission } from '../../../shared/middleware/requirePermission.js';
+import { requireModuleAccess } from '../../../shared/middleware/requireModuleAccess.js';
 
 const router = Router();
 const upload = createModuleUpload('sqmp', { attachmentType: 'sqmp-response' });
@@ -25,7 +26,7 @@ router.post('/:id/approve', requirePermission('SQMP-09-07', 'approve'), sqmpResp
 router.post('/:id/reject', requirePermission('SQMP-09-07', 'reject'), sqmpResponseController.reject);
 
 // Document Downloader
-router.get('/download/:attachmentId', sqmpResponseController.downloadAttachment);
+router.get('/download/:attachmentId', requireModuleAccess('SQM_PLAN', 'view'), sqmpResponseController.downloadAttachment);
 
 export default router;
     

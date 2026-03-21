@@ -5,6 +5,9 @@ const controlNumberServiceMock = vi.hoisted(() => ({
   finalizeMnr: vi.fn(),
   getControlNoState: vi.fn(),
 }));
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
 
 vi.mock('../../src/modules/mnr/mnr.service.js', () => ({
   mnrService: {
@@ -14,6 +17,10 @@ vi.mock('../../src/modules/mnr/mnr.service.js', () => ({
 
 vi.mock('../../src/shared/services/control-number.service.js', () => ({
   controlNumberService: controlNumberServiceMock,
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
 }));
 
 import { MnrWorkflowService } from '../../src/modules/mnr/workflow/mnr-workflow.service.js';
@@ -58,6 +65,7 @@ describe('MnrWorkflowService', () => {
     vi.clearAllMocks();
     controlNumberServiceMock.finalizeMnr.mockResolvedValue('MNR-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('final');
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
     saveResponseContentMock.mockResolvedValue({
       success: true,
       data: { id: 'mnr-1' },
@@ -140,6 +148,34 @@ describe('MnrWorkflowService', () => {
     await expect(service.checkMain('mnr-1', 'someone-else')).rejects.toMatchObject({
       message: 'Only the assigned checker can check this MNR.',
     });
+  });
+
+  it('allows unassigned checker-stage records when role fallback grants the stage permission', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createRecord({ request_status: 'SU', checker_id: null }),
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'MNR-12-03' && action === 'check',
+    );
+
+    const service = new MnrWorkflowService(repository as any);
+    const result = await service.checkMain('mnr-1', 'role-checker', undefined, 'checked by role');
+
+    expect(permissionServiceMock.checkRolePermission).toHaveBeenCalledWith('role-checker', 'MNR-12-03', 'check');
+    expect(tx.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_status: 'CK',
+        checker_remarks: 'checked by role',
+        updateby: 'role-checker',
+      }),
+    );
+    expect(result.data).toEqual(expect.objectContaining({
+      status: 'CK',
+      workflowStageCode: '4',
+    }));
   });
 
   it('moves approver-owned records to issuer stage', async () => {

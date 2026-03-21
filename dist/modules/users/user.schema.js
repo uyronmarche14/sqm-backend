@@ -41,6 +41,13 @@ export const UpdateUserSchema = z.object({
 export const ChangePasswordSchema = z.object({
     newPassword: z.string().min(6, 'Password must be at least 6 characters')
 });
+export const TestEmailSchema = z.object({
+    email: z.string().email('Invalid email address'),
+    full_name: z.string().min(1, 'Full name is required'),
+    temporary_password: z.string().min(6, 'Temporary password must be at least 6 characters').optional().default('Temp1234'),
+    role_name: z.string().optional().nullable(),
+    site_id: z.string().optional().nullable(),
+});
 export const AssignmentCoverageItemSchema = z.object({
     formId: z.string().min(1, 'Form ID is required'),
     assignmentRole: z.enum(['owner', 'issuer', 'checker', 'approver', 'supplier']),

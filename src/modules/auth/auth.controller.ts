@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService } from './auth.service.js';
-import { LoginInput } from './auth.schema.js';
+import { ChangePasswordInput, LoginInput } from './auth.schema.js';
 
 export class AuthController {
   
@@ -78,6 +78,21 @@ export class AuthController {
       }
 
       const result = await authService.getCurrentUserContext(req.user.userId);
+      res.status(200).json(result);
+      return;
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async changePassword(req: Request<{}, {}, ChangePasswordInput>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.user?.userId) {
+        res.status(401).json({ success: false, message: 'Unauthorized' });
+        return;
+      }
+
+      const result = await authService.changePassword(req.user.userId, req.body);
       res.status(200).json(result);
       return;
     } catch (error) {

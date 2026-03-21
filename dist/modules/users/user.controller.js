@@ -1,5 +1,5 @@
 import { userService } from './user.service.js';
-import { CreateUserSchema, UpdateUserSchema, ChangePasswordSchema, AssignmentCoverageRequestSchema, } from './user.schema.js';
+import { CreateUserSchema, UpdateUserSchema, ChangePasswordSchema, TestEmailSchema, AssignmentCoverageRequestSchema, } from './user.schema.js';
 // Internal mapper matching original output shape exactly
 // Note: DB column is `last_pasword_change` (legacy typo in DB — single 's')
 const mapUserToDto = (user) => ({
@@ -49,6 +49,19 @@ export const userController = {
             const payload = CreateUserSchema.parse(req.body);
             const user = await userService.createUser(payload);
             res.status(201).json(mapUserToDto(user));
+        }
+        catch (error) {
+            next(error);
+        }
+    },
+    testEmail: async (req, res, next) => {
+        try {
+            const payload = TestEmailSchema.parse(req.body);
+            const result = await userService.sendTestEmail(payload);
+            res.json({
+                success: true,
+                data: result,
+            });
         }
         catch (error) {
             next(error);

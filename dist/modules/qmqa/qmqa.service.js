@@ -873,8 +873,13 @@ export class QmqaService {
             return { success: true, message: 'QMQA Record deleted successfully' };
         });
     }
-    async downloadAttachment(moduleType, attachmentId, actor, variant = 'QMQA') {
-        const owner = await qmqaRepository.findAttachmentOwner(moduleType, attachmentId);
+    async downloadAttachment(attachmentId, actor, variant = 'QMQA', moduleTypeHint) {
+        const hintedOwner = moduleTypeHint
+            ? await qmqaRepository.findAttachmentOwner(moduleTypeHint, attachmentId)
+            : null;
+        const owner = hintedOwner
+            ? { ...hintedOwner, moduleType: moduleTypeHint }
+            : await qmqaRepository.findAttachmentOwnerByAttachmentId(attachmentId);
         if (!owner) {
             throw new NotFoundError('Attachment not found');
         }
@@ -890,7 +895,7 @@ export class QmqaService {
             action: 'view',
             moduleName: variant,
         });
-        return attachmentService.downloadAttachment(moduleType, attachmentId);
+        return attachmentService.downloadAttachment(owner.moduleType, attachmentId);
     }
 }
 export const qmqaService = new QmqaService();

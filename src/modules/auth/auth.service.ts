@@ -1,7 +1,7 @@
 import { authRepository } from './auth.repository.js';
-import { LoginInput } from './auth.schema.js';
-import { UnauthorizedError } from '../../shared/errors/AppError.js';
-import { verifyPassword } from '../../shared/utils/hash.js';
+import { ChangePasswordInput, LoginInput } from './auth.schema.js';
+import { BadRequestError, UnauthorizedError } from '../../shared/errors/AppError.js';
+import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 import { getLegacyFormMapping, getModulePermissionManifest } from '@sqm/permissions-contract';
 import { getAssignedWorkflowAccessibleForms } from './assigned-form-access.js';
@@ -158,6 +158,38 @@ export class AuthService {
       userMenu: authContext.userMenu,
       accessibleForms: authContext.accessibleForms,
       roleAccessRecords: authContext.roleAccessRecords,
+    };
+  }
+
+  async changePassword(userId: string, input: ChangePasswordInput) {
+    const user = await authRepository.findUserById(userId);
+
+    if (!user) {
+      throw new UnauthorizedError('Invalid session');
+    }
+
+    const mustChangePassword = Boolean(user.change_pw);
+    if (!mustChangePassword && !input.currentPassword) {
+      throw new BadRequestError('Current password is required.');
+    }
+
+    if (!user.password) {
+      throw new UnauthorizedError('Invalid account configuration');
+    }
+
+    if (input.currentPassword) {
+      const isValid = await verifyPassword(input.currentPassword, user.password);
+      if (!isValid) {
+        throw new UnauthorizedError('Current password is incorrect.');
+      }
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    await authRepository.updatePassword(user.user_id, passwordHash);
+
+    return {
+      success: true,
+      message: 'Password changed successfully',
     };
   }
 }

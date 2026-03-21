@@ -191,9 +191,23 @@ export const QmqaIdParamSchema = z.object({
   })
 });
 
+export const QmqaAttachmentModuleTypeSchema = z.enum([
+  'qmqa-plan',
+  'qmqa-record',
+  'qmqa-response-initial',
+  'qmqa-response-final',
+  'qmqa-response-verification',
+]);
+
 export const QmqaAttachmentParamSchema = z.object({
   params: z.object({
-    moduleType: z.string().min(1, 'Module type is required'),
+    moduleType: QmqaAttachmentModuleTypeSchema,
+    attachmentId: z.string().uuid('Invalid Attachment ID format')
+  })
+});
+
+export const QmqaCanonicalAttachmentParamSchema = z.object({
+  params: z.object({
     attachmentId: z.string().uuid('Invalid Attachment ID format')
   })
 });
@@ -202,3 +216,4 @@ export type QMQAScheduleCreationInput = z.infer<typeof QmqaScheduleCreateSchema>
 export type QMQAScheduleUpdateInput = z.infer<typeof QmqaScheduleUpdateSchema>['body'];
 export type QMQARecordCreationInput = z.infer<typeof QmqaRecordCreateSchema>['body'];
 export type QMQARecordUpdateInput = z.infer<typeof QmqaRecordUpdateSchema>['body'];
+export type QmqaAttachmentModuleType = z.infer<typeof QmqaAttachmentModuleTypeSchema>;

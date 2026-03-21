@@ -289,6 +289,25 @@ export class QmqaRepository extends BaseRepository {
         }
         return (await lookup()) || null;
     }
+    async findAttachmentOwnerByAttachmentId(attachmentId) {
+        const moduleTypes = [
+            'qmqa-plan',
+            'qmqa-record',
+            'qmqa-response-initial',
+            'qmqa-response-final',
+            'qmqa-response-verification',
+        ];
+        for (const moduleType of moduleTypes) {
+            const owner = await this.findAttachmentOwner(moduleType, attachmentId);
+            if (owner) {
+                return {
+                    ...owner,
+                    moduleType,
+                };
+            }
+        }
+        return null;
+    }
     // ==========================================
     // Utils
     // ==========================================

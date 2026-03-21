@@ -1,3 +1,4 @@
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { NpiRepository } from '../npi.repository.js';
 import type { ServiceResponse, WorkflowActionResponse } from '../types/npi.types.js';
@@ -9,7 +10,6 @@ import {
 } from '../workflow/npi-workflow.utils.js';
 import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
 import { isAdminUser } from '../../../shared/utils/admin.utils.js';
-import { hasRolePermission } from '../../../shared/utils/role-permission.utils.js';
 import {
   logAdminBypass,
   logAssignmentGrant,
@@ -17,11 +17,48 @@ import {
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { permissionService } from '../../../shared/services/permission.service.js';
 
 type DetailedRecord = Record<string, any>;
 
 export class NpiWorkflowService {
   constructor(private repository: NpiRepository) {}
+
+  private getRoleFallbackFormCodes(record: DetailedRecord): string[] {
+    const stage = normalizeNpiWorkflowStage(record.request_status);
+
+    switch (stage) {
+      case NPI_WORKFLOW_STAGE.DRAFT:
+        return getSubFormFormCodes('NEWPARTS', 'DRAFT');
+      case NPI_WORKFLOW_STAGE.CHECKER:
+      case NPI_WORKFLOW_STAGE.APPROVER:
+        return getSubFormFormCodes('NEWPARTS', 'AAPPROVAL');
+      case NPI_WORKFLOW_STAGE.REJECT_CHECKER:
+      case NPI_WORKFLOW_STAGE.REJECT_APPROVER:
+        return getSubFormFormCodes('NEWPARTS', 'REJECTED');
+      case NPI_WORKFLOW_STAGE.ACCEPT:
+      case NPI_WORKFLOW_STAGE.LOT_TRACKING:
+        return getSubFormFormCodes('NEWPARTS', 'LOTTRACKING');
+      case NPI_WORKFLOW_STAGE.CANCELLED:
+        return getSubFormFormCodes('NEWPARTS', 'CLOSED');
+      default:
+        return getSubFormFormCodes('NEWPARTS', 'DRAFT');
+    }
+  }
+
+  private async hasAnyRoleFallbackPermission(
+    userId: string,
+    formIds: string[],
+    action: 'approve' | 'check' | 'edit',
+  ): Promise<boolean> {
+    for (const formId of formIds) {
+      if (await permissionService.checkRolePermission(userId, formId, action)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   private assertSubmitControlNoInputs(record: DetailedRecord) {
     if (!record.site_id && !record.site_code) {
@@ -153,7 +190,11 @@ export class NpiWorkflowService {
     else if (action === 'submit' || action === 'reject') permissionType = 'edit';
 
     if (permissionType) {
-      const hasPermission = await hasRolePermission(roleId, permissionType, 'NPILOT-09-03');
+      const hasPermission = await this.hasAnyRoleFallbackPermission(
+        userId,
+        this.getRoleFallbackFormCodes(record),
+        permissionType,
+      );
       if (hasPermission) {
         await logRolePermissionGrant(
           userId,

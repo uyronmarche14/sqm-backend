@@ -9,6 +9,7 @@ import {
   QMQAScheduleUpdateInput,
   QMQARecordCreationInput,
   QMQARecordUpdateInput,
+  QmqaAttachmentModuleType,
 } from './qmqa.schema.js';
 import {
   buildQmqaWorkflowMetadata,
@@ -1125,12 +1126,17 @@ export class QmqaService {
   }
 
   async downloadAttachment(
-    moduleType: string,
     attachmentId: string,
     actor?: { userId?: string | null; roleName?: string | null },
     variant: QmqaModuleVariant = 'QMQA',
+    moduleTypeHint?: QmqaAttachmentModuleType,
   ) {
-    const owner = await qmqaRepository.findAttachmentOwner(moduleType, attachmentId);
+    const hintedOwner = moduleTypeHint
+      ? await qmqaRepository.findAttachmentOwner(moduleTypeHint, attachmentId)
+      : null;
+    const owner = hintedOwner
+      ? { ...hintedOwner, moduleType: moduleTypeHint as QmqaAttachmentModuleType }
+      : await qmqaRepository.findAttachmentOwnerByAttachmentId(attachmentId);
     if (!owner) {
       throw new NotFoundError('Attachment not found');
     }
@@ -1150,7 +1156,7 @@ export class QmqaService {
       moduleName: variant,
     });
 
-    return attachmentService.downloadAttachment(moduleType, attachmentId);
+    return attachmentService.downloadAttachment(owner.moduleType, attachmentId);
   }
 }
 

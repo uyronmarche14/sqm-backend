@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../../src/shared/errors/AppError.js';
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
+}));
+
 import { SqprWorkflowService } from '../../src/modules/sqpr/workflow/sqpr-workflow.service.js';
 
 function createTransactionMock() {
@@ -41,6 +49,7 @@ describe('SqprWorkflowService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
   });
 
   it('submits draft records into the checker stage', async () => {
@@ -142,5 +151,31 @@ describe('SqprWorkflowService', () => {
     const service = new SqprWorkflowService(repository as any);
 
     await expect(service.check('sqpr-1', 'someone-else', undefined, 'checked')).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('allows unassigned checker-stage records when role fallback grants the stage permission', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed
+      .mockResolvedValueOnce({ record: createRecord({ request_status: '3', checker_id: null }) })
+      .mockResolvedValueOnce({ record: createRecord({ request_status: '4', checker_id: null, checker_remarks: 'checked by role' }) });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'SQPR-03-02' && action === 'check',
+    );
+
+    const service = new SqprWorkflowService(repository as any);
+    const result = await service.check('sqpr-1', 'role-checker', undefined, 'checked by role');
+
+    expect(permissionServiceMock.checkRolePermission).toHaveBeenCalledWith('role-checker', 'SQPR-03-02', 'check');
+    expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
+      request_status: '4',
+      checker_remarks: 'checked by role',
+      updateby: 'role-checker',
+    }));
+    expect(result.data).toEqual(expect.objectContaining({
+      workflowStage: 'APPROVER',
+      workflowStageCode: '4',
+    }));
   });
 });

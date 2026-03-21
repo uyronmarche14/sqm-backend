@@ -13,6 +13,14 @@ export const refreshTokenSchema = z.object({
   }),
 });
 
+export const changePasswordSchema = z.object({
+  body: z.object({
+    currentPassword: z.string().min(1, 'Current password is required').optional(),
+    newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  }),
+});
+
 // Infer TS Types from Zod
 export type LoginInput = z.infer<typeof loginSchema>['body'];
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>['body'];
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>['body'];

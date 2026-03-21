@@ -1,3 +1,4 @@
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import {
   BadRequestError,
   ForbiddenError,
@@ -12,7 +13,6 @@ import {
 } from './mnr-workflow.utils.js';
 import { MNR_WORKFLOW_STAGE } from './mnr-workflow.constants.js';
 import { isAdminUser } from '../../../shared/utils/admin.utils.js';
-import { hasRolePermission } from '../../../shared/utils/role-permission.utils.js';
 import {
   logAdminBypass,
   logAssignmentGrant,
@@ -20,8 +20,62 @@ import {
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { permissionService } from '../../../shared/services/permission.service.js';
 
 export class MnrWorkflowService {
+  private getRoleFallbackFormCodes(record: Record<string, any>): string[] {
+    const stage = normalizeMnrWorkflowStage(record.request_status);
+
+    switch (stage) {
+      case MNR_WORKFLOW_STAGE.DRAFT:
+        return getSubFormFormCodes('MNR', 'DRAFT');
+      case MNR_WORKFLOW_STAGE.CHECKER:
+      case MNR_WORKFLOW_STAGE.APPROVER:
+        return getSubFormFormCodes('MNR', 'AAPPROVAL');
+      case MNR_WORKFLOW_STAGE.REJECT_CHECKER:
+      case MNR_WORKFLOW_STAGE.REJECT_APPROVER:
+        return getSubFormFormCodes('MNR', 'REJECTED');
+      case MNR_WORKFLOW_STAGE.ISSUER:
+        return getSubFormFormCodes('MNR', 'APPROVED');
+      case MNR_WORKFLOW_STAGE.SUPPLIER:
+        return getSubFormFormCodes('MNR', 'ISSUED');
+      case MNR_WORKFLOW_STAGE.INITIAL_RESPONSE:
+      case MNR_WORKFLOW_STAGE.FINAL_RESPONSE:
+        return getSubFormFormCodes('MNR', 'REPORT');
+      case MNR_WORKFLOW_STAGE.ISSUER_2ND:
+      case MNR_WORKFLOW_STAGE.CHECKER_2ND:
+      case MNR_WORKFLOW_STAGE.APPROVER_2ND:
+      case MNR_WORKFLOW_STAGE.ISSUER_3RD:
+        return getSubFormFormCodes('MNR', 'RESPONSE_AWAIT_APPROVAL');
+      case MNR_WORKFLOW_STAGE.REJECT_SUPPLIER:
+      case MNR_WORKFLOW_STAGE.REJECT_ISSUER_2ND:
+      case MNR_WORKFLOW_STAGE.REJECT_CHECKER_2ND:
+      case MNR_WORKFLOW_STAGE.REJECT_APPROVER_2ND:
+      case MNR_WORKFLOW_STAGE.NOT_ACCEPT:
+        return getSubFormFormCodes('MNR', 'RREJECTED');
+      case MNR_WORKFLOW_STAGE.LOT_TRACKING:
+        return getSubFormFormCodes('MNR', 'LOTTRACKING');
+      case MNR_WORKFLOW_STAGE.ACCEPT:
+        return getSubFormFormCodes('MNR', 'CLOSED');
+      default:
+        return getSubFormFormCodes('MNR', 'DRAFT');
+    }
+  }
+
+  private async hasAnyRoleFallbackPermission(
+    userId: string,
+    formIds: string[],
+    action: 'approve' | 'check' | 'edit',
+  ): Promise<boolean> {
+    for (const formId of formIds) {
+      if (await permissionService.checkRolePermission(userId, formId, action)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private assertSubmitControlNoInputs(record: Record<string, any>) {
     if (!record.site_id && !record.site_code) {
       throw new BadRequestError('Site is required before submitting this MNR.');
@@ -124,7 +178,11 @@ export class MnrWorkflowService {
     else permissionType = 'edit';
 
     if (permissionType) {
-      const hasPermission = await hasRolePermission(roleId, permissionType, 'MNR-MAIN');
+      const hasPermission = await this.hasAnyRoleFallbackPermission(
+        userId,
+        this.getRoleFallbackFormCodes(record),
+        permissionType,
+      );
       if (hasPermission) {
         await logRolePermissionGrant(
           userId,

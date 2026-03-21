@@ -4,6 +4,7 @@ import {
   CreateUserSchema,
   UpdateUserSchema,
   ChangePasswordSchema,
+  TestEmailSchema,
   AssignmentCoverageRequestSchema,
 } from './user.schema.js';
 
@@ -57,6 +58,19 @@ export const userController = {
       const payload = CreateUserSchema.parse(req.body);
       const user = await userService.createUser(payload);
       res.status(201).json(mapUserToDto(user));
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  testEmail: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = TestEmailSchema.parse(req.body);
+      const result = await userService.sendTestEmail(payload);
+      res.json({
+        success: true,
+        data: result,
+      });
     } catch (error) {
       next(error);
     }

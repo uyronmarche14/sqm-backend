@@ -1,3 +1,4 @@
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { sqprRepository } from '../sqpr.repository.js';
 import {
@@ -9,7 +10,6 @@ import {
 } from './sqpr-workflow.utils.js';
 import { SQPR_WORKFLOW_STAGE } from './sqpr-workflow.constants.js';
 import { isAdminUser } from '../../../shared/utils/admin.utils.js';
-import { hasRolePermission } from '../../../shared/utils/role-permission.utils.js';
 import {
   logAdminBypass,
   logAssignmentGrant,
@@ -17,11 +17,31 @@ import {
   logPermissionDenied,
 } from '../../../shared/utils/permission-audit.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { permissionService } from '../../../shared/services/permission.service.js';
 
 type DetailedRecord = Record<string, any>;
 
 export class SqprWorkflowService {
   constructor(private readonly repository = sqprRepository) {}
+
+  private getRoleFallbackFormCodes(record: DetailedRecord) {
+    const compatibilityStatus = getSqprCompatibilityStatus(record.request_status, record);
+    return getSubFormFormCodes('SQPR', compatibilityStatus);
+  }
+
+  private async hasAnyRoleFallbackPermission(
+    userId: string,
+    formIds: string[],
+    action: 'approve' | 'check' | 'edit',
+  ) {
+    for (const formId of formIds) {
+      if (await permissionService.checkRolePermission(userId, formId, action)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   private async getRecordOrThrow(id: string) {
     const data = await this.repository.findByIdDetailed(id);
@@ -95,7 +115,11 @@ export class SqprWorkflowService {
     else if (action === 'submit' || action === 'reject' || action === 'issue') permissionType = 'edit';
 
     if (permissionType) {
-      const hasPermission = await hasRolePermission(roleId, permissionType, 'SQPR-MAIN');
+      const hasPermission = await this.hasAnyRoleFallbackPermission(
+        userId,
+        this.getRoleFallbackFormCodes(record),
+        permissionType,
+      );
       if (hasPermission) {
         await logRolePermissionGrant(
           userId,

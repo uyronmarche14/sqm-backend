@@ -2,12 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const saveSupplierResponseContentMock = vi.hoisted(() => vi.fn());
 const saveResponseReviewContentMock = vi.hoisted(() => vi.fn());
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
 
 vi.mock('../../src/modules/qmqa/qmqa.service.js', () => ({
   qmqaService: {
     saveSupplierResponseContent: saveSupplierResponseContentMock,
     saveResponseReviewContent: saveResponseReviewContentMock,
   },
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
 }));
 
 import { QmqaWorkflowService } from '../../src/modules/qmqa/workflow/qmqa-workflow.service.js';
@@ -67,6 +74,7 @@ describe('QmqaWorkflowService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     repository.findSupplierIdsByUserId.mockResolvedValue([]);
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
     saveSupplierResponseContentMock.mockResolvedValue({
       success: true,
       data: { id: 'qmqa-1' },
@@ -125,6 +133,34 @@ describe('QmqaWorkflowService', () => {
       status: 'REJECTED',
       request_status: '5',
       workflowStageCode: '5',
+    }));
+  });
+
+  it('allows unassigned checker-stage records when role fallback grants the stage permission', async () => {
+    const tx = createTransactionMock();
+    repository.findRecordByIdDetailed
+      .mockResolvedValueOnce(createRecord({ request_status: '3', checker_id: null }))
+      .mockResolvedValueOnce(createRecord({ request_status: '4', checker_id: null, checker_remarks: 'checked by role' }));
+    repository.findResponseByQmqaId.mockResolvedValue(null);
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'QMQA-05-03' && action === 'check',
+    );
+
+    const service = new QmqaWorkflowService(repository as any);
+    const result = await service.checkMain('qmqa-1', 'role-checker', undefined, 'checked by role');
+
+    expect(permissionServiceMock.checkRolePermission).toHaveBeenCalledWith('role-checker', 'QMQA-05-03', 'check');
+    expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
+      request_status: '4',
+      checker_remarks: 'checked by role',
+      updateby: 'role-checker',
+    }));
+    expect(result.data).toEqual(expect.objectContaining({
+      status: 'AWAITING_APPROVAL',
+      request_status: '4',
+      workflowStageCode: '4',
     }));
   });
 

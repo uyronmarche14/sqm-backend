@@ -160,9 +160,21 @@ export const QmqaIdParamSchema = z.object({
         id: z.string().uuid('Invalid ID format')
     })
 });
+export const QmqaAttachmentModuleTypeSchema = z.enum([
+    'qmqa-plan',
+    'qmqa-record',
+    'qmqa-response-initial',
+    'qmqa-response-final',
+    'qmqa-response-verification',
+]);
 export const QmqaAttachmentParamSchema = z.object({
     params: z.object({
-        moduleType: z.string().min(1, 'Module type is required'),
+        moduleType: QmqaAttachmentModuleTypeSchema,
+        attachmentId: z.string().uuid('Invalid Attachment ID format')
+    })
+});
+export const QmqaCanonicalAttachmentParamSchema = z.object({
+    params: z.object({
         attachmentId: z.string().uuid('Invalid Attachment ID format')
     })
 });

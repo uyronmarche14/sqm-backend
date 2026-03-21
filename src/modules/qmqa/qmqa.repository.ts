@@ -2,6 +2,7 @@
 import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 import { sql } from 'kysely';
+import type { QmqaAttachmentModuleType } from './qmqa.schema.js';
 
 export class QmqaRepository extends BaseRepository<'QMQA'> {
   constructor() {
@@ -274,8 +275,8 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
       .execute();
   }
 
-  async findAttachmentOwner(moduleType: string, attachmentId: string) {
-    const handlers: Record<string, () => Promise<{ qmqa_id: string } | undefined>> = {
+  async findAttachmentOwner(moduleType: QmqaAttachmentModuleType, attachmentId: string) {
+    const handlers: Record<QmqaAttachmentModuleType, () => Promise<{ qmqa_id: string } | undefined>> = {
       'qmqa-plan': () => db.selectFrom('QMQA_PLAN_ATTACHMENT')
         .select(['qmqa_id'])
         .where('qmqa_plan_attachment_id', '=', attachmentId)
@@ -307,6 +308,28 @@ export class QmqaRepository extends BaseRepository<'QMQA'> {
     }
 
     return (await lookup()) || null;
+  }
+
+  async findAttachmentOwnerByAttachmentId(attachmentId: string) {
+    const moduleTypes: QmqaAttachmentModuleType[] = [
+      'qmqa-plan',
+      'qmqa-record',
+      'qmqa-response-initial',
+      'qmqa-response-final',
+      'qmqa-response-verification',
+    ];
+
+    for (const moduleType of moduleTypes) {
+      const owner = await this.findAttachmentOwner(moduleType, attachmentId);
+      if (owner) {
+        return {
+          ...owner,
+          moduleType,
+        };
+      }
+    }
+
+    return null;
   }
 
   // ==========================================

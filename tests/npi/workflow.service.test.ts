@@ -4,9 +4,16 @@ const controlNumberServiceMock = vi.hoisted(() => ({
   finalizeNpi: vi.fn(),
   getControlNoState: vi.fn(),
 }));
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
 
 vi.mock('../../src/shared/services/control-number.service.js', () => ({
   controlNumberService: controlNumberServiceMock,
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
 }));
 
 import { NpiWorkflowService } from '../../src/modules/npi/services/NpiWorkflowService.js';
@@ -50,6 +57,7 @@ describe('NpiWorkflowService', () => {
     vi.clearAllMocks();
     controlNumberServiceMock.finalizeNpi.mockResolvedValue('IQC-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('final');
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
   });
 
   it('submits draft/rejected records to checker stage', async () => {
@@ -177,6 +185,37 @@ describe('NpiWorkflowService', () => {
 
     await expect(service.checkRecord('npi-1', 'someone-else')).rejects.toMatchObject({
       message: 'Only the assigned checker can check this NPI record.',
+    });
+  });
+
+  it('allows unassigned checker-stage records when role fallback grants the stage permission', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createRecord({ request_status: 'SU', checker_id: null }),
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+    permissionServiceMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === 'NPILOT-09-03' && action === 'check',
+    );
+
+    const service = new NpiWorkflowService(repository as any);
+    const result = await service.checkRecord('npi-1', 'role-checker', undefined, 'checked by role');
+
+    expect(permissionServiceMock.checkRolePermission).toHaveBeenCalledWith('role-checker', 'NPILOT-09-03', 'check');
+    expect(tx.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_status: 'CK',
+        checker_remarks: 'checked by role',
+        updateby: 'role-checker',
+      }),
+    );
+    expect(result.data).toEqual({
+      id: 'npi-1',
+      recordId: 'npi-1',
+      status: 'CK',
+      controlNo: 'DRF-2026-3-1-SITE',
+      controlNoState: 'final',
     });
   });
 });

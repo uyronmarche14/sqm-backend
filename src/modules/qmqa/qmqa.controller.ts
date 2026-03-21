@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { qmqaService } from './qmqa.service.js';
 import { qmqaWorkflowService } from './workflow/qmqa-workflow.service.js';
 import {
+  QmqaCanonicalAttachmentParamSchema,
   QmqaAttachmentParamSchema,
   QmqaIdParamSchema,
   QmqaRecordCreateSchema,
@@ -11,6 +12,7 @@ import {
 } from './qmqa.schema.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
+import { userRepository } from '../users/user.repository.js';
 
 export class QmqaController {
   private getVariant(req: Request): 'QMQA' | 'QMQA_MEDIA' {
@@ -27,6 +29,23 @@ export class QmqaController {
 
   private getRoleName(req: Request) {
     return (req as any).user?.roleName || (req as any).user?.role_name || (req as any).user?.role || undefined;
+  }
+
+  private async getActor(req: Request) {
+    const userId = this.getUserId(req);
+    const roleId = this.getRoleId(req);
+    let roleName = this.getRoleName(req);
+
+    if (!roleName && roleId) {
+      const role = await userRepository.findRoleById(roleId);
+      roleName = role?.role_name || undefined;
+    }
+
+    return {
+      userId,
+      roleId,
+      roleName,
+    };
   }
 
   private getActionRemarks(req: Request) {
@@ -93,9 +112,10 @@ export class QmqaController {
         scope: req.query.scope,
         assignedToMe: req.query.assignedToMe,
       });
+      const actor = await this.getActor(req);
       const records = await qmqaService.getAllRecords(
         { status, scope },
-        { userId: this.getUserId(req), roleName: this.getRoleName(req) },
+        { userId: actor.userId, roleName: actor.roleName },
         this.getVariant(req),
       );
       res.json({ data: records });
@@ -107,9 +127,10 @@ export class QmqaController {
   getRecordById = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+      const actor = await this.getActor(req);
       const record = await qmqaService.getRecordById(id, {
-        userId: this.getUserId(req),
-        roleName: this.getRoleName(req),
+        userId: actor.userId,
+        roleName: actor.roleName,
       }, this.getVariant(req));
       res.json({ data: record });
     } catch (error) {
@@ -131,12 +152,13 @@ export class QmqaController {
   updateRecord = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = QmqaRecordUpdateSchema.parse({ params: req.params, body: req.body });
+      const actor = await this.getActor(req);
       const result = await qmqaService.updateRecord(
         parsed.params.id,
         parsed.body,
         {
-          userId: this.getUserId(req),
-          roleName: this.getRoleName(req),
+          userId: actor.userId,
+          roleName: actor.roleName,
         },
       );
       res.json(result);
@@ -148,9 +170,10 @@ export class QmqaController {
   deleteRecord = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
+      const actor = await this.getActor(req);
       const result = await qmqaService.deleteRecord(id, {
-        userId: this.getUserId(req),
-        roleName: this.getRoleName(req),
+        userId: actor.userId,
+        roleName: actor.roleName,
       });
       res.json(result);
     } catch (error) {
@@ -505,15 +528,23 @@ export class QmqaController {
 
   downloadAttachment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { moduleType, attachmentId } = QmqaAttachmentParamSchema.parse({ params: req.params }).params;
+      const hasLegacyModuleType = typeof req.params.moduleType === 'string' && req.params.moduleType.trim().length > 0;
+      const legacyParams = hasLegacyModuleType
+        ? QmqaAttachmentParamSchema.parse({ params: req.params }).params
+        : null;
+      const canonicalParams = hasLegacyModuleType
+        ? null
+        : QmqaCanonicalAttachmentParamSchema.parse({ params: req.params }).params;
+      const attachmentId = legacyParams?.attachmentId || canonicalParams?.attachmentId;
+      const actor = await this.getActor(req);
       const { filePath, fileName, mimeType } = await qmqaService.downloadAttachment(
-        moduleType,
-        attachmentId,
+        attachmentId as string,
         {
-          userId: this.getUserId(req),
-          roleName: this.getRoleName(req),
+          userId: actor.userId,
+          roleName: actor.roleName,
         },
         this.getVariant(req),
+        legacyParams?.moduleType,
       );
 
       res.setHeader('Content-Type', mimeType);

@@ -33,6 +33,18 @@ export class AuthRepository extends BaseRepository<'USERS'> {
       .executeTakeFirst();
   }
 
+  async updatePassword(userId: string, passwordHash: string) {
+    await db.updateTable('USERS')
+      .set({
+        password: passwordHash,
+        change_pw: 0,
+        last_pasword_change: new Date(),
+        last_update: new Date(),
+      })
+      .where('user_id', '=', userId)
+      .execute();
+  }
+
   async findRoleBasedAccessibleForms(userId: string): Promise<string[]> {
     const user = await this.findUserById(userId);
 

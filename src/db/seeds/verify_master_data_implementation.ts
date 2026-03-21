@@ -7,8 +7,6 @@
  * Run with: npx ts-node src/db/seeds/verify_master_data_implementation.ts
  */
 
-import axios from 'axios';
-
 const BASE_URL = process.env.API_URL || 'http://localhost:3000/api';
 const TOKEN = process.env.TEST_TOKEN || '';
 
@@ -80,10 +78,48 @@ const masterDataEndpoints = [
 
 class MasterDataVerifier {
   private results: TestResult[] = [];
-  private headers: any;
+  private headers: Record<string, string>;
 
   constructor(token: string) {
     this.headers = token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  private async request(url: string, init?: RequestInit) {
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        ...this.headers,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+
+    const rawBody = await response.text();
+    let data: unknown = null;
+
+    if (rawBody) {
+      try {
+        data = JSON.parse(rawBody);
+      } catch {
+        data = rawBody;
+      }
+    }
+
+    if (!response.ok) {
+      const error = new Error(`Request failed with status ${response.status}`) as Error & {
+        response?: { status: number; data: unknown };
+      };
+      error.response = {
+        status: response.status,
+        data,
+      };
+      throw error;
+    }
+
+    return {
+      status: response.status,
+      data,
+    };
   }
 
   async verifyEndpoint(endpoint: { name: string; path: string; testData: any }): Promise<TestResult> {
@@ -103,7 +139,7 @@ class MasterDataVerifier {
     try {
       // Test GET (List All)
       console.log(`\n[${endpoint.name}] Testing GET ${url}`);
-      const getResponse = await axios.get(url, { headers: this.headers });
+      const getResponse = await this.request(url);
       if (getResponse.status === 200 && Array.isArray(getResponse.data)) {
         result.get = true;
         console.log(`  ✓ GET successful (${getResponse.data.length} records)`);
@@ -116,10 +152,14 @@ class MasterDataVerifier {
     try {
       // Test POST (Create)
       console.log(`[${endpoint.name}] Testing POST ${url}`);
-      const postResponse = await axios.post(url, endpoint.testData, { headers: this.headers });
-      if (postResponse.status === 201 && postResponse.data.id) {
+      const postResponse = await this.request(url, {
+        method: 'POST',
+        body: JSON.stringify(endpoint.testData),
+      });
+      const postData = (postResponse.data || {}) as { id?: string };
+      if (postResponse.status === 201 && postData.id) {
         result.post = true;
-        createdId = postResponse.data.id;
+        createdId = postData.id;
         console.log(`  ✓ POST successful (ID: ${createdId})`);
       }
     } catch (error: any) {
@@ -132,7 +172,10 @@ class MasterDataVerifier {
         // Test PUT (Update)
         console.log(`[${endpoint.name}] Testing PUT ${url}/${createdId}`);
         const updateData = { ...endpoint.testData, name: endpoint.testData.name ? endpoint.testData.name + ' Updated' : undefined };
-        const putResponse = await axios.put(`${url}/${createdId}`, updateData, { headers: this.headers });
+        const putResponse = await this.request(`${url}/${createdId}`, {
+          method: 'PUT',
+          body: JSON.stringify(updateData),
+        });
         if (putResponse.status === 200) {
           result.put = true;
           console.log(`  ✓ PUT successful`);
@@ -145,7 +188,9 @@ class MasterDataVerifier {
       try {
         // Test DELETE
         console.log(`[${endpoint.name}] Testing DELETE ${url}/${createdId}`);
-        const deleteResponse = await axios.delete(`${url}/${createdId}`, { headers: this.headers });
+        const deleteResponse = await this.request(`${url}/${createdId}`, {
+          method: 'DELETE',
+        });
         if (deleteResponse.status === 200) {
           result.delete = true;
           console.log(`  ✓ DELETE successful`);

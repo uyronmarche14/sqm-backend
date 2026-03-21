@@ -10,12 +10,12 @@ import { userRepository } from '../../modules/users/user.repository.js';
 /**
  * Check if a role name indicates admin privileges
  * @param roleName - The role name to check (case-insensitive)
- * @returns true if role is ADMIN or TIP_ADMIN
+ * @returns true if the normalized role contains ADMIN
  */
 export function isAdminRole(roleName?: string | null): boolean {
   if (!roleName) return false;
   const upperRole = roleName.toUpperCase().trim();
-  return upperRole === 'ADMIN' || upperRole === 'TIP_ADMIN';
+  return upperRole.includes('ADMIN');
 }
 
 /**

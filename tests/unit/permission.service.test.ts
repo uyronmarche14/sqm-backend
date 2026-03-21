@@ -51,6 +51,89 @@ describe('PermissionService SQMP assigned-form fallback', () => {
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
   });
 
+  it('treats non-exact admin role names as admin overrides', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-admin',
+      role_name: 'Regional Tip Admin',
+    });
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const result = await service.checkPermission('admin-1', 'MNR-12-03', 'approve');
+
+    expect(result).toBe(true);
+  });
+
+  it('allows submit when ROLE_ACCESS grants edit but not add', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-issuer',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery([
+      { form_id: 'form-uuid-qmqa-response', form_name: 'QMQA-05-08' },
+    ]);
+    const permissionQuery = createQuery([
+      {
+        form_id: 'form-uuid-qmqa-response',
+        active_flag: 1,
+        can_add: 0,
+        can_edit: 1,
+      },
+    ]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const result = await service.checkPermission('issuer-1', 'QMQA-05-08', 'submit');
+
+    expect(result).toBe(true);
+  });
+
+  it('aggregates matching ROLE_ACCESS records instead of taking only the first row', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-checker',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery([
+      { form_id: 'legacy-qmqa-approval', form_name: 'QMQA-05-03' },
+    ]);
+    const permissionQuery = createQuery([
+      {
+        form_id: 'some-other-compatible-form',
+        active_flag: 1,
+        can_check: 0,
+        can_approve: 0,
+      },
+      {
+        form_id: 'legacy-qmqa-approval',
+        active_flag: 1,
+        can_check: 1,
+        can_approve: 0,
+      },
+    ]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+    const result = await service.checkPermission('checker-1', 'QMQA-05-03', 'check');
+
+    expect(result).toBe(true);
+  });
+
   it('allows SQMP create when ROLE_ACCESS stores the form UUID instead of the legacy form code', async () => {
     const userQuery = createQuery({
       role_id: 'role-1',

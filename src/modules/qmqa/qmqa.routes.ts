@@ -54,7 +54,17 @@ export function createQmqaRoutes(variant: QmqaRouteVariant = 'QMQA') {
 
   // Document Downloader
   router.get(
+    '/download/:attachmentId',
+    requireModuleAccess(variant, 'view'),
+    qmqaController.downloadAttachment,
+  );
+  router.get(
     '/download/:moduleType/:attachmentId',
+    requireModuleAccess(variant, 'view'),
+    qmqaController.downloadAttachment,
+  );
+  router.get(
+    '/attachments/:attachmentId',
     requireModuleAccess(variant, 'view'),
     qmqaController.downloadAttachment,
   );

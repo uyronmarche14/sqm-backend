@@ -74,6 +74,20 @@ export class AuthController {
             return next(error);
         }
     }
+    async changePassword(req, res, next) {
+        try {
+            if (!req.user?.userId) {
+                res.status(401).json({ success: false, message: 'Unauthorized' });
+                return;
+            }
+            const result = await authService.changePassword(req.user.userId, req.body);
+            res.status(200).json(result);
+            return;
+        }
+        catch (error) {
+            return next(error);
+        }
+    }
     /**
      * Handles logging out by clearing the HttpOnly cookie
      */

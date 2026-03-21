@@ -90,6 +90,41 @@ const PERMISSION_ACTION_SET: ReadonlySet<PermissionAction> = new Set([
 ]);
 
 export class PermissionService {
+  private hasPermissionValue(value: unknown): boolean {
+    return value === true || value === 1;
+  }
+
+  private recordGrantsAction(permission: Record<string, unknown>, action: PermissionAction): boolean {
+    switch (action) {
+      case 'view':
+      case 'viewlist':
+        return this.hasPermissionValue(permission.can_view) || this.hasPermissionValue(permission.can_viewlist);
+      case 'add':
+        return this.hasPermissionValue(permission.can_add);
+      case 'edit':
+      case 'issue':
+        return this.hasPermissionValue(permission.can_edit);
+      case 'submit':
+        return this.hasPermissionValue(permission.can_edit) || this.hasPermissionValue(permission.can_add);
+      case 'delete':
+        return this.hasPermissionValue(permission.can_delete);
+      case 'approve':
+      case 'reject':
+      case 'release':
+        return this.hasPermissionValue(permission.can_approve);
+      case 'check':
+        return this.hasPermissionValue(permission.can_check) || this.hasPermissionValue(permission.can_approve);
+      case 'print':
+        return this.hasPermissionValue(permission.can_print);
+      case 'export':
+        return this.hasPermissionValue(permission.can_export);
+      case 'attach':
+        return this.hasPermissionValue(permission.can_attach);
+      default:
+        return false;
+    }
+  }
+
   private getAssignedFormFetcher(formId: string): AssignedFormFetcher | null {
     const legacyForm = getLegacyFormMapping(formId);
     return getAssignedWorkflowFormFetcher(legacyForm?.module);
@@ -132,7 +167,7 @@ export class PermissionService {
 
   private getActionsFromPermissionRecord(permission: Record<string, unknown>): PermissionAction[] {
     const actions = new Set<PermissionAction>();
-    const has = (value: unknown) => value === true || value === 1;
+    const has = (value: unknown) => this.hasPermissionValue(value);
 
     if (has(permission.can_view) || has(permission.can_viewlist)) {
       actions.add('view');
@@ -201,7 +236,8 @@ export class PermissionService {
     }
 
     const query = db.selectFrom('ROLE_ACCESS')
-      .where('role_id', '=', user.role_id);
+      .where('role_id', '=', user.role_id)
+      .where('active_flag', '=', 1);
 
     return await (
       formTargets.length === 1
@@ -289,27 +325,6 @@ export class PermissionService {
     return grantedActions.includes(action) || (action === 'viewlist' && grantedActions.includes('view'));
   }
 
-  private getPermissionColumn(action: PermissionAction) {
-    const columnMap: Record<PermissionAction, string> = {
-      view: 'can_view',
-      add: 'can_add',
-      edit: 'can_edit',
-      delete: 'can_delete',
-      approve: 'can_approve',
-      check: 'can_check',
-      print: 'can_print',
-      export: 'can_export',
-      viewlist: 'can_viewlist',
-      attach: 'can_attach',
-      submit: 'can_add',
-      reject: 'can_approve',
-      issue: 'can_edit',
-      release: 'can_approve',
-    };
-
-    return columnMap[action];
-  }
-
   private async hasRolePermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
     const user = await this.resolveUserRole(userId);
 
@@ -320,33 +335,14 @@ export class PermissionService {
       return true;
     }
 
-    const formTargets = await this.resolveFormTargets(formId);
-    const permissionQuery = db.selectFrom('ROLE_ACCESS')
-      .where('role_id', '=', user.role_id);
-
-    const permission = await (
-      formTargets.length === 1
-        ? permissionQuery.where('form_id', '=', formTargets[0])
-        : permissionQuery.where('form_id', 'in', formTargets)
-    )
-      .selectAll()
-      .executeTakeFirst();
-
-    if (!permission) {
+    const permissions = await this.getRolePermissionRecords(userId, formId);
+    if (permissions.length === 0) {
       return false;
     }
 
-    const column = this.getPermissionColumn(action) as keyof typeof permission;
-    let value = (permission as Record<string, unknown>)[column];
-
-    if (!value && ['check', 'reject', 'issue', 'submit', 'approve', 'release'].includes(action)) {
-      const canApprove = (permission as Record<string, unknown>).can_approve;
-      if (canApprove === true || canApprove === 1) {
-        value = true;
-      }
-    }
-
-    return value === true || value === 1;
+    return permissions.some((permission) =>
+      this.recordGrantsAction(permission as Record<string, unknown>, action),
+    );
   }
 
   /**
@@ -425,21 +421,26 @@ export class PermissionService {
       return [];
     }
 
-    const column = this.getPermissionColumn(action);
     const roleAccessUsers = await db
       .selectFrom('USERS as u')
       .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
       .innerJoin('ROLE_ACCESS as ra', 'ra.role_id', 'r.role_id')
-      .select(['u.user_id as userId', 'u.full_name as fullName'])
+      .select([
+        'u.user_id as userId',
+        'u.full_name as fullName',
+        'ra.can_view as can_view',
+        'ra.can_viewlist as can_viewlist',
+        'ra.can_add as can_add',
+        'ra.can_edit as can_edit',
+        'ra.can_delete as can_delete',
+        'ra.can_approve as can_approve',
+        'ra.can_check as can_check',
+        'ra.can_print as can_print',
+        'ra.can_export as can_export',
+        'ra.can_attach as can_attach',
+      ])
       .where('ra.form_id', 'in', formTargets)
-      .where((eb) =>
-        eb.or([
-          eb(column as any, '=', 1),
-          ...(['check', 'reject', 'approve', 'release', 'submit'].includes(action)
-            ? [eb('ra.can_approve', '=', 1)]
-            : []),
-        ]),
-      )
+      .where('ra.active_flag', '=', 1)
       .execute();
 
     const adminUsers = await db
@@ -449,7 +450,12 @@ export class PermissionService {
       .where('r.role_name', 'like', '%ADMIN%')
       .execute();
 
-    const users = [...roleAccessUsers, ...adminUsers];
+    const users = [
+      ...roleAccessUsers.filter((user) =>
+        this.recordGrantsAction(user as unknown as Record<string, unknown>, action),
+      ),
+      ...adminUsers,
+    ];
 
     const seen = new Set<string>();
     return users.filter((user) => {
