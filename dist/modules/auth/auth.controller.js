@@ -20,6 +20,7 @@ export class AuthController {
                 isSupplier: result.isSupplier,
                 userData: result.userData,
                 accessToken: result.tokens.accessToken,
+                refreshToken: result.tokens.refreshToken,
                 mustChangePassword: result.mustChangePassword,
                 userMenu: result.userMenu,
                 accessibleForms: result.accessibleForms,
@@ -36,7 +37,7 @@ export class AuthController {
      */
     async refresh(req, res, next) {
         try {
-            const token = req.cookies?.refreshToken || req.body?.refreshToken;
+            const token = req.body?.refreshToken || req.cookies?.refreshToken;
             if (!token) {
                 // Here we could throw UnauthorizedError, but inline is fine to avoid importing AppError
                 res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
@@ -51,7 +52,8 @@ export class AuthController {
             });
             res.status(200).json({
                 success: true,
-                accessToken: result.accessToken
+                accessToken: result.accessToken,
+                refreshToken: result.refreshToken,
             });
             return;
         }

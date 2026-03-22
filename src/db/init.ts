@@ -367,7 +367,7 @@ async function applyJsSeeds() {
       await import(`${seedFile}?t=${Date.now()}`);
       console.log('JS seed data applied successfully.');
     }
-  } catch (error) {
+  } catch {
     console.log('No JS seed_data.js found or failed to apply.');
   }
 }

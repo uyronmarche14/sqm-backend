@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Universal File Upload Middleware Factory (Enhanced)
  * ==================================================
@@ -22,6 +21,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import type { NextFunction, Request, Response } from 'express';
 
 // ---------------------------------------------------------------------------
 // Path resolution (ESM compat)
@@ -92,6 +92,28 @@ const ATTACHMENT_TYPE_FOLDERS: Record<string, string> = {
   'ogi': 'attachments',
 };
 
+interface UploadedFile {
+  originalname: string;
+  mimetype: string;
+  filename: string;
+  fieldname: string;
+  size: number;
+}
+
+interface UploadRequest extends Request {
+  files?: UploadedFile[];
+  file?: UploadedFile;
+}
+
+interface UploadOptions {
+  attachmentType?: string;
+  maxFileSize?: number;
+  maxFiles?: number;
+}
+
+type MulterStorageCallback = (error: Error | null, value?: string) => void;
+type MulterFileFilterCallback = (error: Error | null, acceptFile?: boolean) => void;
+
 // ---------------------------------------------------------------------------
 // Storage Factory
 // ---------------------------------------------------------------------------
@@ -101,7 +123,7 @@ const ATTACHMENT_TYPE_FOLDERS: Record<string, string> = {
  * @param {string} moduleName - e.g. 'mnr', 'sqpr', '5m1e'
  * @param {string} [attachmentType] - Optional subfolder trigger
  */
-function createStorage(moduleName, attachmentType) {
+function createStorage(moduleName: string, attachmentType?: string) {
   let moduleDir = path.join(ROOT_UPLOAD_DIR, moduleName);
 
   // If attachmentType is provided and has a mapping, append subfolder
@@ -119,8 +141,8 @@ function createStorage(moduleName, attachmentType) {
   }
 
   return multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, moduleDir),
-    filename:    (_req, file, cb) => {
+    destination: (_req: Request, _file: UploadedFile, cb: MulterStorageCallback) => cb(null, moduleDir),
+    filename:    (_req: Request, file: UploadedFile, cb: MulterStorageCallback) => {
       const ext        = path.extname(file.originalname).toLowerCase();
       const uniqueName = `${Date.now()}-${uuidv4()}${ext}`;
       cb(null, uniqueName);
@@ -132,7 +154,7 @@ function createStorage(moduleName, attachmentType) {
 // File Filter
 // ---------------------------------------------------------------------------
 
-function fileFilter(_req, file, cb) {
+function fileFilter(_req: Request, file: UploadedFile, cb: MulterFileFilterCallback) {
   const ext  = path.extname(file.originalname).toLowerCase();
   const mime = file.mimetype;
 
@@ -160,7 +182,7 @@ function fileFilter(_req, file, cb) {
  * @param {number} [options.maxFiles]     Override max files per request.
  * @returns {multer.Multer}
  */
-export function createModuleUpload(moduleName, options = {}) {
+export function createModuleUpload(moduleName: string, options: UploadOptions = {}) {
   const {
     attachmentType,
     maxFileSize = MAX_FILE_SIZE,
@@ -181,9 +203,9 @@ export function createModuleUpload(moduleName, options = {}) {
 // Error Handler Middleware
 // ---------------------------------------------------------------------------
 
-export function handleUploadError(err, req, res, next) {
+export function handleUploadError(err: any, _req: Request, res: Response, next: NextFunction) {
   if (err instanceof multer.MulterError) {
-    const statusMap = {
+    const statusMap: Record<string, { status: number; message: string }> = {
       LIMIT_FILE_SIZE:       { status: 413, message: `File exceeds ${MAX_FILE_SIZE / (1024 * 1024)}MB limit` },
       LIMIT_FILE_COUNT:      { status: 400, message: `Too many files. Maximum ${MAX_FILES_PER_REQUEST} allowed` },
       LIMIT_UNEXPECTED_FILE: { status: 400, message: err.message || 'Unexpected file field' },
@@ -211,16 +233,16 @@ export function handleUploadError(err, req, res, next) {
 // Request Logger
 // ---------------------------------------------------------------------------
 
-export function logUploads(req, _res, next) {
+export function logUploads(req: UploadRequest, _res: Response, next: NextFunction) {
   const files = req.files || (req.file ? [req.file] : []);
   const route = `${req.method} ${req.originalUrl || req.url}`;
 
   if (files.length > 0) {
-    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    const totalSize = files.reduce((sum: number, f: UploadedFile) => sum + f.size, 0);
     console.log('────────────────────────────────────────────────');
     console.log(`📎 [Upload] ${files.length} file(s) received on ${route}`);
     console.log(`   Total size: ${(totalSize / 1024).toFixed(1)} KB`);
-    files.forEach((f, i) => {
+    files.forEach((f: UploadedFile, i: number) => {
       console.log(`   ${i + 1}. ${f.originalname} (${(f.size / 1024).toFixed(1)} KB) → ${f.filename}`);
       console.log(`      MIME: ${f.mimetype} | Field: ${f.fieldname}`);
     });
@@ -240,7 +262,7 @@ export function logUploads(req, _res, next) {
  * Returns the absolute path for a file in a module's upload directory.
  * Includes subfolder if attachmentType is provided.
  */
-export function getUploadPath(moduleName, filename, attachmentType) {
+export function getUploadPath(moduleName: string, filename: string, attachmentType?: string) {
   if (attachmentType && ATTACHMENT_TYPE_FOLDERS[attachmentType]) {
     return path.join(ROOT_UPLOAD_DIR, moduleName, ATTACHMENT_TYPE_FOLDERS[attachmentType], filename);
   }
@@ -250,7 +272,7 @@ export function getUploadPath(moduleName, filename, attachmentType) {
 /**
  * Safely deletes an uploaded file. Checks both hierarchical and flat paths.
  */
-export function deleteUploadedFile(moduleName, filename, attachmentType) {
+export function deleteUploadedFile(moduleName: string, filename: string, attachmentType?: string) {
   // Try new structure first if attachment type specified
   if (attachmentType) {
     const newPath = getUploadPath(moduleName, filename, attachmentType);

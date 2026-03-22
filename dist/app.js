@@ -17,19 +17,43 @@ import masterDataRoutes from './modules/masterData/master-data.routes.js';
 // Rate Limiting
 import { globalLimiter } from './shared/middleware/rate-limiter.js';
 const app = express();
+function parseAllowedOrigins() {
+    const configuredOrigins = (process.env.CORS_ORIGINS || '')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+    const fallbackOrigins = [
+        process.env.FRONTEND_BASE_URL,
+        'http://localhost:5173',
+    ].filter((origin) => Boolean(origin?.trim()));
+    return Array.from(new Set([
+        ...configuredOrigins,
+        ...fallbackOrigins,
+    ]));
+}
+const allowedOrigins = parseAllowedOrigins();
+const corsOptions = {
+    origin(origin, callback) {
+        if (!origin) {
+            callback(null, true);
+            return;
+        }
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+};
 // ==========================================
 // 1. Global Middleware (Security & Parsing)
 // ==========================================
 app.use(helmet());
 app.use(globalLimiter); // Apply Rate Limiter globally
-app.use(cors({
-    origin: true,
-    // origin: [
-    //   process.env.CORS_ORIGIN || 'http://localhost:5173',
-    //   'http://localhost:3000'
-    // ],`
-    credentials: true, // Allow cookies
-}));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
