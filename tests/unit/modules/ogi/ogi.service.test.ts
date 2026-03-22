@@ -22,6 +22,11 @@ const attachmentServiceMock = vi.hoisted(() => ({
 
 const permissionServiceMock = vi.hoisted(() => ({
   checkRolePermission: vi.fn(),
+  findUsersWithRolePermission: vi.fn(),
+}));
+
+const ogiNotificationMock = vi.hoisted(() => ({
+  sendSubmittedNotification: vi.fn(),
 }));
 
 vi.mock('../../../../src/modules/ogi/ogi.repository.js', () => ({
@@ -40,6 +45,10 @@ vi.mock('../../../../src/shared/services/attachment.service.js', () => ({
   attachmentService: attachmentServiceMock,
 }));
 
+vi.mock('../../../../src/shared/notifications/ogi-notification.service.js', () => ({
+  ogiNotificationService: ogiNotificationMock,
+}));
+
 import { OgiService } from '../../../../src/modules/ogi/ogi.service.js';
 
 describe('OgiService legacy workflow alignment', () => {
@@ -49,11 +58,22 @@ describe('OgiService legacy workflow alignment', () => {
     controlNumberServiceMock.finalizeOgi.mockResolvedValue('OGI-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('final');
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    permissionServiceMock.findUsersWithRolePermission.mockResolvedValue([]);
+    ogiNotificationMock.sendSubmittedNotification.mockResolvedValue({
+      delivered: true,
+      transport: 'file',
+      referenceId: '/tmp/emails/ogi.json',
+      subject: '<OGI> Uploaded - Toshiba Supplier',
+      recipients: ['ogi@example.com'],
+      localUrl: 'http://localhost:5000/dashboard/ogi-up/view/ogi-1',
+      internetUrl: 'https://sqm.example.com/dashboard/ogi-up/view/ogi-1',
+    });
     attachmentServiceMock.downloadAttachment.mockResolvedValue({
       filePath: '/tmp/ogi.txt',
       fileName: 'ogi.txt',
       mimeType: 'text/plain',
     });
+    ogiRepositoryMock.findUserContactById = vi.fn().mockResolvedValue(null);
   });
 
   it('finalizes the control number when create is requested directly as submitted', async () => {
@@ -193,9 +213,28 @@ describe('OgiService legacy workflow alignment', () => {
         control_no: 'DRF-2026-3-1-SITE',
         site_id: 'site-1',
         site_code: 'SITE',
+        site_name: 'Main Site',
+        supplier_name: 'Toshiba Supplier',
+        submit_date: '2026-03-22T12:00:00.000Z',
         request_status: 'DR',
       },
     });
+    ogiRepositoryMock.findUserContactById = vi.fn()
+      .mockResolvedValueOnce({
+        userId: 'recipient-1',
+        email: 'ogi-recipient@example.com',
+        name: 'OGI Recipient',
+        activeFlag: 1,
+      })
+      .mockResolvedValueOnce({
+        userId: 'user-1',
+        email: 'submitter@example.com',
+        name: 'Submitter User',
+        activeFlag: 1,
+      });
+    permissionServiceMock.findUsersWithRolePermission.mockResolvedValue([
+      { userId: 'recipient-1', fullName: 'OGI Recipient' },
+    ]);
     ogiRepositoryMock.executeTransaction.mockImplementation(async (callback: (trx: any) => unknown) => {
       const trx = {
         updateTable: vi.fn(() => ({
@@ -221,6 +260,14 @@ describe('OgiService legacy workflow alignment', () => {
       request_status: 'SB',
     }));
     expect(result.message).toBe('OGI Record submitted successfully');
+    expect(ogiNotificationMock.sendSubmittedNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'ogi.submitted',
+        controlNo: 'OGI-2026-3-1-SITE',
+        submittedByName: 'Submitter User',
+        to: [{ email: 'ogi-recipient@example.com', name: 'OGI Recipient' }],
+      }),
+    );
   });
 
   it('blocks submit when the stored record has no resolvable site data', async () => {
@@ -241,6 +288,47 @@ describe('OgiService legacy workflow alignment', () => {
     });
   });
 
+  it('submits successfully and warns when no submitted-page recipients are configured', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'DRF-2026-3-1-SITE',
+        site_id: 'site-1',
+        site_code: 'SITE',
+        supplier_name: 'Toshiba Supplier',
+        request_status: 'DR',
+      },
+    });
+    permissionServiceMock.findUsersWithRolePermission.mockResolvedValue([]);
+    ogiRepositoryMock.executeTransaction.mockImplementation(async (callback: (trx: any) => unknown) => {
+      const trx = {
+        updateTable: vi.fn(() => ({
+          set: () => ({
+            where: () => ({
+              execute: vi.fn().mockResolvedValue(undefined),
+            }),
+          }),
+        })),
+      };
+
+      return callback(trx);
+    });
+
+    const service = new OgiService();
+    const result = await service.submitRecord('ogi-1', 'user-1');
+
+    expect(result.message).toBe('OGI Record submitted successfully');
+    expect(ogiNotificationMock.sendSubmittedNotification).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[ogi] workflow email notification skipped',
+      expect.any(String),
+    );
+
+    warnSpy.mockRestore();
+  });
+
   it('rejects update attempts for unrelated actors', async () => {
     ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
       record: {
@@ -257,6 +345,27 @@ describe('OgiService legacy workflow alignment', () => {
 
     await expect(
       service.updateRecord('ogi-1', { remarks: 'blocked' } as any, { userId: 'viewer-1', roleName: 'USER' }, []),
+    ).rejects.toMatchObject({
+      message: 'You do not have permission to update this OGI record.',
+    });
+  });
+
+  it('rejects update attempts for the current owner once the record is submitted', async () => {
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'OGI-001',
+        request_status: 'SB',
+        incharge_id: 'owner-1',
+      },
+      lots: [],
+      attachments: [],
+    });
+
+    const service = new OgiService();
+
+    await expect(
+      service.updateRecord('ogi-1', { remarks: 'blocked' } as any, { userId: 'owner-1', roleName: 'USER' }, []),
     ).rejects.toMatchObject({
       message: 'You do not have permission to update this OGI record.',
     });

@@ -45,11 +45,27 @@ describe('SqprWorkflowService', () => {
   const repository = {
     findByIdDetailed: vi.fn(),
     executeTransaction: vi.fn(),
+    findNotificationContextById: vi.fn(),
+    findUserContactById: vi.fn(),
+  };
+  const notifications = {
+    sendWorkflowNotification: vi.fn(),
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    repository.findNotificationContextById.mockResolvedValue(null);
+    repository.findUserContactById.mockResolvedValue(null);
+    notifications.sendWorkflowNotification.mockResolvedValue({
+      delivered: true,
+      transport: 'file',
+      referenceId: '/tmp/emails/sqpr.json',
+      subject: '<SQPR> Awaiting Approval',
+      recipients: ['checker@example.com'],
+      localUrl: 'http://localhost:5000/dashboard/sqpr/view/sqpr-1',
+      internetUrl: 'https://sqm.example.com/dashboard/sqpr/view/sqpr-1',
+    });
   });
 
   it('submits draft records into the checker stage', async () => {
@@ -177,5 +193,125 @@ describe('SqprWorkflowService', () => {
       workflowStage: 'APPROVER',
       workflowStageCode: '4',
     }));
+  });
+
+  it('sends SQPR submit notifications to checker with CC list', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed
+      .mockResolvedValueOnce({ record: createRecord({ control_no: 'DRF-2026-3-T', supplier_name: 'Toshiba Supplier' }) })
+      .mockResolvedValueOnce({ record: createRecord({ control_no: 'SQPR-2026-3-T', request_status: '3', submit_date: new Date('2026-03-14') }) });
+    repository.findNotificationContextById.mockResolvedValue({
+      recordId: 'sqpr-1',
+      controlNo: 'SQPR-2026-3-T',
+      supplierName: 'Toshiba Supplier',
+      reportType: 1,
+      month: 4,
+      fiscalYear: 2026,
+      incharge: { userId: 'issuer-1', email: 'issuer@example.com', name: 'Issuer One' },
+      checker: { userId: 'checker-1', email: 'checker@example.com', name: 'Checker One' },
+      approver: { userId: 'approver-1', email: 'approver@example.com', name: 'Approver One' },
+      cc: [{ userId: 'cc-1', email: 'cc@example.com', name: 'CC User' }],
+    });
+    repository.findUserContactById.mockResolvedValue({
+      userId: 'issuer-1',
+      email: 'issuer@example.com',
+      name: 'Issuer One',
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+
+    const service = new SqprWorkflowService(repository as any, notifications as any);
+    await service.submit('sqpr-1', 'issuer-1', undefined, 'submit');
+
+    expect(notifications.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'sqpr.submitted',
+        subject: '<SQPR> Awaiting Approval',
+        message: 'The report has been submitted by Issuer One',
+        to: [{ email: 'checker@example.com', name: 'Checker One' }],
+        cc: [{ email: 'cc@example.com', name: 'CC User' }],
+        periodLabel: 'April 2026',
+      }),
+    );
+  });
+
+  it('sends SQPR issue notifications to cc recipients and internal actors', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed
+      .mockResolvedValueOnce({ record: createRecord({ request_status: '10', supplier_name: 'Toshiba Supplier' }) })
+      .mockResolvedValueOnce({ record: createRecord({ request_status: '1' }) });
+    repository.findNotificationContextById.mockResolvedValue({
+      recordId: 'sqpr-1',
+      controlNo: 'SQPR-2026-3-T',
+      supplierName: 'Toshiba Supplier',
+      reportType: 2,
+      month: 2,
+      fiscalYear: 2026,
+      incharge: { userId: 'issuer-1', email: 'issuer@example.com', name: 'Issuer One' },
+      checker: { userId: 'checker-1', email: 'checker@example.com', name: 'Checker One' },
+      approver: { userId: 'approver-1', email: 'approver@example.com', name: 'Approver One' },
+      cc: [{ userId: 'cc-1', email: 'cc@example.com', name: 'CC User' }],
+    });
+    repository.findUserContactById.mockResolvedValue({
+      userId: 'issuer-1',
+      email: 'issuer@example.com',
+      name: 'Issuer One',
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+
+    const service = new SqprWorkflowService(repository as any, notifications as any);
+    await service.issue('sqpr-1', 'issuer-1');
+
+    expect(notifications.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'sqpr.issued',
+        subject: '<SQPR> Issued',
+        message: 'The report has been issued by Issuer One',
+        to: [{ email: 'cc@example.com', name: 'CC User' }],
+        cc: [
+          { email: 'approver@example.com', name: 'Approver One' },
+          { email: 'checker@example.com', name: 'Checker One' },
+          { email: 'issuer@example.com', name: 'Issuer One' },
+        ],
+        periodLabel: 'Quarter 2 2026',
+      }),
+    );
+  });
+
+  it('does not fail SQPR workflow when the email send throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const tx = createTransactionMock();
+    repository.findByIdDetailed
+      .mockResolvedValueOnce({ record: createRecord({ control_no: 'DRF-2026-3-T', supplier_name: 'Toshiba Supplier' }) })
+      .mockResolvedValueOnce({ record: createRecord({ control_no: 'SQPR-2026-3-T', request_status: '3', submit_date: new Date('2026-03-14') }) });
+    repository.findNotificationContextById.mockResolvedValue({
+      recordId: 'sqpr-1',
+      controlNo: 'SQPR-2026-3-T',
+      supplierName: 'Toshiba Supplier',
+      reportType: 1,
+      month: 4,
+      fiscalYear: 2026,
+      incharge: { userId: 'issuer-1', email: 'issuer@example.com', name: 'Issuer One' },
+      checker: { userId: 'checker-1', email: 'checker@example.com', name: 'Checker One' },
+      approver: { userId: 'approver-1', email: 'approver@example.com', name: 'Approver One' },
+      cc: [],
+    });
+    repository.findUserContactById.mockResolvedValue({
+      userId: 'issuer-1',
+      email: 'issuer@example.com',
+      name: 'Issuer One',
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+    notifications.sendWorkflowNotification.mockRejectedValueOnce(new Error('smtp unavailable'));
+
+    const service = new SqprWorkflowService(repository as any, notifications as any);
+    const result = await service.submit('sqpr-1', 'issuer-1', undefined, 'submit');
+
+    expect(result.message).toBe('Record submitted successfully');
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[sqpr] workflow email notification failed',
+      expect.any(String),
+    );
+
+    errorSpy.mockRestore();
   });
 });

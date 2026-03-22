@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService } from './auth.service.js';
-import { ChangePasswordInput, LoginInput } from './auth.schema.js';
+import { ChangePasswordInput, ForgotPasswordInput, LoginInput, ResetPasswordInput } from './auth.schema.js';
 
 export class AuthController {
   
@@ -93,6 +93,26 @@ export class AuthController {
       }
 
       const result = await authService.changePassword(req.user.userId, req.body);
+      res.status(200).json(result);
+      return;
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async forgotPassword(req: Request<{}, {}, ForgotPasswordInput>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await authService.forgotPassword(req.body);
+      res.status(200).json(result);
+      return;
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async resetPassword(req: Request<{}, {}, ResetPasswordInput>, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await authService.resetPassword(req.body);
       res.status(200).json(result);
       return;
     } catch (error) {

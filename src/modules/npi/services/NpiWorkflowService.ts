@@ -18,11 +18,20 @@ import {
 } from '../../../shared/utils/permission-audit.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
+import {
+  npiNotificationService,
+  type NpiNotificationSender,
+} from '../../../shared/notifications/npi-notification.service.js';
+import type { EmailAddress } from '../../../shared/notifications/email.types.js';
+import type { NpiNotificationContext, NpiNotificationRecipient } from '../npi.repository.js';
 
 type DetailedRecord = Record<string, any>;
 
 export class NpiWorkflowService {
-  constructor(private repository: NpiRepository) {}
+  constructor(
+    private repository: NpiRepository,
+    private readonly notifications: NpiNotificationSender = npiNotificationService,
+  ) {}
 
   private getRoleFallbackFormCodes(record: DetailedRecord): string[] {
     const stage = normalizeNpiWorkflowStage(record.request_status);
@@ -82,6 +91,109 @@ export class NpiWorkflowService {
         ? controlNumberService.getControlNoState(resolvedControlNo)
         : undefined,
     };
+  }
+
+  private toEmailAddress(recipient: NpiNotificationRecipient | null): EmailAddress[] {
+    if (!recipient?.email) return [];
+
+    return [
+      {
+        email: recipient.email,
+        name: recipient.name || undefined,
+      },
+    ];
+  }
+
+  private toCcAddresses(context: NpiNotificationContext): EmailAddress[] {
+    return context.cc
+      .filter((recipient) => Boolean(recipient.email))
+      .map((recipient) => ({
+        email: String(recipient.email),
+        name: recipient.name || undefined,
+      }));
+  }
+
+  private async resolveActorName(
+    userId: string,
+    fallbackRecipient?: NpiNotificationRecipient | null,
+  ): Promise<string> {
+    if (fallbackRecipient?.userId === userId && fallbackRecipient.name) {
+      return fallbackRecipient.name;
+    }
+
+    if (typeof (this.repository as any).findUserContactById === 'function') {
+      const actor = await this.repository.findUserContactById(userId);
+      if (actor?.name) {
+        return actor.name;
+      }
+    }
+
+    return userId;
+  }
+
+  private async sendWorkflowNotification(input: {
+    recordId: string;
+    actorUserId: string;
+    eventKey: 'npi.submitted' | 'npi.checked' | 'npi.approved' | 'npi.rejected';
+    subject: string;
+    message: string;
+    primaryRecipient: 'checker' | 'approver' | 'inspector';
+    actorRecipient?: NpiNotificationRecipient | null;
+  }): Promise<void> {
+    if (typeof (this.repository as any).findNotificationContextById !== 'function') {
+      return;
+    }
+
+    const context = await this.repository.findNotificationContextById(input.recordId);
+    if (!context) {
+      return;
+    }
+
+    const actorName = await this.resolveActorName(input.actorUserId, input.actorRecipient);
+    const resolvedMessage = input.message.replace('{actorName}', actorName);
+    const primaryRecipient =
+      input.primaryRecipient === 'checker'
+        ? context.checker
+        : input.primaryRecipient === 'approver'
+          ? context.approver
+          : context.inspector;
+
+    try {
+      const result = await this.notifications.sendWorkflowNotification({
+        eventKey: input.eventKey,
+        recordId: context.recordId,
+        controlNo: context.controlNo,
+        supplierName: context.supplierName,
+        subject: input.subject.replace('{supplierName}', context.supplierName),
+        message: resolvedMessage,
+        to: this.toEmailAddress(primaryRecipient),
+        cc: this.toCcAddresses(context),
+      });
+
+      console.log(
+        '[npi] workflow email notification processed',
+        JSON.stringify({
+          recordId: context.recordId,
+          eventKey: input.eventKey,
+          transport: result.transport,
+          delivered: result.delivered,
+          skipped: result.skipped ?? false,
+          subject: result.subject,
+          recipients: result.recipients,
+          referenceId: result.referenceId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        '[npi] workflow email notification failed',
+        JSON.stringify({
+          recordId: input.recordId,
+          eventKey: input.eventKey,
+          primaryRecipient: input.primaryRecipient,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
   }
 
   /**
@@ -271,6 +383,18 @@ export class NpiWorkflowService {
         .execute();
     });
 
+    await this.sendWorkflowNotification({
+      recordId: record.npi_lot_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findNotificationContextById === 'function'
+        ? await this.repository.findUserContactById(userId)
+        : null,
+      eventKey: 'npi.submitted',
+      subject: '<NPI> Awaiting Approval - {supplierName}',
+      message: 'The report has been submitted by {actorName}',
+      primaryRecipient: 'checker',
+    });
+
     return {
       success: true,
       data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.CHECKER), controlNo),
@@ -310,6 +434,18 @@ export class NpiWorkflowService {
         .execute();
     });
 
+    await this.sendWorkflowNotification({
+      recordId: record.npi_lot_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await this.repository.findUserContactById(userId)
+        : null,
+      eventKey: 'npi.checked',
+      subject: '<NPI> Awaiting Approval - {supplierName}',
+      message: 'The report has been reviewed and checked by {actorName}',
+      primaryRecipient: 'approver',
+    });
+
     return {
       success: true,
       data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.APPROVER)),
@@ -347,6 +483,18 @@ export class NpiWorkflowService {
         })
         .where('npi_lot_id', '=', record.npi_lot_id)
         .execute();
+    });
+
+    await this.sendWorkflowNotification({
+      recordId: record.npi_lot_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await this.repository.findUserContactById(userId)
+        : null,
+      eventKey: 'npi.approved',
+      subject: '<NPI> Approved - {supplierName}',
+      message: 'The report has been reviewed and approved by {actorName}',
+      primaryRecipient: 'inspector',
     });
 
     return {
@@ -391,6 +539,18 @@ export class NpiWorkflowService {
           .execute();
       });
 
+      await this.sendWorkflowNotification({
+        recordId: record.npi_lot_id,
+        actorUserId: userId,
+        actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+          ? await this.repository.findUserContactById(userId)
+          : null,
+        eventKey: 'npi.rejected',
+        subject: '<NPI> Rejected - {supplierName}',
+        message: 'The report has been reviewed and rejected by {actorName}',
+        primaryRecipient: 'approver',
+      });
+
       return {
         success: true,
         data: this.buildWorkflowData(record, getNpiDbStatus(NPI_WORKFLOW_STAGE.REJECT_CHECKER)),
@@ -414,6 +574,18 @@ export class NpiWorkflowService {
           })
           .where('npi_lot_id', '=', record.npi_lot_id)
           .execute();
+      });
+
+      await this.sendWorkflowNotification({
+        recordId: record.npi_lot_id,
+        actorUserId: userId,
+        actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+          ? await this.repository.findUserContactById(userId)
+          : null,
+        eventKey: 'npi.rejected',
+        subject: '<NPI> Rejected - {supplierName}',
+        message: 'The report has been reviewed and rejected by {actorName}',
+        primaryRecipient: 'inspector',
       });
 
       return {

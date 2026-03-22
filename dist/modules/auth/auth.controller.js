@@ -88,6 +88,26 @@ export class AuthController {
             return next(error);
         }
     }
+    async forgotPassword(req, res, next) {
+        try {
+            const result = await authService.forgotPassword(req.body);
+            res.status(200).json(result);
+            return;
+        }
+        catch (error) {
+            return next(error);
+        }
+    }
+    async resetPassword(req, res, next) {
+        try {
+            const result = await authService.resetPassword(req.body);
+            res.status(200).json(result);
+            return;
+        }
+        catch (error) {
+            return next(error);
+        }
+    }
     /**
      * Handles logging out by clearing the HttpOnly cookie
      */

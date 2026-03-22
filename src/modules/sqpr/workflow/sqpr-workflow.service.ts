@@ -18,11 +18,152 @@ import {
 } from '../../../shared/utils/permission-audit.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
+import {
+  sqprNotificationService,
+  type SqprNotificationSender,
+} from '../../../shared/notifications/sqpr-notification.service.js';
+import type { EmailAddress } from '../../../shared/notifications/email.types.js';
+import type { SqprNotificationContext, SqprNotificationRecipient } from '../sqpr.repository.js';
 
 type DetailedRecord = Record<string, any>;
 
 export class SqprWorkflowService {
-  constructor(private readonly repository = sqprRepository) {}
+  constructor(
+    private readonly repository = sqprRepository,
+    private readonly notifications: SqprNotificationSender = sqprNotificationService,
+  ) {}
+
+  private toEmailAddress(recipient: SqprNotificationRecipient | null): EmailAddress[] {
+    if (!recipient?.email) return [];
+
+    return [
+      {
+        email: recipient.email,
+        name: recipient.name || undefined,
+      },
+    ];
+  }
+
+  private toCcAddresses(context: SqprNotificationContext): EmailAddress[] {
+    return context.cc
+      .filter((recipient) => Boolean(recipient.email))
+      .map((recipient) => ({
+        email: String(recipient.email),
+        name: recipient.name || undefined,
+      }));
+  }
+
+  private toInternalIssueCc(context: SqprNotificationContext): EmailAddress[] {
+    return [context.approver, context.checker, context.incharge]
+      .filter((recipient): recipient is SqprNotificationRecipient => Boolean(recipient?.email))
+      .map((recipient) => ({
+        email: String(recipient.email),
+        name: recipient.name || undefined,
+      }));
+  }
+
+  private async resolveActorName(userId: string, fallbackRecipient?: SqprNotificationRecipient | null) {
+    if (fallbackRecipient?.userId === userId && fallbackRecipient.name) {
+      return fallbackRecipient.name;
+    }
+
+    if (typeof (this.repository as any).findUserContactById === 'function') {
+      const actor = await (this.repository as any).findUserContactById(userId);
+      if (actor?.name) {
+        return actor.name;
+      }
+    }
+
+    return userId;
+  }
+
+  private buildPeriodLabel(reportType?: number | null, month?: number | null, fiscalYear?: number | null) {
+    const yearLabel = fiscalYear ? String(fiscalYear) : '';
+
+    if (reportType === 1 && month && month >= 1 && month <= 12) {
+      const monthName = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' })
+        .format(new Date(Date.UTC(2000, month - 1, 1)));
+      return `${monthName} ${yearLabel}`.trim();
+    }
+
+    if (reportType === 2 && month) {
+      return `Quarter ${month} ${yearLabel}`.trim();
+    }
+
+    return [month ? `Period ${month}` : 'Period', yearLabel].filter(Boolean).join(' ');
+  }
+
+  private async sendWorkflowNotification(input: {
+    recordId: string;
+    actorUserId: string;
+    eventKey: 'sqpr.submitted' | 'sqpr.checked' | 'sqpr.approved' | 'sqpr.rejected' | 'sqpr.issued';
+    subject: string;
+    message: string;
+    primaryRecipient: 'checker' | 'approver' | 'incharge' | 'cc';
+    actorRecipient?: SqprNotificationRecipient | null;
+  }): Promise<void> {
+    if (typeof (this.repository as any).findNotificationContextById !== 'function') {
+      return;
+    }
+
+    const context = await (this.repository as any).findNotificationContextById(input.recordId) as SqprNotificationContext | null;
+    if (!context) {
+      return;
+    }
+
+    const actorName = await this.resolveActorName(input.actorUserId, input.actorRecipient);
+    const resolvedMessage = input.message.replace('{actorName}', actorName);
+    const periodLabel = this.buildPeriodLabel(context.reportType, context.month, context.fiscalYear);
+    const to =
+      input.primaryRecipient === 'checker'
+        ? this.toEmailAddress(context.checker)
+        : input.primaryRecipient === 'approver'
+          ? this.toEmailAddress(context.approver)
+          : input.primaryRecipient === 'incharge'
+            ? this.toEmailAddress(context.incharge)
+            : this.toCcAddresses(context);
+    const cc = input.primaryRecipient === 'cc'
+      ? this.toInternalIssueCc(context)
+      : this.toCcAddresses(context);
+
+    try {
+      const result = await this.notifications.sendWorkflowNotification({
+        eventKey: input.eventKey,
+        recordId: context.recordId,
+        controlNo: context.controlNo,
+        supplierName: context.supplierName,
+        periodLabel,
+        subject: input.subject,
+        message: resolvedMessage,
+        to,
+        cc,
+      });
+
+      console.log(
+        '[sqpr] workflow email notification processed',
+        JSON.stringify({
+          recordId: context.recordId,
+          eventKey: input.eventKey,
+          transport: result.transport,
+          delivered: result.delivered,
+          skipped: result.skipped ?? false,
+          subject: result.subject,
+          recipients: result.recipients,
+          referenceId: result.referenceId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        '[sqpr] workflow email notification failed',
+        JSON.stringify({
+          recordId: input.recordId,
+          eventKey: input.eventKey,
+          primaryRecipient: input.primaryRecipient,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
 
   private getRoleFallbackFormCodes(record: DetailedRecord) {
     const compatibilityStatus = getSqprCompatibilityStatus(record.request_status, record);
@@ -199,6 +340,18 @@ export class SqprWorkflowService {
         .execute();
     });
 
+    await this.sendWorkflowNotification({
+      recordId: record.sqpr_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await (this.repository as any).findUserContactById(userId)
+        : null,
+      eventKey: 'sqpr.submitted',
+      subject: '<SQPR> Awaiting Approval',
+      message: 'The report has been submitted by {actorName}',
+      primaryRecipient: 'checker',
+    });
+
     return this.buildResult(id, userId, 'Record submitted successfully');
   }
 
@@ -226,6 +379,18 @@ export class SqprWorkflowService {
         .execute();
     });
 
+    await this.sendWorkflowNotification({
+      recordId: record.sqpr_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await (this.repository as any).findUserContactById(userId)
+        : null,
+      eventKey: 'sqpr.checked',
+      subject: '<SQPR> Awaiting Approval',
+      message: 'The report has been reviewed and checked by {actorName}',
+      primaryRecipient: 'approver',
+    });
+
     return this.buildResult(id, userId, 'Record checked successfully');
   }
 
@@ -251,6 +416,18 @@ export class SqprWorkflowService {
         })
         .where('sqpr_id', '=', record.sqpr_id)
         .execute();
+    });
+
+    await this.sendWorkflowNotification({
+      recordId: record.sqpr_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await (this.repository as any).findUserContactById(userId)
+        : null,
+      eventKey: 'sqpr.approved',
+      subject: '<SQPR> Approved',
+      message: 'The report has been reviewed and approved by {actorName}',
+      primaryRecipient: 'incharge',
     });
 
     return this.buildResult(id, userId, 'Record approved successfully');
@@ -284,6 +461,18 @@ export class SqprWorkflowService {
           .execute();
       });
 
+      await this.sendWorkflowNotification({
+        recordId: record.sqpr_id,
+        actorUserId: userId,
+        actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+          ? await (this.repository as any).findUserContactById(userId)
+          : null,
+        eventKey: 'sqpr.rejected',
+        subject: '<SQPR> Rejected',
+        message: 'The report has been reviewed and rejected by {actorName}',
+        primaryRecipient: 'incharge',
+      });
+
       return this.buildResult(id, userId, 'Record rejected successfully');
     }
 
@@ -299,6 +488,18 @@ export class SqprWorkflowService {
         })
         .where('sqpr_id', '=', record.sqpr_id)
         .execute();
+    });
+
+    await this.sendWorkflowNotification({
+      recordId: record.sqpr_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await (this.repository as any).findUserContactById(userId)
+        : null,
+      eventKey: 'sqpr.rejected',
+      subject: '<SQPR> Rejected',
+      message: 'The report has been reviewed and rejected by {actorName}',
+      primaryRecipient: 'incharge',
     });
 
     return this.buildResult(id, userId, 'Record rejected successfully');
@@ -324,6 +525,18 @@ export class SqprWorkflowService {
         })
         .where('sqpr_id', '=', record.sqpr_id)
         .execute();
+    });
+
+    await this.sendWorkflowNotification({
+      recordId: record.sqpr_id,
+      actorUserId: userId,
+      actorRecipient: typeof (this.repository as any).findUserContactById === 'function'
+        ? await (this.repository as any).findUserContactById(userId)
+        : null,
+      eventKey: 'sqpr.issued',
+      subject: '<SQPR> Issued',
+      message: 'The report has been issued by {actorName}',
+      primaryRecipient: 'cc',
     });
 
     return this.buildResult(id, userId, 'Record issued successfully');

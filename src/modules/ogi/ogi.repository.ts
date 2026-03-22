@@ -3,6 +3,13 @@ import { db } from '../../shared/infrastructure/db.js';
 import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 import { sql } from 'kysely';
 
+export interface OgiNotificationRecipient {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  activeFlag?: boolean | number | null;
+}
+
 export class OgiRepository extends BaseRepository<'OGI'> {
   constructor() {
     super('OGI');
@@ -83,6 +90,32 @@ export class OgiRepository extends BaseRepository<'OGI'> {
       .selectAll()
       .where('ogi_id', 'in', ogiIds)
       .execute();
+  }
+
+  async findUserContactById(userId: string): Promise<OgiNotificationRecipient | null> {
+    if (!userId) return null;
+
+    const user = await db
+      .selectFrom('USERS as u')
+      .select([
+        'u.user_id as userId',
+        'u.email as email',
+        'u.full_name as name',
+        'u.active_flag as activeFlag',
+      ])
+      .where('u.user_id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      userId: user.userId,
+      email: user.email,
+      name: user.name,
+      activeFlag: user.activeFlag,
+    };
   }
 
   async getNextSequence(prefix: string) {

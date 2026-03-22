@@ -4,6 +4,10 @@ const authRepositoryMock = vi.hoisted(() => ({
   findByEmail: vi.fn(),
   findUserById: vi.fn(),
   updatePassword: vi.fn(),
+  createPasswordResetToken: vi.fn(),
+  invalidatePasswordResetTokensForUser: vi.fn(),
+  findPasswordResetTokenByHash: vi.fn(),
+  markPasswordResetTokenUsed: vi.fn(),
   findRoleBasedAccessibleForms: vi.fn(),
   findCurrentUserRoleAccessRecords: vi.fn(),
   findAssignedSqmpAccessibleForms: vi.fn(),
@@ -29,6 +33,7 @@ const jwtMock = vi.hoisted(() => ({
 
 const notificationMock = vi.hoisted(() => ({
   sendPasswordChanged: vi.fn(),
+  sendPasswordResetRequested: vi.fn(),
 }));
 
 vi.mock('../../src/modules/auth/auth.repository.js', () => ({
@@ -48,6 +53,13 @@ vi.mock('../../src/shared/utils/jwt.js', () => ({
 
 vi.mock('../../src/shared/notifications/auth-notification.service.js', () => ({
   authNotificationService: notificationMock,
+}));
+
+vi.mock('../../src/shared/notifications/email.config.js', () => ({
+  getEmailConfig: vi.fn(() => ({
+    frontendBaseUrl: 'http://localhost:5000',
+    internetBaseUrl: 'https://sqm.example.com',
+  })),
 }));
 
 import { AuthService } from '../../src/modules/auth/auth.service.js';
@@ -77,6 +89,10 @@ describe('AuthService login SQMP assignment access', () => {
     authRepositoryMock.findRoleBasedAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findCurrentUserRoleAccessRecords.mockResolvedValue([]);
     authRepositoryMock.updatePassword.mockResolvedValue(undefined);
+    authRepositoryMock.createPasswordResetToken.mockResolvedValue(undefined);
+    authRepositoryMock.invalidatePasswordResetTokensForUser.mockResolvedValue(undefined);
+    authRepositoryMock.findPasswordResetTokenByHash.mockResolvedValue(null);
+    authRepositoryMock.markPasswordResetTokenUsed.mockResolvedValue(undefined);
     authRepositoryMock.findAssignedSqmpAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedNpiAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedOgiAccessibleForms.mockResolvedValue([]);
@@ -97,6 +113,14 @@ describe('AuthService login SQMP assignment access', () => {
       recipient: 'checker@example.com',
       localUrl: 'http://localhost:5000/auth/login',
       internetUrl: 'https://sqm.example.com/auth/login',
+    });
+    notificationMock.sendPasswordResetRequested.mockResolvedValue({
+      delivered: true,
+      transport: 'smtp',
+      referenceId: '<message-id@example.com>',
+      subject: 'Reset Your SQM Password',
+      recipient: 'checker@example.com',
+      resetUrl: 'https://sqm.example.com/auth/reset-password?token=test-token',
     });
   });
 
@@ -312,6 +336,77 @@ describe('AuthService login SQMP assignment access', () => {
     });
 
     expect(authRepositoryMock.updatePassword).toHaveBeenCalledWith('user-1', 'new-hash');
+  });
+
+  it('returns a generic success response for forgot password when no user exists', async () => {
+    authRepositoryMock.findByEmail.mockResolvedValueOnce(undefined);
+    const service = new AuthService();
+
+    await expect(
+      service.forgotPassword({ email: 'missing@example.com' }),
+    ).resolves.toEqual({
+      success: true,
+      message: 'If the account exists, a reset email has been sent.',
+    });
+
+    expect(authRepositoryMock.createPasswordResetToken).not.toHaveBeenCalled();
+    expect(notificationMock.sendPasswordResetRequested).not.toHaveBeenCalled();
+  });
+
+  it('creates a password reset token and sends the reset email for existing users', async () => {
+    const service = new AuthService();
+
+    const result = await service.forgotPassword({ email: 'checker@example.com' });
+
+    expect(authRepositoryMock.invalidatePasswordResetTokensForUser).toHaveBeenCalledWith('user-1');
+    expect(authRepositoryMock.createPasswordResetToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'user-1',
+        token_hash: expect.any(String),
+      }),
+    );
+    expect(notificationMock.sendPasswordResetRequested).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fullName: 'Checker User',
+        email: 'checker@example.com',
+        resetUrl: expect.stringContaining('/auth/reset-password?token='),
+        expiresInMinutes: 30,
+      }),
+    );
+    expect(result).toEqual({
+      success: true,
+      message: 'If the account exists, a reset email has been sent.',
+    });
+  });
+
+  it('resets the password when the reset token is valid', async () => {
+    authRepositoryMock.findPasswordResetTokenByHash.mockResolvedValueOnce({
+      password_reset_token_id: 'prt-1',
+      user_id: 'user-1',
+      token_hash: 'hashed-token',
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      used_at: null,
+      email: 'checker@example.com',
+      full_name: 'Checker User',
+    });
+
+    const service = new AuthService();
+    const result = await service.resetPassword({
+      token: 'plain-token',
+      newPassword: 'NewSecret123',
+    });
+
+    expect(hashMock.hashPassword).toHaveBeenCalledWith('NewSecret123');
+    expect(authRepositoryMock.updatePassword).toHaveBeenCalledWith('user-1', 'new-hash');
+    expect(authRepositoryMock.markPasswordResetTokenUsed).toHaveBeenCalledWith('prt-1');
+    expect(notificationMock.sendPasswordChanged).toHaveBeenCalledWith({
+      fullName: 'Checker User',
+      email: 'checker@example.com',
+    });
+    expect(result).toEqual({
+      success: true,
+      message: 'Password reset successfully',
+    });
   });
 
   it('includes MNR accessibleForms and module menu when the user is assigned to MNR approval queues', async () => {

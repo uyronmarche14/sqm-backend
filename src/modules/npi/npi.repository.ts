@@ -3,6 +3,22 @@ import { BaseRepository } from '../../shared/infrastructure/BaseRepository.js';
 import { sql, type Transaction } from 'kysely';
 import type { Database } from '../../shared/infrastructure/db.types.js';
 
+export interface NpiNotificationRecipient {
+  userId: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface NpiNotificationContext {
+  recordId: string;
+  controlNo: string;
+  supplierName: string;
+  inspector: NpiNotificationRecipient | null;
+  checker: NpiNotificationRecipient | null;
+  approver: NpiNotificationRecipient | null;
+  cc: NpiNotificationRecipient[];
+}
+
 export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
   constructor() {
     super('NPI_LOTS');
@@ -229,6 +245,124 @@ export class NpiRepository extends BaseRepository<'NPI_LOTS'> {
       .where('active_flag', '=', 1)
       .executeTakeFirst();
     return result?.inspector_id || null;
+  }
+
+  async findUserContactById(userId: string): Promise<NpiNotificationRecipient | null> {
+    if (!userId) return null;
+
+    const userRow = await db
+      .selectFrom('USERS as u')
+      .select([
+        'u.user_id as userId',
+        'u.email as email',
+        sql<string | null>`${sql.ref('u.full_name')}`.as('name'),
+      ])
+      .where('u.user_id', '=', userId)
+      .executeTakeFirst();
+
+    if (userRow) {
+      return {
+        userId: userRow.userId,
+        email: userRow.email,
+        name: userRow.name,
+      };
+    }
+
+    const inspectorRow = await db
+      .selectFrom('INSPECTORS as i')
+      .select([
+        'i.inspector_id as userId',
+        sql<string | null>`NULL`.as('email'),
+        'i.inspector_name as name',
+      ])
+      .where('i.inspector_id', '=', userId)
+      .executeTakeFirst();
+
+    if (!inspectorRow) {
+      return null;
+    }
+
+    return {
+      userId: inspectorRow.userId,
+      email: inspectorRow.email,
+      name: inspectorRow.name,
+    };
+  }
+
+  async findNotificationContextById(id: string): Promise<NpiNotificationContext | null> {
+    const row = await db
+      .selectFrom('NPI_LOTS as n')
+      .leftJoin('SUPPLIERS as sup', 'n.supplier_id', 'sup.supplier_id')
+      .leftJoin('USERS as inspector_user', 'n.inspector_id', 'inspector_user.user_id')
+      .leftJoin('INSPECTORS as inspector_master', 'n.inspector_id', 'inspector_master.inspector_id')
+      .leftJoin('USERS as checker_user', 'n.checker_id', 'checker_user.user_id')
+      .leftJoin('INSPECTORS as checker_master', 'n.checker_id', 'checker_master.inspector_id')
+      .leftJoin('USERS as approver_user', 'n.approver_id', 'approver_user.user_id')
+      .leftJoin('INSPECTORS as approver_master', 'n.approver_id', 'approver_master.inspector_id')
+      .select([
+        'n.npi_lot_id as recordId',
+        'n.control_no as controlNo',
+        sql<string>`COALESCE(${sql.ref('sup.supplier_name')}, '')`.as('supplierName'),
+        sql<string | null>`${sql.ref('n.inspector_id')}`.as('inspectorId'),
+        sql<string | null>`${sql.ref('inspector_user.email')}`.as('inspectorEmail'),
+        sql<string | null>`COALESCE(${sql.ref('inspector_user.full_name')}, ${sql.ref('inspector_master.inspector_name')}, ${sql.ref('n.inspector_id')})`.as('inspectorName'),
+        sql<string | null>`${sql.ref('n.checker_id')}`.as('checkerId'),
+        sql<string | null>`${sql.ref('checker_user.email')}`.as('checkerEmail'),
+        sql<string | null>`COALESCE(${sql.ref('checker_user.full_name')}, ${sql.ref('checker_master.inspector_name')}, ${sql.ref('n.checker_id')})`.as('checkerName'),
+        sql<string | null>`${sql.ref('n.approver_id')}`.as('approverId'),
+        sql<string | null>`${sql.ref('approver_user.email')}`.as('approverEmail'),
+        sql<string | null>`COALESCE(${sql.ref('approver_user.full_name')}, ${sql.ref('approver_master.inspector_name')}, ${sql.ref('n.approver_id')})`.as('approverName'),
+      ])
+      .where('n.npi_lot_id', '=', id)
+      .executeTakeFirst();
+
+    if (!row) {
+      return null;
+    }
+
+    const ccRows = await db
+      .selectFrom('NPI_CC as cc')
+      .leftJoin('USERS as u', 'cc.user_id', 'u.user_id')
+      .leftJoin('INSPECTORS as i', 'cc.user_id', 'i.inspector_id')
+      .select([
+        'cc.user_id as userId',
+        'u.email as email',
+        sql<string | null>`COALESCE(${sql.ref('u.full_name')}, ${sql.ref('i.inspector_name')}, ${sql.ref('cc.user_id')})`.as('name'),
+      ])
+      .where('cc.npi_lot_id', '=', id)
+      .execute();
+
+    return {
+      recordId: row.recordId,
+      controlNo: row.controlNo,
+      supplierName: row.supplierName,
+      inspector: row.inspectorId
+        ? {
+            userId: row.inspectorId,
+            email: row.inspectorEmail,
+            name: row.inspectorName,
+          }
+        : null,
+      checker: row.checkerId
+        ? {
+            userId: row.checkerId,
+            email: row.checkerEmail,
+            name: row.checkerName,
+          }
+        : null,
+      approver: row.approverId
+        ? {
+            userId: row.approverId,
+            email: row.approverEmail,
+            name: row.approverName,
+          }
+        : null,
+      cc: ccRows.map((cc) => ({
+        userId: cc.userId,
+        email: cc.email,
+        name: cc.name,
+      })),
+    };
   }
 
   async executeTransaction<T>(

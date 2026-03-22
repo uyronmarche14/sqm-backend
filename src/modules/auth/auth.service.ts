@@ -1,5 +1,5 @@
 import { authRepository } from './auth.repository.js';
-import { ChangePasswordInput, LoginInput } from './auth.schema.js';
+import { ChangePasswordInput, ForgotPasswordInput, LoginInput, ResetPasswordInput } from './auth.schema.js';
 import { BadRequestError, UnauthorizedError } from '../../shared/errors/AppError.js';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
@@ -9,9 +9,23 @@ import {
   authNotificationService,
   type AuthNotificationServiceContract,
 } from '../../shared/notifications/auth-notification.service.js';
+import { getEmailConfig } from '../../shared/notifications/email.config.js';
+import { createHash, randomBytes } from 'node:crypto';
+import { v4 as uuidv4 } from 'uuid';
 
 export class AuthService {
   constructor(private readonly notifications: AuthNotificationServiceContract = authNotificationService) {}
+
+  private buildResetPasswordUrl(token: string): string {
+    const config = getEmailConfig();
+    const baseUrl = config.internetBaseUrl || config.frontendBaseUrl;
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    return new URL(`auth/reset-password?token=${encodeURIComponent(token)}`, normalizedBaseUrl).toString();
+  }
+
+  private hashResetToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
   private buildAuthContextResponse(user: any, accessibleForms: string[], roleAccessRecords: any[]) {
     console.log('🏗️ [Auth] Building auth context for accessible forms:', accessibleForms);
@@ -226,6 +240,118 @@ export class AuthService {
     return {
       success: true,
       message: 'Password changed successfully',
+    };
+  }
+
+  async forgotPassword(input: ForgotPasswordInput) {
+    const user = await authRepository.findByEmail(input.email);
+
+    if (!user?.user_id || !user.email) {
+      return {
+        success: true,
+        message: 'If the account exists, a reset email has been sent.',
+      };
+    }
+
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = this.hashResetToken(token);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+    const resetUrl = this.buildResetPasswordUrl(token);
+
+    await authRepository.invalidatePasswordResetTokensForUser(user.user_id);
+    await authRepository.createPasswordResetToken({
+      password_reset_token_id: uuidv4(),
+      user_id: user.user_id,
+      token_hash: tokenHash,
+      expires_at: expiresAt,
+      created_at: now,
+      updateby: 'SYSTEM',
+    });
+
+    try {
+      const result = await this.notifications.sendPasswordResetRequested({
+        fullName: user.full_name || user.email,
+        email: user.email,
+        resetUrl,
+        expiresInMinutes: 30,
+      });
+
+      console.log(
+        '[auth] password-reset-request email notification processed',
+        JSON.stringify({
+          userId: user.user_id,
+          email: user.email,
+          eventKey: 'auth.password.reset.requested',
+          delivered: result.delivered,
+          skipped: result.skipped ?? false,
+          transport: result.transport,
+          referenceId: result.referenceId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        '[auth] failed to send password-reset-request email notification',
+        JSON.stringify({
+          userId: user.user_id,
+          email: user.email,
+          eventKey: 'auth.password.reset.requested',
+        }),
+        error,
+      );
+    }
+
+    return {
+      success: true,
+      message: 'If the account exists, a reset email has been sent.',
+    };
+  }
+
+  async resetPassword(input: ResetPasswordInput) {
+    const tokenHash = this.hashResetToken(input.token);
+    const resetRecord = await authRepository.findPasswordResetTokenByHash(tokenHash);
+
+    if (!resetRecord || resetRecord.used_at || new Date(resetRecord.expires_at) < new Date()) {
+      throw new UnauthorizedError('Invalid or expired reset token.');
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    await authRepository.updatePassword(resetRecord.user_id, passwordHash);
+    await authRepository.markPasswordResetTokenUsed(resetRecord.password_reset_token_id);
+
+    try {
+      const result = await this.notifications.sendPasswordChanged({
+        fullName: resetRecord.full_name || resetRecord.email || 'SQM User',
+        email: resetRecord.email || '',
+      });
+
+      console.log(
+        '[auth] password-reset completion email notification processed',
+        JSON.stringify({
+          userId: resetRecord.user_id,
+          email: resetRecord.email,
+          eventKey: 'auth.password.changed',
+          delivered: result.delivered,
+          skipped: result.skipped ?? false,
+          transport: result.transport,
+          referenceId: result.referenceId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        '[auth] failed to send password-reset completion email notification',
+        JSON.stringify({
+          userId: resetRecord.user_id,
+          email: resetRecord.email,
+          eventKey: 'auth.password.changed',
+        }),
+        error,
+      );
+    }
+
+    return {
+      success: true,
+      message: 'Password reset successfully',
     };
   }
 }

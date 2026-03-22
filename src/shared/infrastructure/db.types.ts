@@ -21,7 +21,7 @@ import type {
   FiveM1ECIAttachmentTable, FiveM1EPartsPerReportTable, FiveM1EStatusRemarksTable,
   FiveM1EEmailDailyNotificationTable, FiveM1EEmailElementsTable
 } from '../../modules/fiveM1E/fiveM1E.db.types.js';
-import type { UsersTable, RolesTable } from '../../modules/users/user.db.types.js';
+import type { UsersTable, RolesTable, PasswordResetTokensTable } from '../../modules/users/user.db.types.js';
 import type {
   SuppliersTable, SuppliersUserTable, MfgSitesTable, PartsTable, PartClassTable,
   ModelsTable, ProductsTable, MfgAreasTable, DefectCategoriesTable, DefectsTable,
@@ -80,6 +80,7 @@ export interface Database {
   // Users & Roles
   USERS: UsersTable;
   ROLES: RolesTable;
+  PASSWORD_RESET_TOKENS: PasswordResetTokensTable;
 
   // Master Data
   SUPPLIERS: SuppliersTable;

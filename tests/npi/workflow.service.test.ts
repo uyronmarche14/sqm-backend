@@ -51,6 +51,11 @@ describe('NpiWorkflowService', () => {
   const repository = {
     findByIdDetailed: vi.fn(),
     executeTransaction: vi.fn(),
+    findNotificationContextById: vi.fn(),
+    findUserContactById: vi.fn(),
+  };
+  const notifications = {
+    sendWorkflowNotification: vi.fn(),
   };
 
   beforeEach(() => {
@@ -58,6 +63,36 @@ describe('NpiWorkflowService', () => {
     controlNumberServiceMock.finalizeNpi.mockResolvedValue('IQC-2026-3-1-SITE');
     controlNumberServiceMock.getControlNoState.mockReturnValue('final');
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    repository.findNotificationContextById.mockResolvedValue({
+      recordId: 'npi-1',
+      controlNo: 'IQC-2026-3-1-SITE',
+      supplierName: 'Toshiba Supplier',
+      inspector: { userId: 'originator-1', email: 'originator@example.com', name: 'Originator User' },
+      checker: { userId: 'checker-1', email: 'checker@example.com', name: 'Checker User' },
+      approver: { userId: 'approver-1', email: 'approver@example.com', name: 'Approver User' },
+      cc: [{ userId: 'cc-1', email: 'cc@example.com', name: 'CC User' }],
+    });
+    repository.findUserContactById.mockImplementation(async (userId: string) => ({
+      userId,
+      email: `${userId}@example.com`,
+      name:
+        userId === 'originator-1'
+          ? 'Originator User'
+          : userId === 'checker-1'
+            ? 'Checker User'
+            : userId === 'approver-1'
+              ? 'Approver User'
+              : userId,
+    }));
+    notifications.sendWorkflowNotification.mockResolvedValue({
+      delivered: true,
+      transport: 'file',
+      referenceId: '/tmp/emails/npi.json',
+      subject: '<NPI> Awaiting Approval - Toshiba Supplier',
+      recipients: ['checker@example.com'],
+      localUrl: 'http://localhost:5000/dashboard/new-parts/view/npi-1',
+      internetUrl: 'https://sqm.example.com/dashboard/new-parts/view/npi-1',
+    });
   });
 
   it('submits draft/rejected records to checker stage', async () => {
@@ -67,7 +102,7 @@ describe('NpiWorkflowService', () => {
     });
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
     const result = await service.submitForApproval('npi-1', 'originator-1');
 
     expect(tx.updateTable).toHaveBeenCalledWith('NPI_LOTS');
@@ -85,6 +120,15 @@ describe('NpiWorkflowService', () => {
       controlNo: 'IQC-2026-3-1-SITE',
       controlNoState: 'final',
     });
+    expect(notifications.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'npi.submitted',
+        subject: '<NPI> Awaiting Approval - Toshiba Supplier',
+        message: 'The report has been submitted by Originator User',
+        to: [{ email: 'checker@example.com', name: 'Checker User' }],
+        cc: [{ email: 'cc@example.com', name: 'CC User' }],
+      }),
+    );
   });
 
   it('moves checker-owned records to approver stage', async () => {
@@ -94,7 +138,7 @@ describe('NpiWorkflowService', () => {
     });
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
     const result = await service.checkRecord('npi-1', 'checker-1', undefined, 'looks good');
 
     expect(tx.set).toHaveBeenCalledWith(
@@ -118,7 +162,7 @@ describe('NpiWorkflowService', () => {
       record: createRecord({ site_id: null, site_code: null }),
     });
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
 
     await expect(service.submitForApproval('npi-1', 'originator-1')).rejects.toMatchObject({
       message: 'Site is required before submitting this NPI record.',
@@ -132,7 +176,7 @@ describe('NpiWorkflowService', () => {
     });
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
     const result = await service.approveRecord('npi-1', 'approver-1', undefined, 'approved');
 
     expect(tx.set).toHaveBeenCalledWith(
@@ -158,7 +202,7 @@ describe('NpiWorkflowService', () => {
     });
     repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
     const result = await service.rejectRecord('npi-1', 'checker-1', undefined, 'defect found');
 
     expect(tx.set).toHaveBeenCalledWith(
@@ -181,7 +225,7 @@ describe('NpiWorkflowService', () => {
       record: createRecord({ request_status: 'SU' }),
     });
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
 
     await expect(service.checkRecord('npi-1', 'someone-else')).rejects.toMatchObject({
       message: 'Only the assigned checker can check this NPI record.',
@@ -199,7 +243,7 @@ describe('NpiWorkflowService', () => {
         formId === 'NPILOT-09-03' && action === 'check',
     );
 
-    const service = new NpiWorkflowService(repository as any);
+    const service = new NpiWorkflowService(repository as any, notifications as any);
     const result = await service.checkRecord('npi-1', 'role-checker', undefined, 'checked by role');
 
     expect(permissionServiceMock.checkRolePermission).toHaveBeenCalledWith('role-checker', 'NPILOT-09-03', 'check');
@@ -217,5 +261,24 @@ describe('NpiWorkflowService', () => {
       controlNo: 'DRF-2026-3-1-SITE',
       controlNoState: 'final',
     });
+  });
+
+  it('does not fail workflow transition when the NPI email send fails', async () => {
+    const tx = createTransactionMock();
+    repository.findByIdDetailed.mockResolvedValue({
+      record: createRecord(),
+    });
+    repository.executeTransaction.mockImplementation(async (callback: any) => callback(tx.trx));
+    notifications.sendWorkflowNotification.mockRejectedValueOnce(new Error('smtp unavailable'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const service = new NpiWorkflowService(repository as any, notifications as any);
+    const result = await service.submitForApproval('npi-1', 'originator-1');
+
+    expect(result.success).toBe(true);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[npi] workflow email notification failed',
+      expect.stringContaining('"eventKey":"npi.submitted"'),
+    );
   });
 });

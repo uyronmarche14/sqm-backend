@@ -7,6 +7,7 @@ import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../..
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
+import { ogiNotificationService, } from '../../shared/notifications/ogi-notification.service.js';
 const OGI_DB_STATUS = {
     DRAFT: 'DR',
     SUBMITTED: 'SB',
@@ -48,9 +49,113 @@ function mapOgiStatusFromDB(code) {
     return mapStatusFromDB(normalized);
 }
 export class OgiService {
+    repository;
+    permissions;
+    notifications;
+    constructor(repository = ogiRepository, permissions = permissionService, notifications = ogiNotificationService) {
+        this.repository = repository;
+        this.permissions = permissions;
+        this.notifications = notifications;
+    }
     assertSubmitControlNoInputs(input) {
         if (!input.siteId && !input.siteCode) {
             throw new BadRequestError('Site is required before submitting this OGI record.');
+        }
+    }
+    isActiveUserFlag(flag) {
+        return flag === true || flag === 1 || flag === null || flag === undefined;
+    }
+    formatNotificationDate(value) {
+        if (!value) {
+            return '-';
+        }
+        const parsed = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return String(value);
+        }
+        return parsed.toISOString();
+    }
+    async resolveActorName(userId) {
+        if (typeof this.repository.findUserContactById !== 'function') {
+            return userId;
+        }
+        const actor = await this.repository.findUserContactById(userId);
+        return actor?.name || userId;
+    }
+    async resolveSubmittedRecipients() {
+        if (typeof this.permissions.findUsersWithRolePermission !== 'function') {
+            return [];
+        }
+        const eligibleUsers = await this.permissions.findUsersWithRolePermission('OGI-01-03', 'viewlist');
+        if (!eligibleUsers.length || typeof this.repository.findUserContactById !== 'function') {
+            return [];
+        }
+        const contacts = await Promise.all(eligibleUsers.map((user) => this.repository.findUserContactById(user.userId)));
+        const seen = new Set();
+        const recipients = [];
+        for (const contact of contacts) {
+            const email = String(contact?.email || '').trim();
+            if (!email || !this.isActiveUserFlag(contact?.activeFlag)) {
+                continue;
+            }
+            const key = email.toLowerCase();
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            recipients.push({
+                email,
+                name: contact?.name || undefined,
+            });
+        }
+        return recipients;
+    }
+    async sendSubmittedNotification(recordId, actorUserId, fallbackControlNo) {
+        const data = await this.repository.findByIdDetailed(recordId);
+        if (!data) {
+            return;
+        }
+        const recipients = await this.resolveSubmittedRecipients();
+        if (recipients.length === 0) {
+            console.warn('[ogi] workflow email notification skipped', JSON.stringify({
+                recordId,
+                eventKey: 'ogi.submitted',
+                reason: 'no_role_access_recipients',
+                controlNo: fallbackControlNo || data.record.control_no || null,
+            }));
+            return;
+        }
+        const actorName = await this.resolveActorName(actorUserId);
+        try {
+            const result = await this.notifications.sendSubmittedNotification({
+                eventKey: 'ogi.submitted',
+                recordId: data.record.ogi_id,
+                controlNo: String(fallbackControlNo || data.record.control_no || ''),
+                supplierName: String(data.record.supplier_name || ''),
+                siteName: data.record.site_name || data.record.site_code || null,
+                submittedByName: actorName,
+                submittedDate: this.formatNotificationDate(data.record.submit_date),
+                message: `The report has been submitted by ${actorName}`,
+                subject: `<OGI> Uploaded - ${String(data.record.supplier_name || '')}`,
+                to: recipients,
+            });
+            console.log('[ogi] workflow email notification processed', JSON.stringify({
+                recordId: data.record.ogi_id,
+                eventKey: 'ogi.submitted',
+                transport: result.transport,
+                delivered: result.delivered,
+                skipped: result.skipped ?? false,
+                subject: result.subject,
+                recipients: result.recipients,
+                referenceId: result.referenceId ?? null,
+            }));
+        }
+        catch (error) {
+            console.error('[ogi] workflow email notification failed', JSON.stringify({
+                recordId,
+                eventKey: 'ogi.submitted',
+                error: error instanceof Error ? error.message : String(error),
+            }));
         }
     }
     isAdminActor(actor) {
@@ -62,7 +167,7 @@ export class OgiService {
         }
         const checks = await Promise.all(OGI_QUEUE_FORM_CODES.map(async (formId) => ({
             formId,
-            allowed: await permissionService.checkRolePermission(userId, formId, 'viewlist'),
+            allowed: await this.permissions.checkRolePermission(userId, formId, 'viewlist'),
         })));
         return new Set(checks
             .filter((entry) => entry.allowed)
@@ -106,7 +211,7 @@ export class OgiService {
             return false;
         }
         const status = mapOgiStatusFromDB(record.request_status ?? record.status);
-        return status === 'DRAFT' || status === 'SUBMITTED';
+        return status === 'DRAFT';
     }
     canDeleteRecord(record, actor) {
         if (this.isAdminActor(actor)) {
@@ -121,12 +226,12 @@ export class OgiService {
         return controlNumberService.buildOgiDraft({ siteId });
     }
     async getAllRecords(actor, scope = 'history') {
-        const records = await ogiRepository.findAllDetailed();
+        const records = await this.repository.findAllDetailed();
         if (records.length === 0)
             return [];
         const ogiIds = records.map((r) => r.ogi_id);
-        const allLots = await ogiRepository.fetchLotsByOgiIds(ogiIds);
-        const allAttachments = await ogiRepository.fetchAttachmentsByOgiIds(ogiIds);
+        const allLots = await this.repository.fetchLotsByOgiIds(ogiIds);
+        const allAttachments = await this.repository.fetchAttachmentsByOgiIds(ogiIds);
         const roleViewListForms = this.isAdminActor(actor)
             ? new Set()
             : await this.resolveRoleViewListFormCodes(actor?.userId);
@@ -160,7 +265,7 @@ export class OgiService {
         });
     }
     async getRecordById(id, actor) {
-        const data = await ogiRepository.findByIdDetailed(id);
+        const data = await this.repository.findByIdDetailed(id);
         if (!data)
             throw new NotFoundError('OGI Record not found');
         const roleViewListForms = this.isAdminActor(actor)
@@ -214,7 +319,7 @@ export class OgiService {
             last_update: now,
             updateby: effectiveUserId
         };
-        return await ogiRepository.executeTransaction(async (trx) => {
+        return await this.repository.executeTransaction(async (trx) => {
             const controlNo = isSubmittedOnCreate
                 ? await controlNumberService.finalizeOgi({
                     siteId: payload.siteId,
@@ -276,7 +381,7 @@ export class OgiService {
         });
     }
     async updateRecord(id, payload, actor, files = []) {
-        const existing = await ogiRepository.findByIdDetailed(id);
+        const existing = await this.repository.findByIdDetailed(id);
         if (!existing)
             throw new NotFoundError('Record not found');
         assertWorkflowRecordAccess({
@@ -305,7 +410,7 @@ export class OgiService {
                 dbUpdates.submit_date = now;
             }
         }
-        return await ogiRepository.executeTransaction(async (trx) => {
+        return await this.repository.executeTransaction(async (trx) => {
             if (dbUpdates.request_status === 'SB' && existing.record.request_status !== 'SB') {
                 this.assertSubmitControlNoInputs({
                     siteId: dbUpdates.site_id || existing.record.site_id,
@@ -378,7 +483,7 @@ export class OgiService {
      * Directly updates request_status without going through generic updateRecord
      */
     async submitRecord(idOrControlNo, userId) {
-        const existing = await ogiRepository.findByIdDetailed(idOrControlNo);
+        const existing = await this.repository.findByIdDetailed(idOrControlNo);
         if (!existing)
             throw new NotFoundError('OGI Record not found');
         const currentStatus = mapOgiStatusFromDB(existing.record.request_status);
@@ -387,7 +492,7 @@ export class OgiService {
         }
         const now = new Date();
         let controlNo = String(existing.record.control_no || '');
-        return await ogiRepository.executeTransaction(async (trx) => {
+        const result = await this.repository.executeTransaction(async (trx) => {
             this.assertSubmitControlNoInputs({
                 siteId: existing.record.site_id,
                 siteCode: existing.record.site_code,
@@ -418,12 +523,14 @@ export class OgiService {
                 message: 'OGI Record submitted successfully'
             };
         });
+        await this.sendSubmittedNotification(existing.record.ogi_id, userId, controlNo);
+        return result;
     }
     /**
      * Deletes an OGI record and all child tables
      */
     async deleteRecord(id, actor) {
-        const existing = await ogiRepository.findByIdDetailed(id);
+        const existing = await this.repository.findByIdDetailed(id);
         if (!existing)
             throw new NotFoundError('OGI Record not found');
         assertWorkflowRecordAccess({
@@ -432,7 +539,7 @@ export class OgiService {
             moduleName: 'OGI',
         });
         const ogiId = existing.record.ogi_id;
-        return await ogiRepository.executeTransaction(async (trx) => {
+        return await this.repository.executeTransaction(async (trx) => {
             await trx.deleteFrom('OGI_LOTS').where('ogi_id', '=', ogiId).execute();
             await trx.deleteFrom('OGI_ATTACHMENT').where('ogi_id', '=', ogiId).execute();
             await trx.deleteFrom('OGI').where('ogi_id', '=', ogiId).execute();
@@ -440,11 +547,11 @@ export class OgiService {
         });
     }
     async downloadAttachment(attachmentId, actor) {
-        const owner = await ogiRepository.findAttachmentOwner(attachmentId);
+        const owner = await this.repository.findAttachmentOwner(attachmentId);
         if (!owner?.ogi_id) {
             throw new NotFoundError('Attachment not found');
         }
-        const existing = await ogiRepository.findByIdDetailed(owner.ogi_id);
+        const existing = await this.repository.findByIdDetailed(owner.ogi_id);
         if (!existing) {
             throw new NotFoundError('OGI Record not found');
         }

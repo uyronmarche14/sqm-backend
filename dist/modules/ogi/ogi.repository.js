@@ -76,6 +76,29 @@ export class OgiRepository extends BaseRepository {
             .where('ogi_id', 'in', ogiIds)
             .execute();
     }
+    async findUserContactById(userId) {
+        if (!userId)
+            return null;
+        const user = await db
+            .selectFrom('USERS as u')
+            .select([
+            'u.user_id as userId',
+            'u.email as email',
+            'u.full_name as name',
+            'u.active_flag as activeFlag',
+        ])
+            .where('u.user_id', '=', userId)
+            .executeTakeFirst();
+        if (!user) {
+            return null;
+        }
+        return {
+            userId: user.userId,
+            email: user.email,
+            name: user.name,
+            activeFlag: user.activeFlag,
+        };
+    }
     async getNextSequence(prefix) {
         const result = await db.selectFrom('OGI')
             .select('control_no')

@@ -201,6 +201,115 @@ export class NpiRepository extends BaseRepository {
             .executeTakeFirst();
         return result?.inspector_id || null;
     }
+    async findUserContactById(userId) {
+        if (!userId)
+            return null;
+        const userRow = await db
+            .selectFrom('USERS as u')
+            .select([
+            'u.user_id as userId',
+            'u.email as email',
+            sql `${sql.ref('u.full_name')}`.as('name'),
+        ])
+            .where('u.user_id', '=', userId)
+            .executeTakeFirst();
+        if (userRow) {
+            return {
+                userId: userRow.userId,
+                email: userRow.email,
+                name: userRow.name,
+            };
+        }
+        const inspectorRow = await db
+            .selectFrom('INSPECTORS as i')
+            .select([
+            'i.inspector_id as userId',
+            sql `NULL`.as('email'),
+            'i.inspector_name as name',
+        ])
+            .where('i.inspector_id', '=', userId)
+            .executeTakeFirst();
+        if (!inspectorRow) {
+            return null;
+        }
+        return {
+            userId: inspectorRow.userId,
+            email: inspectorRow.email,
+            name: inspectorRow.name,
+        };
+    }
+    async findNotificationContextById(id) {
+        const row = await db
+            .selectFrom('NPI_LOTS as n')
+            .leftJoin('SUPPLIERS as sup', 'n.supplier_id', 'sup.supplier_id')
+            .leftJoin('USERS as inspector_user', 'n.inspector_id', 'inspector_user.user_id')
+            .leftJoin('INSPECTORS as inspector_master', 'n.inspector_id', 'inspector_master.inspector_id')
+            .leftJoin('USERS as checker_user', 'n.checker_id', 'checker_user.user_id')
+            .leftJoin('INSPECTORS as checker_master', 'n.checker_id', 'checker_master.inspector_id')
+            .leftJoin('USERS as approver_user', 'n.approver_id', 'approver_user.user_id')
+            .leftJoin('INSPECTORS as approver_master', 'n.approver_id', 'approver_master.inspector_id')
+            .select([
+            'n.npi_lot_id as recordId',
+            'n.control_no as controlNo',
+            sql `COALESCE(${sql.ref('sup.supplier_name')}, '')`.as('supplierName'),
+            sql `${sql.ref('n.inspector_id')}`.as('inspectorId'),
+            sql `${sql.ref('inspector_user.email')}`.as('inspectorEmail'),
+            sql `COALESCE(${sql.ref('inspector_user.full_name')}, ${sql.ref('inspector_master.inspector_name')}, ${sql.ref('n.inspector_id')})`.as('inspectorName'),
+            sql `${sql.ref('n.checker_id')}`.as('checkerId'),
+            sql `${sql.ref('checker_user.email')}`.as('checkerEmail'),
+            sql `COALESCE(${sql.ref('checker_user.full_name')}, ${sql.ref('checker_master.inspector_name')}, ${sql.ref('n.checker_id')})`.as('checkerName'),
+            sql `${sql.ref('n.approver_id')}`.as('approverId'),
+            sql `${sql.ref('approver_user.email')}`.as('approverEmail'),
+            sql `COALESCE(${sql.ref('approver_user.full_name')}, ${sql.ref('approver_master.inspector_name')}, ${sql.ref('n.approver_id')})`.as('approverName'),
+        ])
+            .where('n.npi_lot_id', '=', id)
+            .executeTakeFirst();
+        if (!row) {
+            return null;
+        }
+        const ccRows = await db
+            .selectFrom('NPI_CC as cc')
+            .leftJoin('USERS as u', 'cc.user_id', 'u.user_id')
+            .leftJoin('INSPECTORS as i', 'cc.user_id', 'i.inspector_id')
+            .select([
+            'cc.user_id as userId',
+            'u.email as email',
+            sql `COALESCE(${sql.ref('u.full_name')}, ${sql.ref('i.inspector_name')}, ${sql.ref('cc.user_id')})`.as('name'),
+        ])
+            .where('cc.npi_lot_id', '=', id)
+            .execute();
+        return {
+            recordId: row.recordId,
+            controlNo: row.controlNo,
+            supplierName: row.supplierName,
+            inspector: row.inspectorId
+                ? {
+                    userId: row.inspectorId,
+                    email: row.inspectorEmail,
+                    name: row.inspectorName,
+                }
+                : null,
+            checker: row.checkerId
+                ? {
+                    userId: row.checkerId,
+                    email: row.checkerEmail,
+                    name: row.checkerName,
+                }
+                : null,
+            approver: row.approverId
+                ? {
+                    userId: row.approverId,
+                    email: row.approverEmail,
+                    name: row.approverName,
+                }
+                : null,
+            cc: ccRows.map((cc) => ({
+                userId: cc.userId,
+                email: cc.email,
+                name: cc.name,
+            })),
+        };
+    }
     async executeTransaction(callback) {
         return await db.transaction().execute(async (trx) => {
             return await callback(trx);
