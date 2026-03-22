@@ -176,6 +176,34 @@ export interface AQLTable extends GenericMasterDataTable {
   aql_desc: string | null;
 }
 
+export interface AqlLevelTable {
+  aqllevel_id: string;
+  aql_id: string;
+  severity_id: string;
+  lot_size_min: number;
+  lot_size_max: number;
+  active_flag: boolean | number | null;
+  last_update: Date | string | null;
+  updateby: string | null;
+}
+
+export interface AqlLevelClassTable {
+  aqllevelclass_id: string;
+  aqllevel_id: string;
+  defectclass_id: string;
+  samplesize: number;
+  accept: number;
+  reject: number;
+}
+
+export interface MaterialCertsTable extends GenericMasterDataTable {
+  materialcert_id: string;
+  part_id: string | null;
+  component: string;
+  required_data: string;
+  materialcert_desc: string | null;
+}
+
 // --- Inspection ---
 export interface InspectionCategoriesTable extends GenericMasterDataTable {
   inspectioncat_id: string;

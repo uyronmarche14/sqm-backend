@@ -206,6 +206,55 @@ async function waitForSqlServer() {
   throw new Error('SQL Server did not become ready in time.');
 }
 
+async function waitForTargetDatabase() {
+  for (let attempt = 1; attempt <= WAIT_RETRIES; attempt++) {
+    try {
+      const status = await withPool('master', async (pool) => {
+        const result = await pool.request()
+          .input('dbName', sql.NVarChar, TARGET_DB)
+          .query(`
+SELECT
+  state_desc,
+  user_access_desc
+FROM sys.databases
+WHERE name = @dbName
+`);
+
+        return result.recordset[0] as
+          | { state_desc?: string; user_access_desc?: string }
+          | undefined;
+      });
+
+      if (!status) {
+        console.log(`Waiting for target database (${attempt}/${WAIT_RETRIES}): ${TARGET_DB} does not exist yet.`);
+        await sleep(WAIT_DELAY_MS);
+        continue;
+      }
+
+      if (status.state_desc !== 'ONLINE') {
+        console.log(
+          `Waiting for target database (${attempt}/${WAIT_RETRIES}): ${TARGET_DB} state is ${status.state_desc ?? 'unknown'}.`,
+        );
+        await sleep(WAIT_DELAY_MS);
+        continue;
+      }
+
+      await withPool(TARGET_DB, async (pool) => {
+        await pool.request().query('SELECT DB_NAME() AS currentDb');
+      });
+
+      console.log(`Target database ${TARGET_DB} is ready for connections.`);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`Waiting for target database (${attempt}/${WAIT_RETRIES}): ${message}`);
+      await sleep(WAIT_DELAY_MS);
+    }
+  }
+
+  throw new Error(`Target database ${TARGET_DB} did not become ready in time.`);
+}
+
 async function databaseExists() {
   return withPool('master', async (pool) => {
     const result = await pool.request()
@@ -404,6 +453,7 @@ async function initDatabase() {
   await waitForSqlServer();
 
   const createdDatabase = await ensureDatabase();
+  await waitForTargetDatabase();
   const shouldBootstrapSchema = createdDatabase || await needsSchemaBootstrap();
 
   if (shouldBootstrapSchema) {

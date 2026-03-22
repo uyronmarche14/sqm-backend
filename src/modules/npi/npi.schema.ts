@@ -295,6 +295,26 @@ export const NpiIdParamSchema = z.object({
   })
 });
 
+export const NpiResolveFormStateSchema = z.object({
+  body: z.object({
+    partId: OptionalUuidField,
+    severity: OptionalUuidField,
+    lotSize: z.preprocess((v) => {
+      if (v === '' || v == null) return undefined;
+      return Number(v);
+    }, z.number().int().optional()),
+    ssiAccept: z.preprocess((v) => v === 'true' || v === '1' || v === true ? 1 : 0, z.number()).optional(),
+    ogiRefNo: OptionalStringField,
+    checkerId: OptionalUuidField,
+    approverId: OptionalUuidField,
+    visual_categories: JsonParsedArray(NpiVisualCategorySchema),
+    data_categories: JsonParsedArray(NpiDataCategorySchema),
+    dimension_categories: JsonParsedArray(NpiDimensionCategorySchema),
+    noise_categories: JsonParsedArray(NpiNoiseCategorySchema),
+    material_certificates: JsonParsedArray(NpiMaterialCertificateSchema),
+  }),
+});
+
 export const NpiAttachmentParamSchema = z.object({
   params: z.object({
     attachmentId: z.string().uuid('Invalid Attachment ID format')
@@ -303,3 +323,4 @@ export const NpiAttachmentParamSchema = z.object({
 
 export type NPICreationInput = z.infer<typeof NpiCreateSchema>['body'];
 export type NPIUpdateInput = z.infer<typeof NpiUpdateSchema>['body'];
+export type NpiResolveFormStateInput = z.infer<typeof NpiResolveFormStateSchema>['body'];

@@ -2,7 +2,7 @@ import { NpiCrudService } from './services/NpiCrudService.js';
 import { NpiWorkflowService } from './services/NpiWorkflowService.js';
 import { NpiRepository } from './npi.repository.js';
 import { NpiMapper } from './services/NpiMapper.js';
-import { NpiActionSchema, NpiAttachmentParamSchema, NpiCreateSchema, NpiIdParamSchema, NpiUpdateSchema, } from './npi.schema.js';
+import { NpiActionSchema, NpiAttachmentParamSchema, NpiCreateSchema, NpiIdParamSchema, NpiResolveFormStateSchema, NpiUpdateSchema, } from './npi.schema.js';
 import { createResponse, successResponse } from '../../shared/utils/api-response.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 const repository = new NpiRepository();
@@ -17,6 +17,7 @@ export class NpiController {
         this.update = this.update.bind(this);
         this.getStats = this.getStats.bind(this);
         this.generateSequence = this.generateSequence.bind(this);
+        this.resolveFormState = this.resolveFormState.bind(this);
         this.downloadAttachment = this.downloadAttachment.bind(this);
         this.submit = this.submit.bind(this);
         this.check = this.check.bind(this);
@@ -135,6 +136,18 @@ export class NpiController {
             return;
         }
         catch (error) {
+            return next(error);
+        }
+    }
+    async resolveFormState(req, res, next) {
+        try {
+            const payload = NpiResolveFormStateSchema.parse({ body: req.body }).body;
+            const result = await crudService.resolveFormState(payload);
+            res.json(successResponse(result));
+            return;
+        }
+        catch (error) {
+            console.error('[NPI] RESOLVE FORM STATE error:', error);
             return next(error);
         }
     }

@@ -15,6 +15,41 @@ import {
 } from '../npi.db.types.js';
 import type { NpiWorkflowAction, NpiWorkflowStage } from '../workflow/npi-workflow.constants.js';
 
+export type NpiLegacyJudgment = 'Accept' | 'Reject';
+
+export interface NpiSectionJudgments {
+  visual: NpiLegacyJudgment;
+  data: NpiLegacyJudgment;
+  dimension: NpiLegacyJudgment;
+  noise: NpiLegacyJudgment;
+  material: NpiLegacyJudgment;
+}
+
+export interface NpiSubmitBlocker {
+  code:
+    | 'OGI_REF_REQUIRED'
+    | 'DATA_CATEGORY_INCOMPLETE'
+    | 'DIMENSION_CATEGORY_INCOMPLETE'
+    | 'NOISE_CATEGORY_INCOMPLETE'
+    | 'CHECKER_REQUIRED'
+    | 'APPROVER_REQUIRED'
+    | 'AQL_LEVEL_UNRESOLVED';
+  message: string;
+}
+
+export interface NpiLegacyParityMetadata {
+  aqlMinorDefect: string | null;
+  aqlMajorDefect: string | null;
+  sampleSize: number;
+  visualJudgment: NpiLegacyJudgment;
+  sectionJudgments: NpiSectionJudgments;
+  overallJudgment: NpiLegacyJudgment;
+  submitBlockers: NpiSubmitBlocker[];
+  verificationMode: 'SSI' | 'DATA';
+  dataCategoryReadOnly: boolean;
+  requiresOgiRefNo: boolean;
+}
+
 // ============================================================================
 // DTO Types (Data Transfer Objects)
 // ============================================================================
@@ -91,6 +126,7 @@ export interface NpiDetailDTO extends Omit<NpiLot, 'request_status' | 'datecreat
   availableActions: NpiWorkflowAction[];
   nextApproverId?: string | null;
   nextApproverName?: string | null;
+  legacyParity: NpiLegacyParityMetadata;
 }
 
 /**
@@ -112,6 +148,31 @@ export interface NpiDetailQueryResult {
   noise_categories: NpiNoisecat[];
   material_certificates: NpiMaterialcert[];
   cc_list: NpiCcWithUser[];
+}
+
+export interface NpiResolveFormStatePayload {
+  partId?: string | null;
+  severity?: string | null;
+  lotSize?: number | null;
+  ssiAccept?: boolean | number | null;
+  ogiRefNo?: string | null;
+  checkerId?: string | null;
+  approverId?: string | null;
+  visual_categories?: NpiVisualCategoryInput[];
+  data_categories?: NpiDataCategoryInput[];
+  dimension_categories?: NpiDimensionCategoryInput[];
+  noise_categories?: NpiNoiseCategoryInput[];
+  material_certificates?: NpiMaterialCertificateInput[];
+}
+
+export interface NpiResolveFormStateResponse extends NpiLegacyParityMetadata {
+  data_categories: NpiDataCategoryInput[];
+  dimension_categories: NpiDimensionCategoryInput[];
+  noise_categories: NpiNoiseCategoryInput[];
+  material_certificates: NpiMaterialCertificateInput[];
+  totalMinor: number;
+  totalMajor: number;
+  totalCritical: number;
 }
 
 // ============================================================================

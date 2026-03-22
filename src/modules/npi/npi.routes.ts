@@ -42,6 +42,7 @@ router.use(requireAuth);
 
 router.get('/stats', requireModuleAccess('NEWPARTS', 'view'), npiController.getStats);
 router.get('/sequence', requireModuleAccess('NEWPARTS', 'view'), npiController.generateSequence);
+router.post('/resolve-form-state', requireModuleAccess('NEWPARTS', 'view'), npiController.resolveFormState);
 
 router.get(
   '/',

@@ -8,6 +8,7 @@ import {
   NpiAttachmentParamSchema,
   NpiCreateSchema,
   NpiIdParamSchema,
+  NpiResolveFormStateSchema,
   NpiUpdateSchema,
 } from './npi.schema.js';
 import { createResponse, successResponse } from '../../shared/utils/api-response.js';
@@ -26,6 +27,7 @@ export class NpiController {
     this.update = this.update.bind(this);
     this.getStats = this.getStats.bind(this);
     this.generateSequence = this.generateSequence.bind(this);
+    this.resolveFormState = this.resolveFormState.bind(this);
     this.downloadAttachment = this.downloadAttachment.bind(this);
     this.submit = this.submit.bind(this);
     this.check = this.check.bind(this);
@@ -151,6 +153,18 @@ export class NpiController {
       res.json(successResponse({ sequence }));
       return;
     } catch (error) {
+      return next(error);
+    }
+  }
+
+  async resolveFormState(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const payload = NpiResolveFormStateSchema.parse({ body: req.body }).body;
+      const result = await crudService.resolveFormState(payload);
+      res.json(successResponse(result));
+      return;
+    } catch (error) {
+      console.error('[NPI] RESOLVE FORM STATE error:', error);
       return next(error);
     }
   }

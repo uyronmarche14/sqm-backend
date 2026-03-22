@@ -24,6 +24,7 @@ import {
 } from '../../../shared/notifications/npi-notification.service.js';
 import type { EmailAddress } from '../../../shared/notifications/email.types.js';
 import type { NpiNotificationContext, NpiNotificationRecipient } from '../npi.repository.js';
+import { npiLegacyParityService } from './NpiLegacyParityService.js';
 
 type DetailedRecord = Record<string, any>;
 
@@ -353,10 +354,11 @@ export class NpiWorkflowService {
 
     await this.ensureActor(record, userId, roleId, 'submit', 'Only the originator can submit this NPI record.');
 
-    if (!record.checker_id || !record.approver_id) {
-      throw new BadRequestError('Checker and approver must be assigned before submitting.');
-    }
     this.assertSubmitControlNoInputs(record);
+    const parityState = await npiLegacyParityService.evaluateDetailedRecord(existing);
+    if (parityState.submitBlockers.length > 0) {
+      throw new BadRequestError(parityState.submitBlockers[0]?.message || 'This record is not ready for submission.');
+    }
 
     const now = new Date();
     let controlNo = String(record.control_no || '');

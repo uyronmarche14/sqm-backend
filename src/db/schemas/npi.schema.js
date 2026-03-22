@@ -31,6 +31,8 @@ export const NpiLotSchema = {
         endorsetime: { type: sql.Int },
         data_verified_by_id: { type: sql.VarChar },
         inspector_id: { type: sql.VarChar },
+        checker_id: { type: sql.VarChar },
+        approver_id: { type: sql.VarChar },
         total_minor: { type: sql.Int },
         total_major: { type: sql.Int },
         total_critical: { type: sql.Int },
@@ -41,9 +43,11 @@ export const NpiLotSchema = {
         rohs_verification: { type: sql.NVarChar },
         reference_mnr_no: { type: sql.NVarChar },
         corrected_lot_verification: { type: sql.Int },
+        ogi_ref_no: { type: sql.NVarChar },
         inspector_remarks: { type: sql.NVarChar },
         checker_remarks: { type: sql.NVarChar },
-        approver_remarks: { type: sql.NVarChar }
+        approver_remarks: { type: sql.NVarChar },
+        visual_judgment: { type: sql.NVarChar }
     }
 };
 

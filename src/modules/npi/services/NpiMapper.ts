@@ -9,6 +9,7 @@ import {
   NpiListDTO, 
   NpiDetailDTO, 
   NpiDetailQueryResult,
+  NpiLegacyParityMetadata,
   NpiWorkflowActorContext,
 } from '../types/npi.types.js';
 import { NpiLot } from '../npi.db.types.js';
@@ -37,7 +38,11 @@ export class NpiMapper {
   /**
    * Map database record with relations to detail DTO
    */
-  toDetailDTO(data: NpiDetailQueryResult, actor?: NpiWorkflowActorContext): NpiDetailDTO {
+  toDetailDTO(
+    data: NpiDetailQueryResult,
+    actor?: NpiWorkflowActorContext,
+    legacyParity?: NpiLegacyParityMetadata,
+  ): NpiDetailDTO {
     const {
       record,
       attachments,
@@ -61,6 +66,24 @@ export class NpiMapper {
       noise_categories: noise_categories || [],
       material_certificates: material_certificates || [],
       cc_list: cc_list || [],
+      legacyParity: legacyParity || {
+        aqlMinorDefect: null,
+        aqlMajorDefect: null,
+        sampleSize: Number(record.sample_size || 0),
+        visualJudgment: (record.visual_judgment as NpiLegacyParityMetadata['visualJudgment']) || 'Accept',
+        sectionJudgments: {
+          visual: 'Accept',
+          data: 'Accept',
+          dimension: 'Accept',
+          noise: 'Accept',
+          material: 'Accept',
+        },
+        overallJudgment: (record.judgment as NpiLegacyParityMetadata['overallJudgment']) || 'Accept',
+        submitBlockers: [],
+        verificationMode: record.ssi_accept ? 'SSI' : 'DATA',
+        dataCategoryReadOnly: Boolean(record.ssi_accept),
+        requiresOgiRefNo: Boolean(record.ssi_accept),
+      },
       ...workflow,
     } as NpiDetailDTO;
   }

@@ -27,7 +27,9 @@ import {
   NpiNoiseCategoryInput,
   NpiCcInput,
   NpiWorkflowActorContext,
-  UploadedFile
+  UploadedFile,
+  NpiResolveFormStatePayload,
+  NpiResolveFormStateResponse,
 } from '../types/npi.types.js';
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
 import { buildNpiWorkflowMetadata, getNpiDbStatus, getNpiDbStatusesForFilter } from '../workflow/npi-workflow.utils.js';
@@ -40,6 +42,7 @@ import {
 import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
+import { npiLegacyParityService } from './NpiLegacyParityService.js';
 
 const NPI_QUEUE_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
   NEW: ['NPILOT-09-01'],
@@ -305,7 +308,12 @@ export class NpiCrudService implements INpiService {
       action: 'view',
       moduleName: 'NPI',
     });
-    return this.mapper.toDetailDTO(data, actor);
+    const legacyParity = await npiLegacyParityService.evaluateDetailedRecord(data);
+    return this.mapper.toDetailDTO(data, actor, legacyParity);
+  }
+
+  async resolveFormState(payload: NpiResolveFormStatePayload): Promise<NpiResolveFormStateResponse> {
+    return npiLegacyParityService.resolveFormState(payload);
   }
 
   /**
@@ -330,6 +338,7 @@ export class NpiCrudService implements INpiService {
     const defaultInspector = await this.repository.findDefaultInspector();
     
     return await this.repository.executeTransaction(async (trx) => {
+      const parityState = await npiLegacyParityService.prepareForCreate(payload);
       const controlNo = await controlNumberService.buildNpiDraft(
         {
           siteId: payload.siteId,
@@ -342,7 +351,8 @@ export class NpiCrudService implements INpiService {
         controlNo,
         now,
         effectiveUserId,
-        defaultInspector
+        defaultInspector,
+        parityState,
       });
 
       // 1. Insert Main Record
@@ -350,11 +360,11 @@ export class NpiCrudService implements INpiService {
 
       // 2. Insert Related Data
       await this.insertAttachments(trx, npiId, payload.attachments, files, effectiveUserId, now);
-      await this.insertVisualCategories(trx, npiId, payload.visual_categories, effectiveUserId, now);
-      await this.insertDataCategories(trx, npiId, payload.data_categories, effectiveUserId, now);
-      await this.insertDimensionCategories(trx, npiId, payload.dimension_categories, effectiveUserId, now);
-      await this.insertNoiseCategories(trx, npiId, payload.noise_categories, effectiveUserId, now);
-      await this.insertMaterialCertificates(trx, npiId, payload.material_certificates, effectiveUserId, now);
+      await this.insertVisualCategories(trx, npiId, parityState.visual_categories, effectiveUserId, now);
+      await this.insertDataCategories(trx, npiId, parityState.data_categories, effectiveUserId, now);
+      await this.insertDimensionCategories(trx, npiId, parityState.dimension_categories, effectiveUserId, now);
+      await this.insertNoiseCategories(trx, npiId, parityState.noise_categories, effectiveUserId, now);
+      await this.insertMaterialCertificates(trx, npiId, parityState.material_certificates, effectiveUserId, now);
       await this.insertCCList(trx, npiId, payload.cc_list, effectiveUserId, now);
 
       return { 
@@ -392,12 +402,14 @@ export class NpiCrudService implements INpiService {
     const now = new Date();
     const effectiveUserId = actor?.userId || 'SYSTEM';
     const npiLotId = existing.record.npi_lot_id;
+    const parityState = await npiLegacyParityService.prepareForUpdate(payload, existing);
 
     const dbUpdates = this.buildUpdatePayload(
       payload,
       effectiveUserId,
       now,
       existing.record.corrected_lot_verification ?? 0,
+      parityState,
     );
 
     return await this.repository.executeTransaction(async (trx) => {
@@ -420,24 +432,24 @@ export class NpiCrudService implements INpiService {
         await this.insertVisualCategories(trx, npiLotId, payload.visual_categories, effectiveUserId, now);
       }
 
-      if (payload.data_categories !== undefined) {
+      if (parityState.replaceFlags.data) {
         await trx.deleteFrom('NPI_DATACAT').where('npi_lot_id', '=', npiLotId).execute();
-        await this.insertDataCategories(trx, npiLotId, payload.data_categories, effectiveUserId, now);
+        await this.insertDataCategories(trx, npiLotId, parityState.data_categories, effectiveUserId, now);
       }
 
-      if (payload.dimension_categories !== undefined) {
+      if (parityState.replaceFlags.dimension) {
         await trx.deleteFrom('NPI_DIMENSIONCAT').where('npi_lot_id', '=', npiLotId).execute();
-        await this.insertDimensionCategories(trx, npiLotId, payload.dimension_categories, effectiveUserId, now);
+        await this.insertDimensionCategories(trx, npiLotId, parityState.dimension_categories, effectiveUserId, now);
       }
 
-      if (payload.noise_categories !== undefined) {
+      if (parityState.replaceFlags.noise) {
         await trx.deleteFrom('NPI_NOISECAT').where('npi_lot_id', '=', npiLotId).execute();
-        await this.insertNoiseCategories(trx, npiLotId, payload.noise_categories, effectiveUserId, now);
+        await this.insertNoiseCategories(trx, npiLotId, parityState.noise_categories, effectiveUserId, now);
       }
 
-      if (payload.material_certificates !== undefined) {
+      if (parityState.replaceFlags.material) {
         await trx.deleteFrom('NPI_MATERIALCERT').where('npi_lot_id', '=', npiLotId).execute();
-        await this.insertMaterialCertificates(trx, npiLotId, payload.material_certificates, effectiveUserId, now);
+        await this.insertMaterialCertificates(trx, npiLotId, parityState.material_certificates, effectiveUserId, now);
       }
 
       if (payload.cc_list !== undefined) {
@@ -523,7 +535,19 @@ export class NpiCrudService implements INpiService {
   /**
    * Build payload for creating new record
    */
-  private buildCreatePayload(payload: NPICreationInput, context: CreatePayloadContext): NewNpiLot {
+  private buildCreatePayload(
+    payload: NPICreationInput,
+    context: CreatePayloadContext & {
+      parityState: {
+        sampleSize: number;
+        totalMinor: number;
+        totalMajor: number;
+        totalCritical: number;
+        visualJudgment: string;
+        overallJudgment: string;
+      };
+    },
+  ): NewNpiLot {
     const { npiId, controlNo, now, effectiveUserId, defaultInspector } = context;
     const inspectorId = this.getActorId(payload, 'inspectorId', 'inspector_id');
     const checkerId = this.getActorId(payload, 'checkerId', 'checker_id');
@@ -560,7 +584,7 @@ export class NpiCrudService implements INpiService {
       endtime: payload.endTime || 0,
       severity_id: payload.severity || '',
       severity_seq: payload.severity_seq || null,
-      sample_size: payload.sampleSize || 0,
+      sample_size: context.parityState.sampleSize,
       disposition_id: payload.disposition || '',
       inspection_date: this.mapper.parseDate(payload.inspectionDate) ?? now,
       delivery_date: this.mapper.parseDate(payload.deliveryDate) ?? now,
@@ -572,11 +596,11 @@ export class NpiCrudService implements INpiService {
       inspector_id: finalInspectorId,
       checker_id: checkerId,
       approver_id: approverId,
-      total_minor: payload.total_minor || 0,
-      total_major: payload.total_major || 0,
-      total_critical: payload.total_critical || 0,
+      total_minor: context.parityState.totalMinor,
+      total_major: context.parityState.totalMajor,
+      total_critical: context.parityState.totalCritical,
       ssi_accept: payload.ssiAccept ?? 1, // Legacy default
-      judgment: payload.judgment || null,
+      judgment: context.parityState.overallJudgment || null,
       request_status: getNpiDbStatus(NPI_WORKFLOW_STAGE.DRAFT),
       last_update: now,
       updateby: effectiveUserId,
@@ -592,7 +616,7 @@ export class NpiCrudService implements INpiService {
       approver_remarks: this.getRemarks(payload, 'approverRemarks', 'approver_remarks'),
       approved_date: null,
       ogi_ref_no: payload.ogiRefNo || null,
-      visual_judgment: null
+      visual_judgment: context.parityState.visualJudgment || null
     };
   }
 
@@ -604,6 +628,14 @@ export class NpiCrudService implements INpiService {
     userId: string,
     now: Date,
     existingCorrectedLotVerification: number,
+    parityState: {
+      sampleSize: number;
+      totalMinor: number;
+      totalMajor: number;
+      totalCritical: number;
+      visualJudgment: string;
+      overallJudgment: string;
+    },
   ): NpiLotUpdate {
     const dbUpdates: NpiLotUpdate = {
       last_update: now,
@@ -631,7 +663,7 @@ export class NpiCrudService implements INpiService {
     if (payload.endorseTime !== undefined) dbUpdates.endorsetime = payload.endorseTime;
     if (payload.severity) dbUpdates.severity_id = payload.severity;
     if (payload.severity_seq !== undefined) dbUpdates.severity_seq = payload.severity_seq;
-    if (payload.sampleSize !== undefined) dbUpdates.sample_size = payload.sampleSize;
+    dbUpdates.sample_size = parityState.sampleSize;
     if (payload.disposition) dbUpdates.disposition_id = payload.disposition;
     if (payload.inspectionDate) {
       const parsedDate = this.mapper.parseDate(payload.inspectionDate);
@@ -646,10 +678,11 @@ export class NpiCrudService implements INpiService {
     if (payload.dataVerifiedBy) dbUpdates.data_verified_by_id = payload.dataVerifiedBy;
     if (payload.checkerId !== undefined || (payload as any).checker_id !== undefined) dbUpdates.checker_id = checkerId;
     if (payload.approverId !== undefined || (payload as any).approver_id !== undefined) dbUpdates.approver_id = approverId;
-    if (payload.total_minor !== undefined) dbUpdates.total_minor = payload.total_minor;
-    if (payload.total_major !== undefined) dbUpdates.total_major = payload.total_major;
-    if (payload.total_critical !== undefined) dbUpdates.total_critical = payload.total_critical;
-    if (payload.judgment !== undefined) dbUpdates.judgment = payload.judgment;
+    dbUpdates.total_minor = parityState.totalMinor;
+    dbUpdates.total_major = parityState.totalMajor;
+    dbUpdates.total_critical = parityState.totalCritical;
+    dbUpdates.judgment = parityState.overallJudgment;
+    dbUpdates.visual_judgment = parityState.visualJudgment;
     if (payload.rohsVerification !== undefined) dbUpdates.rohs_verification = payload.rohsVerification;
     if (payload.referenceMnrNo !== undefined) dbUpdates.reference_mnr_no = payload.referenceMnrNo || null;
     const nextCorrectedLotVerification = this.computeCorrectedLotVerificationForUpdate(

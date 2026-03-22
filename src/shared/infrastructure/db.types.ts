@@ -28,6 +28,7 @@ import type {
   DefectClassTable, DispositionsTable, SeverityTable, AQLTable, InspectionCategoriesTable,
   InspectionMethodsTable, InspectorsTable, MnrTypesTable, PartTypesTable,
   PartDataCategoriesTable, PartDimensionCategoriesTable, PartNoiseCategoriesTable,
+  AqlLevelTable, AqlLevelClassTable, MaterialCertsTable,
   FormsTable, RoleAccessTable, SupplierInformationTable, AuditCategoryTable,
   AuditTypeTable, CriteriasTable, PartClassCategoriesTable, RegistrationsTable,
   FAQItemTable, CertificationsTable, GroupsTable, TrainingProgramsTable, MessageInfoTable
@@ -97,9 +98,12 @@ export interface Database {
   DISPOSITIONS: DispositionsTable;
   SEVERITY: SeverityTable;
   AQL: AQLTable;
+  AQLLEVEL: AqlLevelTable;
+  AQLLEVELCLASS: AqlLevelClassTable;
   INSPECTIONCATEGORIES: InspectionCategoriesTable;
   INSPECTIONMETHODS: InspectionMethodsTable;
   INSPECTORS: InspectorsTable;
+  MATERIALCERTS: MaterialCertsTable;
   MNRTYPE: MnrTypesTable;
   PARTTYPES: PartTypesTable;
   PARTDATACATEGORIES: PartDataCategoriesTable;

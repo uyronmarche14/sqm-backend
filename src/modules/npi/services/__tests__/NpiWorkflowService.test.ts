@@ -18,9 +18,44 @@ vi.mock('../../../../shared/utils/admin.utils', () => ({
 }));
 
 // Mock role permission check
-const mockHasRolePermission = vi.fn().mockResolvedValue(false);
-vi.mock('../../../../shared/utils/role-permission.utils', () => ({
-  hasRolePermission: (...args: any[]) => mockHasRolePermission(...args),
+const mockCheckRolePermission = vi.fn().mockResolvedValue(false);
+vi.mock('../../../../shared/services/permission.service.js', () => ({
+  permissionService: {
+    checkRolePermission: (...args: any[]) => mockCheckRolePermission(...args),
+  },
+}));
+
+vi.mock('../../../../shared/services/control-number.service.js', () => ({
+  controlNumberService: {
+    finalizeNpi: vi.fn().mockResolvedValue('NPI-2026-0001'),
+    getControlNoState: vi.fn().mockReturnValue('final'),
+  },
+}));
+
+vi.mock('../NpiLegacyParityService', () => ({
+  npiLegacyParityService: {
+    evaluateDetailedRecord: vi.fn(async (data: Record<string, any>) => ({
+      aqlMinorDefect: null,
+      aqlMajorDefect: null,
+      sampleSize: Number(data.record?.sample_size || 0),
+      visualJudgment: 'Accept',
+      sectionJudgments: {
+        visual: 'Accept',
+        data: 'Accept',
+        dimension: 'Accept',
+        noise: 'Accept',
+        material: 'Accept',
+      },
+      overallJudgment: 'Accept',
+      submitBlockers: [
+        ...(!data.record?.checker_id ? [{ code: 'CHECKER_REQUIRED', message: 'Checker and approver must be assigned before submitting.' }] : []),
+        ...(!data.record?.approver_id ? [{ code: 'APPROVER_REQUIRED', message: 'Checker and approver must be assigned before submitting.' }] : []),
+      ],
+      verificationMode: 'DATA',
+      dataCategoryReadOnly: false,
+      requiresOgiRefNo: false,
+    })),
+  },
 }));
 
 // Mock audit logging (no-op)
@@ -52,7 +87,7 @@ describe('NpiWorkflowService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsAdminUser.mockResolvedValue(false);
-    mockHasRolePermission.mockResolvedValue(false);
+    mockCheckRolePermission.mockResolvedValue(false);
     lastUpdateSet = null;
 
     mockRepository = {
@@ -72,6 +107,7 @@ describe('NpiWorkflowService', () => {
         record: {
           npi_lot_id: '123',
           request_status: 'DR',
+          site_id: 'site-1',
           inspector_id: 'user1',
           checker_id: 'checker1',
           approver_id: 'approver1',
@@ -112,6 +148,7 @@ describe('NpiWorkflowService', () => {
         record: {
           npi_lot_id: '123',
           request_status: 'DR',
+          site_id: 'site-1',
           inspector_id: 'someone-else',
           checker_id: 'checker1',
           approver_id: 'approver1',
@@ -128,6 +165,7 @@ describe('NpiWorkflowService', () => {
         record: {
           npi_lot_id: '123',
           request_status: 'DR',
+          site_id: 'site-1',
           inspector_id: 'user1',
           checker_id: null,
           approver_id: null,
@@ -214,7 +252,7 @@ describe('NpiWorkflowService', () => {
   // ==========================================================================
   describe('checkRecord (Role Fallback)', () => {
     it('should allow user with role permission when no checker is assigned', async () => {
-      mockHasRolePermission.mockResolvedValueOnce(true);
+      mockCheckRolePermission.mockResolvedValueOnce(true);
 
       mockRepository.findByIdDetailed.mockResolvedValue({
         record: {

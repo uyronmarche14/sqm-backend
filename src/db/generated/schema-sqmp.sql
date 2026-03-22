@@ -94,7 +94,6 @@ GO
 IF OBJECT_ID('[dbo].[SQMP_RESPONSE_APPENDIX]', 'U') IS NOT NULL DROP TABLE [dbo].[SQMP_RESPONSE_APPENDIX];
 CREATE TABLE [dbo].[SQMP_RESPONSE_APPENDIX] (
     [sqmp_response_appendix_id] nvarchar(72) NOT NULL PRIMARY KEY,
-    [sqmp_response_appendix_id] nvarchar(72) NOT NULL,
     [sqmp_response_id] nvarchar(72) NOT NULL,
     [file_name] nvarchar(220) NOT NULL,
     [file_extension] nvarchar(20) NOT NULL,
@@ -138,4 +137,3 @@ CREATE TABLE [dbo].[SQMP_STATUS_REMARKS] (
     [remarks_date] datetime NOT NULL
 );
 GO
-

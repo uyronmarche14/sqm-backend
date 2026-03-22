@@ -439,22 +439,22 @@ INSERT INTO GROUPS (group_id, group_name, group_desc, active_flag, last_update, 
 ('GRP-015', 'Customer Service', 'Customer service team', 1, GETDATE(), 'SYSTEM');
 
 -- FAQ Items
-INSERT INTO FAQ_ITEM (faq_id, question, answer, category, active_flag, last_update, updateby) VALUES
-('FAQ-001', 'How to submit MNR?', 'Navigate to MNR module and click New MNR', 'MNR', 1, GETDATE(), 'SYSTEM'),
-('FAQ-002', 'What is AQL?', 'Acceptable Quality Level for sampling inspection', 'Quality', 1, GETDATE(), 'SYSTEM'),
-('FAQ-003', 'How to approve QMQA?', 'Go to QMQA approval page and review details', 'QMQA', 1, GETDATE(), 'SYSTEM'),
-('FAQ-004', 'Where to find reports?', 'Reports are available in the Reports menu', 'General', 1, GETDATE(), 'SYSTEM'),
-('FAQ-005', 'How to reset password?', 'Contact system administrator', 'System', 1, GETDATE(), 'SYSTEM'),
-('FAQ-006', 'How to create new supplier?', 'Go to Maintenance > Suppliers and click Add', 'Maintenance', 1, GETDATE(), 'SYSTEM'),
-('FAQ-007', 'What is 5M1E analysis?', 'Root cause analysis method: Man, Machine, Material, Method, Measurement, Environment', 'Quality', 1, GETDATE(), 'SYSTEM'),
-('FAQ-008', 'How to upload attachments?', 'Click the attachment icon and select files', 'General', 1, GETDATE(), 'SYSTEM'),
-('FAQ-009', 'What is PPAP?', 'Production Part Approval Process for automotive', 'Quality', 1, GETDATE(), 'SYSTEM'),
-('FAQ-010', 'How to export data?', 'Use the Export button on list pages', 'General', 1, GETDATE(), 'SYSTEM'),
-('FAQ-011', 'What is FMEA?', 'Failure Mode and Effects Analysis', 'Quality', 1, GETDATE(), 'SYSTEM'),
-('FAQ-012', 'How to schedule audit?', 'Go to Audit module and create new audit', 'Audit', 1, GETDATE(), 'SYSTEM'),
-('FAQ-013', 'What is SPC?', 'Statistical Process Control for monitoring', 'Quality', 1, GETDATE(), 'SYSTEM'),
-('FAQ-014', 'How to view dashboard?', 'Click Dashboard on main menu', 'General', 1, GETDATE(), 'SYSTEM'),
-('FAQ-015', 'What is CAPA?', 'Corrective and Preventive Action', 'Quality', 1, GETDATE(), 'SYSTEM');
+INSERT INTO FAQ_ITEM (faq_item_id, faq_category, question, answer, sequence, faq_item_desc, active_flag, last_update, updateby) VALUES
+('FAQ-001', 1, 'How to submit MNR?', 'Navigate to MNR module and click New MNR', 1, 'MNR', 1, GETDATE(), 'SYSTEM'),
+('FAQ-002', 2, 'What is AQL?', 'Acceptable Quality Level for sampling inspection', 2, 'Quality', 1, GETDATE(), 'SYSTEM'),
+('FAQ-003', 3, 'How to approve QMQA?', 'Go to QMQA approval page and review details', 3, 'QMQA', 1, GETDATE(), 'SYSTEM'),
+('FAQ-004', 4, 'Where to find reports?', 'Reports are available in the Reports menu', 4, 'General', 1, GETDATE(), 'SYSTEM'),
+('FAQ-005', 5, 'How to reset password?', 'Contact system administrator', 5, 'System', 1, GETDATE(), 'SYSTEM'),
+('FAQ-006', 6, 'How to create new supplier?', 'Go to Maintenance > Suppliers and click Add', 6, 'Maintenance', 1, GETDATE(), 'SYSTEM'),
+('FAQ-007', 2, 'What is 5M1E analysis?', 'Root cause analysis method: Man, Machine, Material, Method, Measurement, Environment', 7, 'Quality', 1, GETDATE(), 'SYSTEM'),
+('FAQ-008', 4, 'How to upload attachments?', 'Click the attachment icon and select files', 8, 'General', 1, GETDATE(), 'SYSTEM'),
+('FAQ-009', 2, 'What is PPAP?', 'Production Part Approval Process for automotive', 9, 'Quality', 1, GETDATE(), 'SYSTEM'),
+('FAQ-010', 4, 'How to export data?', 'Use the Export button on list pages', 10, 'General', 1, GETDATE(), 'SYSTEM'),
+('FAQ-011', 2, 'What is FMEA?', 'Failure Mode and Effects Analysis', 11, 'Quality', 1, GETDATE(), 'SYSTEM'),
+('FAQ-012', 7, 'How to schedule audit?', 'Go to Audit module and create new audit', 12, 'Audit', 1, GETDATE(), 'SYSTEM'),
+('FAQ-013', 2, 'What is SPC?', 'Statistical Process Control for monitoring', 13, 'Quality', 1, GETDATE(), 'SYSTEM'),
+('FAQ-014', 4, 'How to view dashboard?', 'Click Dashboard on main menu', 14, 'General', 1, GETDATE(), 'SYSTEM'),
+('FAQ-015', 2, 'What is CAPA?', 'Corrective and Preventive Action', 15, 'Quality', 1, GETDATE(), 'SYSTEM');
 
 -- Customer
 INSERT INTO CUSTOMER (customer_id, customer_name, customer_desc, active_flag, last_update, updateby) VALUES
@@ -475,76 +475,62 @@ INSERT INTO CUSTOMER (customer_id, customer_name, customer_desc, active_flag, la
 ('CUST-015', 'Hino Motors', 'Truck and bus customer', 1, GETDATE(), 'SYSTEM');
 
 -- Training Programs
-INSERT INTO TRAINING_PROGRAMS (program_id, program_name, program_desc, duration_hours, active_flag, last_update, updateby) VALUES
-('TRN-001', 'Quality Basics', 'Introduction to quality management', 8, 1, GETDATE(), 'SYSTEM'),
-('TRN-002', 'ISO 9001 Training', 'ISO 9001 requirements', 16, 1, GETDATE(), 'SYSTEM'),
-('TRN-003', 'SPC Training', 'Statistical Process Control', 12, 1, GETDATE(), 'SYSTEM'),
-('TRN-004', 'Root Cause Analysis', '5M1E and 5 Why analysis', 8, 1, GETDATE(), 'SYSTEM'),
-('TRN-005', 'Audit Training', 'Internal auditor training', 24, 1, GETDATE(), 'SYSTEM'),
-('TRN-006', 'FMEA Training', 'Failure Mode Effects Analysis', 16, 1, GETDATE(), 'SYSTEM'),
-('TRN-007', 'PPAP Training', 'Production Part Approval Process', 12, 1, GETDATE(), 'SYSTEM'),
-('TRN-008', 'MSA Training', 'Measurement System Analysis', 8, 1, GETDATE(), 'SYSTEM'),
-('TRN-009', 'APQP Training', 'Advanced Product Quality Planning', 16, 1, GETDATE(), 'SYSTEM'),
-('TRN-010', 'Control Plan Training', 'Control plan development', 8, 1, GETDATE(), 'SYSTEM'),
-('TRN-011', 'Problem Solving', '8D problem solving method', 12, 1, GETDATE(), 'SYSTEM'),
-('TRN-012', 'Lean Manufacturing', 'Lean principles and tools', 16, 1, GETDATE(), 'SYSTEM'),
-('TRN-013', 'Six Sigma Green Belt', 'Six Sigma methodology', 40, 1, GETDATE(), 'SYSTEM'),
-('TRN-014', 'GD&T Training', 'Geometric Dimensioning & Tolerancing', 16, 1, GETDATE(), 'SYSTEM'),
-('TRN-015', 'Quality Tools', '7 QC tools training', 8, 1, GETDATE(), 'SYSTEM');
+INSERT INTO TRAINING_PROGRAMS (training_program_id, training_program_name, training_program_desc, active_flag, last_update, updateby) VALUES
+('TRN-001', 'Quality Basics', 'Introduction to quality management', 1, GETDATE(), 'SYSTEM'),
+('TRN-002', 'ISO 9001 Training', 'ISO 9001 requirements', 1, GETDATE(), 'SYSTEM'),
+('TRN-003', 'SPC Training', 'Statistical Process Control', 1, GETDATE(), 'SYSTEM'),
+('TRN-004', 'Root Cause Analysis', '5M1E and 5 Why analysis', 1, GETDATE(), 'SYSTEM'),
+('TRN-005', 'Audit Training', 'Internal auditor training', 1, GETDATE(), 'SYSTEM'),
+('TRN-006', 'FMEA Training', 'Failure Mode Effects Analysis', 1, GETDATE(), 'SYSTEM'),
+('TRN-007', 'PPAP Training', 'Production Part Approval Process', 1, GETDATE(), 'SYSTEM'),
+('TRN-008', 'MSA Training', 'Measurement System Analysis', 1, GETDATE(), 'SYSTEM'),
+('TRN-009', 'APQP Training', 'Advanced Product Quality Planning', 1, GETDATE(), 'SYSTEM'),
+('TRN-010', 'Control Plan Training', 'Control plan development', 1, GETDATE(), 'SYSTEM'),
+('TRN-011', 'Problem Solving', '8D problem solving method', 1, GETDATE(), 'SYSTEM'),
+('TRN-012', 'Lean Manufacturing', 'Lean principles and tools', 1, GETDATE(), 'SYSTEM'),
+('TRN-013', 'Six Sigma Green Belt', 'Six Sigma methodology', 1, GETDATE(), 'SYSTEM'),
+('TRN-014', 'GD&T Training', 'Geometric Dimensioning & Tolerancing', 1, GETDATE(), 'SYSTEM'),
+('TRN-015', 'Quality Tools', '7 QC tools training', 1, GETDATE(), 'SYSTEM');
 
 -- Message Info
-INSERT INTO MESSAGE_INFO (message_id, message_title, message_content, message_type, active_flag, last_update, updateby) VALUES
-('MSG-001', 'System Maintenance', 'System will be down for maintenance on Sunday', 'System', 1, GETDATE(), 'SYSTEM'),
-('MSG-002', 'New Feature Release', 'SQMP module now available', 'Feature', 1, GETDATE(), 'SYSTEM'),
-('MSG-003', 'Training Reminder', 'Quality training scheduled for next week', 'Training', 1, GETDATE(), 'SYSTEM'),
-('MSG-004', 'Audit Notification', 'Customer audit scheduled for next month', 'Audit', 1, GETDATE(), 'SYSTEM'),
-('MSG-005', 'Policy Update', 'Quality policy has been updated', 'Policy', 1, GETDATE(), 'SYSTEM'),
-('MSG-006', 'Holiday Notice', 'Office closed for public holiday', 'General', 1, GETDATE(), 'SYSTEM'),
-('MSG-007', 'Safety Alert', 'New safety procedures implemented', 'Safety', 1, GETDATE(), 'SYSTEM'),
-('MSG-008', 'Performance Review', 'Q1 quality performance review meeting', 'Meeting', 1, GETDATE(), 'SYSTEM'),
-('MSG-009', 'Supplier Meeting', 'Quarterly supplier quality meeting', 'Meeting', 1, GETDATE(), 'SYSTEM'),
-('MSG-010', 'System Upgrade', 'System upgrade completed successfully', 'System', 1, GETDATE(), 'SYSTEM'),
-('MSG-011', 'Certification Renewal', 'ISO certification renewal in progress', 'Certification', 1, GETDATE(), 'SYSTEM'),
-('MSG-012', 'New Procedure', 'New inspection procedure released', 'Procedure', 1, GETDATE(), 'SYSTEM'),
-('MSG-013', 'Quality Alert', 'Quality issue alert for part ABC-123', 'Alert', 1, GETDATE(), 'SYSTEM'),
-('MSG-014', 'Achievement', 'Zero defects achieved this month', 'Achievement', 1, GETDATE(), 'SYSTEM'),
-('MSG-015', 'Reminder', 'Monthly report submission due', 'Reminder', 1, GETDATE(), 'SYSTEM');
+INSERT INTO MESSAGE_INFO (messageinfo_id, key_name, value, active_flag, last_update, updateby) VALUES
+('MSG-001', 'System Maintenance', 'System will be down for maintenance on Sunday', 1, GETDATE(), 'SYSTEM'),
+('MSG-002', 'New Feature Release', 'SQMP module now available', 1, GETDATE(), 'SYSTEM'),
+('MSG-003', 'Training Reminder', 'Quality training scheduled for next week', 1, GETDATE(), 'SYSTEM'),
+('MSG-004', 'Audit Notification', 'Customer audit scheduled for next month', 1, GETDATE(), 'SYSTEM'),
+('MSG-005', 'Policy Update', 'Quality policy has been updated', 1, GETDATE(), 'SYSTEM'),
+('MSG-006', 'Holiday Notice', 'Office closed for public holiday', 1, GETDATE(), 'SYSTEM'),
+('MSG-007', 'Safety Alert', 'New safety procedures implemented', 1, GETDATE(), 'SYSTEM'),
+('MSG-008', 'Performance Review', 'Q1 quality performance review meeting', 1, GETDATE(), 'SYSTEM'),
+('MSG-009', 'Supplier Meeting', 'Quarterly supplier quality meeting', 1, GETDATE(), 'SYSTEM'),
+('MSG-010', 'System Upgrade', 'System upgrade completed successfully', 1, GETDATE(), 'SYSTEM'),
+('MSG-011', 'Certification Renewal', 'ISO certification renewal in progress', 1, GETDATE(), 'SYSTEM'),
+('MSG-012', 'New Procedure', 'New inspection procedure released', 1, GETDATE(), 'SYSTEM'),
+('MSG-013', 'Quality Alert', 'Quality issue alert for part ABC-123', 1, GETDATE(), 'SYSTEM'),
+('MSG-014', 'Achievement', 'Zero defects achieved this month', 1, GETDATE(), 'SYSTEM'),
+('MSG-015', 'Reminder', 'Monthly report submission due', 1, GETDATE(), 'SYSTEM');
 
 -- Registrations
-INSERT INTO REGISTRATIONS (registration_id, registration_name, registration_desc, registration_date, active_flag, last_update, updateby) VALUES
-('REG-001', 'Quality System Registration', 'ISO 9001 registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-002', 'Automotive Registration', 'IATF 16949 registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-003', 'Environmental Registration', 'ISO 14001 registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-004', 'Safety Registration', 'ISO 45001 registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-005', 'Customer Approval', 'Customer quality approval', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-006', 'Laboratory Accreditation', 'ISO 17025 accreditation', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-007', 'VDA Registration', 'VDA 6.3 process audit registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-008', 'Supplier Approval', 'Approved supplier status', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-009', 'Product Certification', 'Product safety certification', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-010', 'Export License', 'Export quality license', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-011', 'Industry Registration', 'Industry association membership', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-012', 'Quality Award', 'National quality award registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-013', 'Green Certification', 'Environmental green certification', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-014', 'Energy Registration', 'ISO 50001 energy registration', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('REG-015', 'Security Registration', 'ISO 27001 security registration', GETDATE(), 1, GETDATE(), 'SYSTEM');
+-- REGISTRATIONS stores confirmation tokens rather than maintenance master data.
+-- It is intentionally left unseeded for local bootstrap.
 
 -- News
-INSERT INTO NEWS (news_id, news_title, news_content, news_date, active_flag, last_update, updateby) VALUES
-('NEWS-001', 'Quality Achievement', 'Zero defects achieved for Q1 2024', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-002', 'New Certification', 'Plant received ISO 9001 certification', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-003', 'Customer Award', 'Received supplier excellence award', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-004', 'Process Improvement', 'Implemented new quality process', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-005', 'Team Recognition', 'QA team recognized for outstanding performance', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-006', 'New Equipment', 'New CMM machine installed in lab', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-007', 'Training Completion', '100% staff completed quality training', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-008', 'Audit Success', 'Passed customer audit with zero findings', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-009', 'Cost Reduction', 'Quality cost reduced by 15%', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-010', 'New Product Launch', 'Successfully launched new product line', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-011', 'Supplier Partnership', 'New strategic supplier partnership', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-012', 'Safety Milestone', '1000 days without accident', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-013', 'Expansion', 'New production line expansion', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-014', 'Technology Upgrade', 'Implemented automated inspection system', GETDATE(), 1, GETDATE(), 'SYSTEM'),
-('NEWS-015', 'Customer Satisfaction', 'Customer satisfaction score increased to 98%', GETDATE(), 1, GETDATE(), 'SYSTEM');
+INSERT INTO NEWS (news_id, news_name, news_desc, file_id, file_name, file_extension, active_flag, sequence, last_update, updateby) VALUES
+('NEWS-001', 'Quality Achievement', 'Zero defects achieved for Q1 2024', 'FILE-NEWS-001', 'news-001.txt', 'txt', 1, 1, GETDATE(), 'SYSTEM'),
+('NEWS-002', 'New Certification', 'Plant received ISO 9001 certification', 'FILE-NEWS-002', 'news-002.txt', 'txt', 1, 2, GETDATE(), 'SYSTEM'),
+('NEWS-003', 'Customer Award', 'Received supplier excellence award', 'FILE-NEWS-003', 'news-003.txt', 'txt', 1, 3, GETDATE(), 'SYSTEM'),
+('NEWS-004', 'Process Improvement', 'Implemented new quality process', 'FILE-NEWS-004', 'news-004.txt', 'txt', 1, 4, GETDATE(), 'SYSTEM'),
+('NEWS-005', 'Team Recognition', 'QA team recognized for outstanding performance', 'FILE-NEWS-005', 'news-005.txt', 'txt', 1, 5, GETDATE(), 'SYSTEM'),
+('NEWS-006', 'New Equipment', 'New CMM machine installed in lab', 'FILE-NEWS-006', 'news-006.txt', 'txt', 1, 6, GETDATE(), 'SYSTEM'),
+('NEWS-007', 'Training Completion', '100% staff completed quality training', 'FILE-NEWS-007', 'news-007.txt', 'txt', 1, 7, GETDATE(), 'SYSTEM'),
+('NEWS-008', 'Audit Success', 'Passed customer audit with zero findings', 'FILE-NEWS-008', 'news-008.txt', 'txt', 1, 8, GETDATE(), 'SYSTEM'),
+('NEWS-009', 'Cost Reduction', 'Quality cost reduced by 15%', 'FILE-NEWS-009', 'news-009.txt', 'txt', 1, 9, GETDATE(), 'SYSTEM'),
+('NEWS-010', 'New Product Launch', 'Successfully launched new product line', 'FILE-NEWS-010', 'news-010.txt', 'txt', 1, 10, GETDATE(), 'SYSTEM'),
+('NEWS-011', 'Supplier Partnership', 'New strategic supplier partnership', 'FILE-NEWS-011', 'news-011.txt', 'txt', 1, 11, GETDATE(), 'SYSTEM'),
+('NEWS-012', 'Safety Milestone', '1000 days without accident', 'FILE-NEWS-012', 'news-012.txt', 'txt', 1, 12, GETDATE(), 'SYSTEM'),
+('NEWS-013', 'Expansion', 'New production line expansion', 'FILE-NEWS-013', 'news-013.txt', 'txt', 1, 13, GETDATE(), 'SYSTEM'),
+('NEWS-014', 'Technology Upgrade', 'Implemented automated inspection system', 'FILE-NEWS-014', 'news-014.txt', 'txt', 1, 14, GETDATE(), 'SYSTEM'),
+('NEWS-015', 'Customer Satisfaction', 'Customer satisfaction score increased to 98%', 'FILE-NEWS-015', 'news-015.txt', 'txt', 1, 15, GETDATE(), 'SYSTEM');
 
 -- ============================================================================
 -- END OF SEED DATA
