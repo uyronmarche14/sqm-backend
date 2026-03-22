@@ -38,7 +38,10 @@ const corsOptions = {
             callback(null, true);
             return;
         }
-        if (allowedOrigins.includes(origin)) {
+        if (allowedOrigins.includes(origin) ||
+            origin.endsWith('.vercel.app') ||
+            origin.endsWith('.trycloudflare.com') ||
+            origin.startsWith('http://localhost:')) {
             callback(null, true);
             return;
         }
@@ -60,6 +63,9 @@ app.use(cookieParser());
 // ==========================================
 // 2. Health & DB Check
 // ==========================================
+app.get('/', (_req, res) => {
+    res.status(200).json({ status: 'ok', message: 'SQM Backend API is running' });
+});
 app.get('/health', async (_req, res) => {
     const dbConnected = await testConnection();
     res.status(dbConnected ? 200 : 500).json({

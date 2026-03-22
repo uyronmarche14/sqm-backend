@@ -12,6 +12,10 @@ import {
 } from './fiveM1E-workflow.utils.js';
 import { FIVE_M1E_WORKFLOW_ACTION, FIVE_M1E_WORKFLOW_STAGE } from './fiveM1E-workflow.constants.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import {
+  fiveM1ENotificationService,
+  type FiveM1ENotificationService,
+} from '../../../shared/notifications/fivem1e-notification.service.js';
 
 type FiveM1EWorkflowRecord = Record<string, unknown>;
 
@@ -48,6 +52,7 @@ export class FiveM1EWorkflowService {
   constructor(
     private readonly repository = fiveM1ERepository,
     private readonly permissions = permissionService,
+    private readonly notifications: FiveM1ENotificationService = fiveM1ENotificationService,
   ) {}
 
   private async getRecordOrThrow(controlNo: string) {
@@ -384,6 +389,102 @@ export class FiveM1EWorkflowService {
     return Boolean(checkerId && approverId && checkerId === approverId);
   }
 
+  private getNotificationFallbackFormIds(stage: ReturnType<typeof normalizeFiveM1EWorkflowStage>) {
+    if (stage === FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER) {
+      return ['5M1EApprovalSecDes-06-17'];
+    }
+
+    if (
+      stage === FIVE_M1E_WORKFLOW_STAGE.REVIEWER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.APPROVED ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION ||
+      stage === FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE
+    ) {
+      return ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17'];
+    }
+
+    return [];
+  }
+
+  private async resolveActorName(userId: string, record: FiveM1EWorkflowRecord) {
+    const actor = (await this.repository.findUserContactsByIds([userId])) as Array<{ fullName?: string | null }>;
+    if (actor[0]?.fullName) {
+      return String(actor[0].fullName);
+    }
+
+    return getString(record, 'created_by_name', 'reviewer_full_name', 'checker_full_name', 'approver_full_name') || userId;
+  }
+
+  private async dispatchWorkflowNotification(input: {
+    eventKey:
+      | 'fivem1e.submitted'
+      | 'fivem1e.updated'
+      | 'fivem1e.assigned'
+      | 'fivem1e.checked'
+      | 'fivem1e.approved'
+      | 'fivem1e.approved_with_condition'
+      | 'fivem1e.rejected'
+      | 'fivem1e.released';
+    record: FiveM1EWorkflowRecord;
+    controlNo: string;
+    userId: string;
+    pic: string;
+    action: string;
+    message: string;
+  }) {
+    try {
+      const actorName = await this.resolveActorName(input.userId, input.record);
+      const stage = normalizeFiveM1EWorkflowStage(input.record);
+      const result = await this.notifications.sendWorkflowNotification({
+        eventKey: input.eventKey,
+        recordId: getString(input.record, 'ID', 'id') || input.controlNo,
+        controlNo: input.controlNo,
+        pic: input.pic,
+        action: input.action,
+        actorName,
+        message: input.message,
+        title: getString(input.record, 'Title', 'title'),
+        record: input.record,
+        fallbackFormIds: this.getNotificationFallbackFormIds(stage),
+      });
+
+      const logger = result.skipped ? console.warn : console.log;
+      logger(
+        '[5m1e] workflow email notification processed',
+        JSON.stringify({
+          controlNo: input.controlNo,
+          eventKey: input.eventKey,
+          pic: input.pic,
+          action: input.action,
+          delivered: result.delivered,
+          skipped: result.skipped ?? false,
+          recipientSource: result.recipientSource,
+          recipients: result.recipients,
+          ccRecipients: result.ccRecipients,
+          referenceId: result.referenceId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error(
+        '[5m1e] workflow email notification failed',
+        JSON.stringify({
+          controlNo: input.controlNo,
+          eventKey: input.eventKey,
+          pic: input.pic,
+          action: input.action,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  }
+
   async submitApplication(controlNo: string, userId: string, remarks?: string) {
     const record = await this.getRecordOrThrow(controlNo);
     let canonicalControlNo = getCanonicalControlNo(record, controlNo);
@@ -427,7 +528,20 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve submit recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: stage === FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE ? 'fivem1e.updated' : 'fivem1e.submitted',
+        record: {
+          ...record,
+          ControlNo: canonicalControlNo,
+          approval_status: 'SUBMITTED',
+          approval_seq: 1,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'SUPPLIER',
+        action: stage === FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE ? 'UPDATE' : 'SUBMIT',
+        message: `The 5M1E application has been ${stage === FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE ? 'updated and resubmitted' : 'submitted'} by the supplier.`,
+      });
       return {
         ...result,
         message: 'Application submitted successfully',
@@ -459,7 +573,20 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve submit recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.assigned',
+        record: {
+          ...record,
+          ControlNo: canonicalControlNo,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: '5M1EPIC',
+        action: 'ASSIGN',
+        message: 'The 5M1E application has been forwarded to the For Approval stage.',
+      });
       return {
         ...result,
         message: 'Application submitted to for-approval successfully',
@@ -481,7 +608,20 @@ export class FiveM1EWorkflowService {
         canonicalControlNo,
         userId,
       );
-    // TODO(email): resolve submit recipients from workflow owner metadata and dispatch the notification here.
+    await this.dispatchWorkflowNotification({
+      eventKey: 'fivem1e.assigned',
+      record: {
+        ...record,
+        ControlNo: canonicalControlNo,
+        approval_status: 'FOR APPROVAL',
+        approval_seq: 5,
+      },
+      controlNo: canonicalControlNo,
+      userId,
+      pic: stage === FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC ? 'EIC' : '5M1EPIC',
+      action: stage === FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC ? 'SUBMIT' : 'SENDREG',
+      message: 'The 5M1E application has been forwarded to the next approval owner.',
+    });
     return {
       ...result,
       message: 'Application submitted to checker successfully',
@@ -514,7 +654,21 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve check recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.checked',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 6,
+          chkr_status: '1',
+          apr_status: getString(record, 'apr_status', 'AprStatus'),
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'SQEChecker',
+        action: 'APPROVE',
+        message: 'The 5M1E application has been checked and forwarded to the approver.',
+      });
       return {
         ...result,
         message: 'Application checked successfully',
@@ -552,7 +706,20 @@ export class FiveM1EWorkflowService {
             canonicalControlNo,
             userId,
           );
-        // TODO(email): resolve approval recipients from workflow owner metadata and dispatch the notification here.
+        await this.dispatchWorkflowNotification({
+          eventKey: 'fivem1e.approved_with_condition',
+          record: {
+            ...record,
+            approval_status: 'APRDWCOND',
+            approval_seq: 14,
+            apr_status: 'aprdwcond',
+          },
+          controlNo: canonicalControlNo,
+          userId,
+          pic: 'SQEApprover',
+          action: 'APPROVE',
+          message: 'The 5M1E application has been approved with condition.',
+        });
         return {
           ...result,
           message: 'Application approved successfully',
@@ -576,7 +743,20 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve approval recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.approved',
+        record: {
+          ...record,
+          approval_status: 'APPROVED',
+          approval_seq: 7,
+          apr_status: 'approved',
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'SQEApprover',
+        action: 'APPROVE',
+        message: 'The 5M1E application has been approved.',
+      });
       return {
         ...result,
         message: 'Application approved successfully',
@@ -614,7 +794,15 @@ export class FiveM1EWorkflowService {
       });
       await this.persistStatusRemark(canonicalControlNo, userId, 'REJECTED', remarks);
       const result = await this.buildResult({ ...record, approval_status: 'REJECTED' }, canonicalControlNo, userId);
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: { ...record, approval_status: 'REJECTED' },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'MPDPIC',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -639,7 +827,20 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'SUBMITTED',
+          approval_seq: 0,
+          mpd_approver_status: null,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'MPDApprover',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected and returned to the submitted stage.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -663,7 +864,20 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 3,
+          reviewer_status: null,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: '5M1EPIC',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected and returned to the evaluation queue.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -692,7 +906,22 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+          revised_sequence: 5,
+          chkr_status: null,
+          apr_status: sameSqeActor ? null : getString(record, 'apr_status', 'AprStatus'),
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'SQEChecker',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected by the SQE checker.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -718,7 +947,21 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+          revised_sequence: 6,
+          apr_status: null,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'SQEApprover',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected by the SQE approver.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -744,7 +987,21 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+          revised_sequence: 7,
+          fa_status: null,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'QAApprover',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected by the final approver.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -770,7 +1027,21 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+          revised_sequence: 10,
+          design_approver_status: null,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'DESIGNApprover',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected by the design approver.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -796,7 +1067,21 @@ export class FiveM1EWorkflowService {
           canonicalControlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+          revised_sequence: 12,
+          envi_approve_status: null,
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'ENVIApprover',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected by the environment approver.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -822,7 +1107,21 @@ export class FiveM1EWorkflowService {
           controlNo,
           userId,
         );
-      // TODO(email): resolve rejection recipients from workflow owner metadata and dispatch the notification here.
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.rejected',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: 4,
+          revised_sequence: 13,
+          qa_checker_status: null,
+        },
+        controlNo,
+        userId,
+        pic: 'QAChecker',
+        action: 'REJECT',
+        message: 'The 5M1E application has been rejected by the QA checker.',
+      });
       return {
         ...result,
         message: 'Application rejected successfully',
@@ -861,7 +1160,19 @@ export class FiveM1EWorkflowService {
         canonicalControlNo,
         userId,
       );
-    // TODO(email): resolve release recipients from workflow owner metadata and dispatch the notification here.
+    await this.dispatchWorkflowNotification({
+      eventKey: 'fivem1e.released',
+      record: {
+        ...record,
+        approval_status: 'RELEASE',
+        approval_seq: 15,
+      },
+      controlNo: canonicalControlNo,
+      userId,
+      pic: 'MPDPIC',
+      action: 'RELEASE',
+      message: 'The 5M1E application has been released.',
+    });
     return {
       ...result,
       message: 'Application released successfully',

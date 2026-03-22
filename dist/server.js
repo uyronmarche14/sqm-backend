@@ -9,7 +9,7 @@ async function bootstrap() {
         console.error('Failed to connect to the database. Process gracefully exiting.');
         process.exit(1);
     }
-    const server = app.listen(PORT, () => {
+    const server = app.listen(Number(PORT), '0.0.0.0', () => {
         console.log(`🚀 Server is running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
     });
     // Graceful Shutdown
