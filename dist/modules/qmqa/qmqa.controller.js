@@ -1,6 +1,6 @@
 import { qmqaService } from './qmqa.service.js';
 import { qmqaWorkflowService } from './workflow/qmqa-workflow.service.js';
-import { QmqaCanonicalAttachmentParamSchema, QmqaAttachmentParamSchema, QmqaIdParamSchema, QmqaRecordCreateSchema, QmqaRecordUpdateSchema, QmqaScheduleCreateSchema, QmqaScheduleUpdateSchema, } from './qmqa.schema.js';
+import { QmqaCanonicalAttachmentParamSchema, QmqaAttachmentParamSchema, QmqaIdParamSchema, QmqaRecordCreateSchema, QmqaRecordUpdateSchema, QmqaScheduleCreateSchema, QmqaScheduleBulkDeleteSchema, QmqaScheduleUpdateSchema, } from './qmqa.schema.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 import { userRepository } from '../users/user.repository.js';
@@ -77,6 +77,16 @@ export class QmqaController {
         try {
             const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
             const result = await qmqaService.deleteSchedule(id);
+            res.json(successResponse(result));
+        }
+        catch (error) {
+            next(error);
+        }
+    };
+    deleteSchedules = async (req, res, next) => {
+        try {
+            const { ids } = QmqaScheduleBulkDeleteSchema.parse({ body: req.body }).body;
+            const result = await qmqaService.deleteSchedules(ids);
             res.json(successResponse(result));
         }
         catch (error) {

@@ -857,6 +857,30 @@ export class QmqaService {
             return { success: true, message: 'Schedule deleted successfully' };
         });
     }
+    async deleteSchedules(ids) {
+        const settled = await Promise.allSettled(ids.map(async (id) => {
+            await this.deleteSchedule(id);
+            return id;
+        }));
+        const deletedIds = [];
+        const failed = [];
+        settled.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+                deletedIds.push(result.value);
+                return;
+            }
+            failed.push({
+                id: ids[index] || '',
+                message: result.reason instanceof Error ? result.reason.message : 'Delete failed',
+            });
+        });
+        return {
+            success: failed.length === 0,
+            count: deletedIds.length,
+            deletedIds,
+            failed,
+        };
+    }
     async cancelSchedule(id, userId) {
         const existing = await qmqaRepository.findScheduleById(id);
         if (!existing) {

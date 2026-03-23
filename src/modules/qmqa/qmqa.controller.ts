@@ -8,6 +8,7 @@ import {
   QmqaRecordCreateSchema,
   QmqaRecordUpdateSchema,
   QmqaScheduleCreateSchema,
+  QmqaScheduleBulkDeleteSchema,
   QmqaScheduleUpdateSchema,
 } from './qmqa.schema.js';
 import { successResponse, createResponse } from '../../shared/utils/api-response.js';
@@ -99,6 +100,16 @@ export class QmqaController {
     try {
       const { id } = QmqaIdParamSchema.parse({ params: req.params }).params;
       const result = await qmqaService.deleteSchedule(id);
+      res.json(successResponse(result));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  deleteSchedules = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { ids } = QmqaScheduleBulkDeleteSchema.parse({ body: req.body }).body;
+      const result = await qmqaService.deleteSchedules(ids);
       res.json(successResponse(result));
     } catch (error) {
       next(error);

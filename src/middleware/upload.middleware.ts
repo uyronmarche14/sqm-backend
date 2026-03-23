@@ -88,8 +88,11 @@ const ATTACHMENT_TYPE_FOLDERS: Record<string, string> = {
   
   // Simple modules
   'npi': 'attachments',
+  'npi-main': 'attachments',
   'sqpr': 'attachments',
+  'sqpr-main': 'attachments',
   'ogi': 'attachments',
+  'ogi-main': 'attachments',
 };
 
 interface UploadedFile {

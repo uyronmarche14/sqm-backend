@@ -449,6 +449,16 @@ async function applyMigrations() {
 }
 
 async function initDatabase() {
+  const isLocalHost = ['localhost', '127.0.0.1'].includes(process.env.DB_HOST || 'localhost');
+  const allowProdInit = process.env.ALLOW_PROD_DB_INIT === 'true';
+
+  if (!isLocalHost && !allowProdInit) {
+    console.error(`\n🚨 DANGER: You are trying to initialize a NON-LOCAL database (${process.env.DB_HOST}).`);
+    console.error('This action is blocked to prevent accidental data overwrite on production servers.');
+    console.error('If this is intentional, set ALLOW_PROD_DB_INIT=true in your .env file.\n');
+    process.exit(1);
+  }
+
   console.log(`Initializing database ${TARGET_DB}...`);
   await waitForSqlServer();
 

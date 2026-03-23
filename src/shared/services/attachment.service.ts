@@ -269,6 +269,13 @@ export class AttachmentService {
       uploadPath: './uploads/npi',
       subFolder: 'attachments'
     });
+    this.configs.set('npi-main', {
+      tableName: 'NPI_ATTACHMENT',
+      idColumn: 'npi_attachment_id',
+      fileNameColumn: 'file_name',
+      uploadPath: './uploads/npi',
+      subFolder: 'attachments'
+    });
 
     this.configs.set('sqpr', {
       tableName: 'SQPR_ATTACHMENT',
@@ -277,8 +284,22 @@ export class AttachmentService {
       uploadPath: './uploads/sqpr',
       subFolder: 'attachments'
     });
+    this.configs.set('sqpr-main', {
+      tableName: 'SQPR_ATTACHMENT',
+      idColumn: 'sqpr_attachment_id',
+      fileNameColumn: 'file_name',
+      uploadPath: './uploads/sqpr',
+      subFolder: 'attachments'
+    });
 
     this.configs.set('ogi', {
+      tableName: 'OGI_ATTACHMENT',
+      idColumn: 'ogi_attachment_id',
+      fileNameColumn: 'file_name',
+      uploadPath: './uploads/ogi',
+      subFolder: 'attachments'
+    });
+    this.configs.set('ogi-main', {
       tableName: 'OGI_ATTACHMENT',
       idColumn: 'ogi_attachment_id',
       fileNameColumn: 'file_name',

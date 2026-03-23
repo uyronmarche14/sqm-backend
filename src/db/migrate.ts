@@ -80,6 +80,16 @@ async function executeMigration(filePath: string): Promise<void> {
  * Reads migration files in alphabetical order and applies any that haven't been run yet.
  */
 async function runMigrations(): Promise<void> {
+  const isLocalHost = ['localhost', '127.0.0.1'].includes(process.env.DB_HOST || 'localhost');
+  const allowProdMigrate = process.env.ALLOW_PROD_DB_MIGRATE === 'true';
+
+  if (!isLocalHost && !allowProdMigrate) {
+    console.error(`\n🚨 DANGER: You are trying to run migrations on a NON-LOCAL database (${process.env.DB_HOST}).`);
+    console.error('This action is blocked to prevent accidental schema changes on production servers.');
+    console.error('If this is intentional, set ALLOW_PROD_DB_MIGRATE=true in your .env file.\n');
+    process.exit(1);
+  }
+
   console.log('🔄 Starting database migrations...\n');
 
   // 1. Ensure tracking table exists

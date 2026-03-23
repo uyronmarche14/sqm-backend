@@ -46,6 +46,11 @@ export const QmqaScheduleUpdateSchema = z.object({
         remarks: z.string().optional()
     })
 });
+export const QmqaScheduleBulkDeleteSchema = z.object({
+    body: z.object({
+        ids: z.array(z.string().uuid('Invalid Schedule ID format')).min(1, 'At least one Schedule ID is required'),
+    }),
+});
 // =====================================
 // 2. RECORDS (Audit Execution)
 // =====================================

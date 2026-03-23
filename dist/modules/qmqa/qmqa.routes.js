@@ -58,6 +58,7 @@ export function createQmqaRoutes(variant = 'QMQA') {
     router.get('/schedules/:id', requireModuleAccess(variant, 'view'), qmqaController.getScheduleById);
     router.put('/schedules/:id', requirePermission(formCodes.schedule, 'edit'), qmqaController.updateSchedule);
     router.post('/schedules/:id/cancel', requirePermission(formCodes.scheduleCancel, 'delete'), qmqaController.cancelSchedule);
+    router.delete('/schedules', requirePermission(formCodes.scheduleCancel, 'delete'), qmqaController.deleteSchedules);
     router.delete('/schedules/:id', requirePermission(formCodes.scheduleCancel, 'delete'), qmqaController.deleteSchedule);
     // ==========================================
     // RECORDS (Execution)
