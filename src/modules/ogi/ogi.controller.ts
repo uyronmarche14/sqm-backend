@@ -54,6 +54,7 @@ export class OgiController {
       const files = (req as any).files || [];
       
       const result = await ogiService.createRecord(payload, userId, files);
+      console.info(`[Backend] Receiving OGI Create form data`, { payload, files: files.length });
       return res.status(201).json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] CREATE error:', error);
@@ -69,6 +70,7 @@ export class OgiController {
       const files = (req as any).files || [];
 
       const result = await ogiService.updateRecord(id, payload, actor, files);
+      console.info(`[Backend] Receiving OGI Update form data for ${id}`, { payload, files: files.length });
       return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] UPDATE error:', error);
@@ -95,11 +97,12 @@ export class OgiController {
         this.getActor(req),
       );
       
+      console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       return res.download(filePath);
     } catch (error) {
-      console.error('[OGI] DOWNLOAD error:', error);
+      console.error('[Backend] Attachment sending failed:', error);
       return next(error);
     }
   }

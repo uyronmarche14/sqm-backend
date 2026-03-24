@@ -87,6 +87,7 @@ export class MnrController {
       const files = (req as any).files || [];
       
       const result = await mnrService.createRecord(payload, userId, files);
+      console.info(`[Backend] Receiving MNR Create form data by user ${userId}`, { payload, files: files.length });
       res.status(201).json(result);
     } catch (error) {
       console.error('[MNR] CREATE error:', error);
@@ -102,6 +103,7 @@ export class MnrController {
       const files = (req as any).files || [];
 
       const result = await mnrService.updateRecord(id, payload, actor, files);
+      console.info(`[Backend] Receiving MNR Update form data for ${id}`, { payload, files: files.length });
       res.json(result);
     } catch (error) {
       console.error('[MNR] UPDATE error:', error);
@@ -414,11 +416,12 @@ export class MnrController {
       const { attachmentId } = MnrAttachmentParamSchema.parse({ params: req.params }).params;
       const { filePath, fileName, mimeType } = await mnrService.downloadAttachment(attachmentId, this.getActor(req));
       
+      console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       return res.download(filePath);
     } catch (error) {
-      console.error('[MNR] DOWNLOAD error:', error);
+      console.error('[Backend] Attachment sending failed:', error);
       next(error);
     }
   }

@@ -34,6 +34,19 @@ const dialect = new MssqlDialect({
 });
 export const db = new Kysely({
     dialect,
+    log(event) {
+        if (event.level === 'query') {
+            const sqlStr = event.query.sql.toLowerCase();
+            if (sqlStr.startsWith('insert') ||
+                sqlStr.startsWith('update') ||
+                sqlStr.startsWith('delete')) {
+                console.info(`[Backend] Saving data to database:`, event.query.sql);
+            }
+        }
+        else if (event.level === 'error') {
+            console.error('[Backend] Database error:', event.error);
+        }
+    },
 });
 export async function testConnection() {
     try {

@@ -34,11 +34,7 @@ export class FiveM1EController {
       const userId = req.user!.userId; 
       const files = (req as any).files || [];
       
-      console.log(`[5M1E Controller] Create - ${files.length} file(s) received`);
-      
-      // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
-      console.log("🚀 [BACKEND E2E VERIFICATION] Received Create Payload:");
-      console.log(JSON.stringify(req.body, null, 2));
+      console.info(`[Backend] Receiving 5M1E Create form data from user ${userId}`, { files: files.length, body: req.body });
 
       const result = await fiveM1EService.createApplication(req.body, userId, files);
       
@@ -90,11 +86,7 @@ export class FiveM1EController {
       const files = (req as any).files || [];
       const actor = this.getActor(req);
       
-      console.log(`[5M1E Controller] Update [${id}] - ${files.length} file(s) received for user ${actor.userId}`);
-      
-      // 🔗 DATA CONNECTION LOGGER (Requested for Verification)
-      console.log(`🚀 [BACKEND E2E VERIFICATION] Received Update Payload for ${id}:`);
-      console.log(JSON.stringify(req.body, null, 2));
+      console.info(`[Backend] Receiving 5M1E Update form data for ${id} by user ${actor.userId}`, { files: files.length, body: req.body });
 
       const result = await fiveM1EService.updateApplication(id, req.body, files, actor);
       
@@ -195,11 +187,12 @@ export class FiveM1EController {
         this.getActor(req),
       );
       
+      console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       return res.download(filePath);
     } catch (error) {
-      console.error('[5M1E] DOWNLOAD error:', error);
+      console.error('[Backend] Attachment sending failed:', error);
       next(error);
     }
   }

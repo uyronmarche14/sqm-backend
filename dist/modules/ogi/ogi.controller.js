@@ -46,6 +46,7 @@ export class OgiController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
             const result = await ogiService.createRecord(payload, userId, files);
+            console.info(`[Backend] Receiving OGI Create form data`, { payload, files: files.length });
             return res.status(201).json(successResponse(result.data || result, result.message));
         }
         catch (error) {
@@ -60,6 +61,7 @@ export class OgiController {
             const actor = this.getActor(req);
             const files = req.files || [];
             const result = await ogiService.updateRecord(id, payload, actor, files);
+            console.info(`[Backend] Receiving OGI Update form data for ${id}`, { payload, files: files.length });
             return res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {
@@ -83,12 +85,13 @@ export class OgiController {
         try {
             const { attachmentId } = OgiAttachmentParamSchema.parse({ params: req.params }).params;
             const { filePath, fileName, mimeType } = await ogiService.downloadAttachment(attachmentId, this.getActor(req));
+            console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
             res.setHeader('Content-Type', mimeType);
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             return res.download(filePath);
         }
         catch (error) {
-            console.error('[OGI] DOWNLOAD error:', error);
+            console.error('[Backend] Attachment sending failed:', error);
             return next(error);
         }
     }

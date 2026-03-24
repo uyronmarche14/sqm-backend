@@ -74,46 +74,11 @@ export class SqprController {
                 body.approval = JSON.parse(body.approval);
             }
             // Log received data (BEFORE flattening)
-            console.log('[SQPR Controller] CREATE received (RAW):', {
-                sqprId: body.sqpr_id,
-                controlNo: body.control_no,
-                approvalRaw: body.approval,
-                approvalType: typeof body.approval
-            });
-            // Flatten approval nested object to top-level fields for schema validation
-            if (body.approval && typeof body.approval === 'object') {
-                const approval = body.approval;
-                console.log('[SQPR Controller] Flattening approval:', approval);
-                if (approval.incharge_id !== undefined && approval.incharge_id !== null)
-                    body.incharge_id = approval.incharge_id;
-                if (approval.incharge_remarks !== undefined && approval.incharge_remarks !== null)
-                    body.incharge_remarks = approval.incharge_remarks;
-                if (approval.checker_id !== undefined && approval.checker_id !== null)
-                    body.checker_id = approval.checker_id;
-                if (approval.checker_remarks !== undefined && approval.checker_remarks !== null)
-                    body.checker_remarks = approval.checker_remarks;
-                if (approval.approver_id !== undefined && approval.approver_id !== null)
-                    body.approver_id = approval.approver_id;
-                if (approval.approver_remarks !== undefined && approval.approver_remarks !== null)
-                    body.approver_remarks = approval.approver_remarks;
-            }
-            // Log received data (AFTER flattening)
-            console.log('[SQPR Controller] CREATE received (AFTER FLATTEN):', {
-                inchargeRemarks: body.incharge_remarks,
-                checkerRemarks: body.checker_remarks,
-                approverRemarks: body.approver_remarks
-            });
+            console.info(`[Backend] Receiving SQPR Create form data by user ${this.getUserId(req)}`, { body });
             const payload = SqprCreateSchema.parse({ body }).body;
             const userId = this.getUserId(req);
             const files = req.files || [];
             const result = await sqprService.createRecord(payload, userId, files);
-            const responseData = result.data;
-            // Log response
-            console.log('[SQPR Controller] CREATE response:', {
-                success: result.success,
-                sqprId: responseData?.sqpr_id,
-                attachments: responseData?.attachments?.length
-            });
             res.status(201).json(result);
         }
         catch (error) {
@@ -155,16 +120,7 @@ export class SqprController {
             const userId = this.getUserId(req);
             const files = req.files || [];
             const result = await sqprService.updateRecord(id, payload, { userId, roleName: this.getRoleName(req) }, files);
-            const responseData = result.data;
-            // Log response
-            console.log('[SQPR Controller] UPDATE response:', {
-                success: result.success,
-                sqprId: responseData?.sqpr_id,
-                status: responseData?.request_status,
-                inchargeRemarks: responseData?.incharge_remarks,
-                checkerRemarks: responseData?.checker_remarks,
-                approverRemarks: responseData?.approver_remarks
-            });
+            console.info(`[Backend] Receiving SQPR Update form data for ${id}`, { body });
             res.json(result);
         }
         catch (error) {
@@ -267,12 +223,13 @@ export class SqprController {
                 userId: this.getUserId(req),
                 roleName: this.getRoleName(req),
             });
+            console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
             res.setHeader('Content-Type', mimeType);
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
             return res.download(filePath);
         }
         catch (error) {
-            console.error('[SQPR] DOWNLOAD error:', error);
+            console.error('[Backend] Attachment sending failed:', error);
             next(error);
         }
     }
