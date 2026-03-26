@@ -3,6 +3,7 @@ import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
+import { requestLogger } from './shared/middleware/request-logger.js';
 
 dotenv.config();
 
@@ -74,6 +75,7 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+app.use(requestLogger);
 
 // ==========================================
 // 2. Health & DB Check
