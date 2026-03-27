@@ -617,6 +617,7 @@ export class MnrWorkflowService {
     roleId: string | undefined,
     responsePayload: Record<string, any>,
     supplierId?: string | null,
+    files: any[] = [],
   ) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
@@ -634,7 +635,7 @@ export class MnrWorkflowService {
     const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
       userId,
       supplierId,
-    });
+    }, files);
     return {
       ...result,
       data: {
@@ -650,6 +651,7 @@ export class MnrWorkflowService {
     userId: string,
     responsePayload: Record<string, any>,
     supplierId?: string | null,
+    files: any[] = [],
   ) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
@@ -668,7 +670,7 @@ export class MnrWorkflowService {
     await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
       userId,
       supplierId,
-    });
+    }, files);
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
       request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.INITIAL_RESPONSE),
@@ -696,6 +698,7 @@ export class MnrWorkflowService {
     userId: string,
     responsePayload: Record<string, any>,
     supplierId?: string | null,
+    files: any[] = [],
   ) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
@@ -710,7 +713,7 @@ export class MnrWorkflowService {
     const result = await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
       userId,
       supplierId,
-    });
+    }, files);
     return {
       ...result,
       data: {
@@ -726,6 +729,7 @@ export class MnrWorkflowService {
     userId: string,
     responsePayload: Record<string, any>,
     supplierId?: string | null,
+    files: any[] = [],
   ) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
@@ -740,7 +744,7 @@ export class MnrWorkflowService {
     await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
       userId,
       supplierId,
-    });
+    }, files);
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
       request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.FINAL_RESPONSE),
@@ -767,6 +771,7 @@ export class MnrWorkflowService {
     id: string,
     userId: string,
     responsePayload: Record<string, any>,
+    files: any[] = [],
   ) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
@@ -785,7 +790,7 @@ export class MnrWorkflowService {
 
     await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
       userId,
-    });
+    }, files);
     const nextStage = MNR_WORKFLOW_STAGE.ISSUER_2ND;
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
@@ -817,6 +822,7 @@ export class MnrWorkflowService {
     id: string,
     userId: string,
     responsePayload: Record<string, any>,
+    files: any[] = [],
   ) {
     const existing = await this.getExistingRecord(id);
     const record = existing.record;
@@ -835,7 +841,7 @@ export class MnrWorkflowService {
 
     await mnrService.saveResponseContent(record.mnr_id, responsePayload, {
       userId,
-    });
+    }, files);
     const now = new Date();
     await this.updateLotsWorkflow(record.mnr_id, {
       request_status: getMnrDbStatus(MNR_WORKFLOW_STAGE.CHECKER_2ND),

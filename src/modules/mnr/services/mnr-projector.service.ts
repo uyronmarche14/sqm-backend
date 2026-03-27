@@ -3,6 +3,25 @@ import { buildMnrWorkflowMetadata, type MnrWorkflowActorContext } from '../workf
 import { MNR_WORKFLOW_STAGE, type MnrWorkflowStage } from '../workflow/mnr-workflow.constants.js';
 
 export class MnrProjectorService {
+  private buildAttachmentView(attachment: Record<string, any>, category: 'main' | 'response') {
+    const attachmentId = String(
+      attachment.mnr_attachment_id ||
+      attachment.mnr_response_attachment_id ||
+      attachment.id ||
+      '',
+    );
+
+    return {
+      ...attachment,
+      attachmentId,
+      id: attachmentId,
+      category,
+      downloadUrl: attachmentId ? `/api/mnr/attachments/${attachmentId}` : '',
+      file_url: attachmentId ? `/api/mnr/attachments/${attachmentId}` : '',
+      url: attachmentId ? `/api/mnr/attachments/${attachmentId}` : '',
+    };
+  }
+
   mapWorkflowStageToDisplayStatus(stage: MnrWorkflowStage): string {
     switch (stage) {
       case MNR_WORKFLOW_STAGE.DRAFT:
@@ -193,7 +212,7 @@ export class MnrProjectorService {
       defects: data.details,
       response8D: data.response ? {
         ...data.response,
-        attachments: data.responseAttachments,
+        attachments: (data.responseAttachments || []).map((attachment) => this.buildAttachmentView(attachment, 'response')),
       } : null,
       verificationEntries: data.verificationEntries || [],
       disposition: {
@@ -235,7 +254,7 @@ export class MnrProjectorService {
         console.log('[MNR CC] Raw CC entry:', JSON.stringify(cc));
         return { id: ccAny.user_id, value: ccAny.user_id, label: fullName, full_name: fullName, email: ccAny.email || '' };
       }),
-      attachments: data.attachments,
+      attachments: data.attachments.map((attachment) => this.buildAttachmentView(attachment, 'main')),
       meta: {
         last_update: main.last_update,
         updateby: main.updateby,

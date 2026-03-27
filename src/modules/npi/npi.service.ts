@@ -4,6 +4,7 @@ import { userRepository } from '../users/user.repository.js';
 import { NPICreationInput, NPIUpdateInput } from './npi.schema.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
+import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
 
 export class NpiService {
   
@@ -143,7 +144,7 @@ export class NpiService {
           
           const uploadedFile = files.find(f => f.originalname === originalName);
           const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-          const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+          const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
 
           await trx.insertInto('NPI_ATTACHMENT').values({
             npi_attachment_id: att.npi_attachment_id || uuidv4(),
@@ -315,7 +316,7 @@ export class NpiService {
             
             const uploadedFile = files.find(f => f.originalname === originalName);
             const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-            const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+            const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
   
             await trx.insertInto('NPI_ATTACHMENT').values({
               npi_attachment_id: att.npi_attachment_id || uuidv4(),

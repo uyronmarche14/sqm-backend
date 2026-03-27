@@ -1,5 +1,21 @@
 import { v4 as uuidv4 } from 'uuid';
 import { BadRequestError } from '../../../shared/errors/AppError.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+} from '../../../shared/utils/attachment-remarks.js';
+
+const MNR_RESPONSE_ATTACHMENT_RECORD_CONFIG = {
+  tableName: 'MNR_RESPONSE_ATTACHMENT',
+  ownerColumn: 'mnr_response_id',
+  idColumn: 'mnr_response_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
 
 export class MnrResponseService {
   formatDate(dateStr?: string | null): Date | null {
@@ -91,12 +107,15 @@ export class MnrResponseService {
     responsePayload: Record<string, any>,
     userId: string,
     now: Date,
+    files: any[] = [],
   ) {
     const existingResponse = await trx
       .selectFrom('MNR_RESPONSE')
       .select('mnr_response_id')
       .where('mnr_id', '=', realId)
       .executeTakeFirst();
+
+    const responseId = existingResponse?.mnr_response_id || uuidv4();
 
     const responseUpdatePayload = this.buildResponseUpdatePayload(responsePayload, userId, now);
 
@@ -110,7 +129,7 @@ export class MnrResponseService {
       await trx
         .insertInto('MNR_RESPONSE')
         .values({
-          mnr_response_id: uuidv4(),
+          mnr_response_id: responseId,
           mnr_id: realId,
           ...responseUpdatePayload,
         })
@@ -133,6 +152,33 @@ export class MnrResponseService {
         }).execute();
       }
     }
+
+    const responseAttachments = Array.isArray(responsePayload.attachments)
+      ? responsePayload.attachments
+      : Array.isArray(responsePayload.responseAttachments)
+        ? responsePayload.responseAttachments
+        : undefined;
+
+    const attachmentSync = await attachmentService.syncAttachments(
+      trx,
+      responseAttachments,
+      files,
+      {
+        ownerId: responseId,
+        userId,
+        now,
+        recordConfig: MNR_RESPONSE_ATTACHMENT_RECORD_CONFIG,
+        createId: () => uuidv4(),
+        remarkFormatter: ({ command, existing, originalName }) =>
+          formatAttachmentRemarks(
+            command.remarks ?? existing?.remarks ?? null,
+            originalName,
+            extractOriginalFilenameMarker(existing?.remarks),
+          ),
+      },
+    );
+
+    return attachmentSync;
   }
 }
 

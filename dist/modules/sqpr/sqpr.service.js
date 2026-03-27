@@ -8,6 +8,7 @@ import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../..
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
+import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
 const SQPR_QUEUE_STATUS_FORM_FALLBACKS = {
     NEW: ['SQPR-03-01'],
     DRAFT: ['SQPR-03-01'],
@@ -228,7 +229,7 @@ export class SqprService {
                     const uploadedFile = files.find(f => f.originalname === att.file_name);
                     const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
                     const originalName = att.file_name;
-                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
                     const attachmentId = uuidv4();
                     await trx.insertInto('SQPR_ATTACHMENT').values({
                         sqpr_attachment_id: attachmentId,
@@ -375,7 +376,7 @@ export class SqprService {
                     const uploadedFile = files.find(f => f.originalname === att.file_name);
                     const diskFileName = uploadedFile ? uploadedFile.filename : att.file_name;
                     const originalName = att.file_name;
-                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
                     const attachmentId = att.sqpr_attachment_id || uuidv4();
                     await trx.insertInto('SQPR_ATTACHMENT').values({
                         sqpr_attachment_id: attachmentId,

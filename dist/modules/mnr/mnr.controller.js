@@ -238,7 +238,8 @@ export class MnrController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const roleId = req.user?.roleId || req.user?.role_id || undefined;
             const supplierId = req.user?.supplierId || undefined;
-            const result = await mnrWorkflowService.saveInitialResponse(id, userId, roleId, responsePayload, supplierId);
+            const files = req.files || [];
+            const result = await mnrWorkflowService.saveInitialResponse(id, userId, roleId, responsePayload, supplierId, files);
             res.json(result);
         }
         catch (error) {
@@ -253,7 +254,8 @@ export class MnrController {
             const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const supplierId = req.user?.supplierId || undefined;
-            const result = await mnrWorkflowService.submitInitialResponse(id, userId, responsePayload, supplierId);
+            const files = req.files || [];
+            const result = await mnrWorkflowService.submitInitialResponse(id, userId, responsePayload, supplierId, files);
             res.json(result);
         }
         catch (error) {
@@ -268,7 +270,8 @@ export class MnrController {
             const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const supplierId = req.user?.supplierId || undefined;
-            const result = await mnrWorkflowService.saveFinalResponse(id, userId, responsePayload, supplierId);
+            const files = req.files || [];
+            const result = await mnrWorkflowService.saveFinalResponse(id, userId, responsePayload, supplierId, files);
             res.json(result);
         }
         catch (error) {
@@ -283,7 +286,8 @@ export class MnrController {
             const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const supplierId = req.user?.supplierId || undefined;
-            const result = await mnrWorkflowService.submitFinalResponse(id, userId, responsePayload, supplierId);
+            const files = req.files || [];
+            const result = await mnrWorkflowService.submitFinalResponse(id, userId, responsePayload, supplierId, files);
             res.json(result);
         }
         catch (error) {
@@ -297,7 +301,8 @@ export class MnrController {
             const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
             const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.saveResponseReview(id, userId, responsePayload);
+            const files = req.files || [];
+            const result = await mnrWorkflowService.saveResponseReview(id, userId, responsePayload, files);
             res.json(result);
         }
         catch (error) {
@@ -311,7 +316,8 @@ export class MnrController {
             const parsed = MnrResponseWorkflowSchema.parse({ body: req.body }).body;
             const responsePayload = parsed?.response8D || parsed?.updates?.response8D || {};
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
-            const result = await mnrWorkflowService.submitResponseReview(id, userId, responsePayload);
+            const files = req.files || [];
+            const result = await mnrWorkflowService.submitResponseReview(id, userId, responsePayload, files);
             res.json(result);
         }
         catch (error) {

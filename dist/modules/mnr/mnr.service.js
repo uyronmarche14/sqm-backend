@@ -1,8 +1,8 @@
 import { mnrCommandService } from './services/mnr-command.service.js';
 import { mnrQueryService } from './services/mnr-query.service.js';
 export class MnrService {
-    async saveResponseContent(id, responsePayload, actor = {}) {
-        return mnrCommandService.saveResponseContent(id, responsePayload, actor);
+    async saveResponseContent(id, responsePayload, actor = {}, files = []) {
+        return mnrCommandService.saveResponseContent(id, responsePayload, actor, files);
     }
     async getAllRecords(filters = {}, actor = {}) {
         return mnrQueryService.getAllRecords(filters, actor);

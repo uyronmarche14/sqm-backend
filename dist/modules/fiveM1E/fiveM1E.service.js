@@ -8,6 +8,7 @@ import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../..
 import { permissionService } from '../../shared/services/permission.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
+import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
 /**
  * 5M1E Domain Service
  * Encapsulates core business logic and mapping.
@@ -695,16 +696,13 @@ export class FiveM1EService {
             const uploadedFile = files.find(f => f.originalname === originalName);
             const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
             // Build remarks with original filename reference
-            const baseRemarks = att.attribute_2 || '';
-            const finalRemarks = baseRemarks
-                ? `${baseRemarks} (Original: ${originalName})`.slice(0, 200)
-                : `Original: ${originalName}`.slice(0, 200);
+            const finalRemarks = formatAttachmentRemarks(att.attribute_2 || '', originalName)?.slice(0, 200) || null;
             console.log(`[5M1E Service] Processing attachment: ${originalName} -> ${diskFileName}`);
             await this.repository.insertAttachments(controlNo, [{
                     id: att.id || undefined,
                     file_name: diskFileName || 'Unknown',
                     attribute_1: uploadedFile ? uploadedFile.path : (att.attribute_1 || null), // Store file path or URL
-                    attribute_2: finalRemarks,
+                    attribute_2: finalRemarks || undefined,
                 }]);
         }
     }

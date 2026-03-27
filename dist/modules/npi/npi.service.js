@@ -3,6 +3,7 @@ import { npiRepository } from './npi.repository.js';
 import { userRepository } from '../users/user.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
+import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
 export class NpiService {
     async generateSequence(siteId) {
         const d = new Date();
@@ -128,7 +129,7 @@ export class NpiService {
                         continue;
                     const uploadedFile = files.find(f => f.originalname === originalName);
                     const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
                     await trx.insertInto('NPI_ATTACHMENT').values({
                         npi_attachment_id: att.npi_attachment_id || uuidv4(),
                         npi_lot_id: npiId,
@@ -316,7 +317,7 @@ export class NpiService {
                         continue;
                     const uploadedFile = files.find(f => f.originalname === originalName);
                     const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-                    const finalRemarks = att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`;
+                    const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
                     await trx.insertInto('NPI_ATTACHMENT').values({
                         npi_attachment_id: att.npi_attachment_id || uuidv4(),
                         npi_lot_id: existing.record.npi_lot_id,

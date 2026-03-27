@@ -12,6 +12,7 @@ import {
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
+import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
 import {
   ogiNotificationService,
   type OgiNotificationSender,
@@ -461,7 +462,7 @@ export class OgiService {
           
           const uploadedFile = files.find(f => f.originalname === originalName);
           const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-          const finalRemarks = (att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`).slice(0, 200);
+          const finalRemarks = formatAttachmentRemarks(att.remarks, originalName)?.slice(0, 200) || null;
 
           await trx.insertInto('OGI_ATTACHMENT').values({
             ogi_attachment_id: att.id || att.ogi_attachment_id || uuidv4(),
@@ -572,7 +573,7 @@ export class OgiService {
             
             const uploadedFile = files.find(f => f.originalname === originalName);
             const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-            const finalRemarks = (att.remarks ? `${att.remarks} (Original: ${originalName})` : `Original: ${originalName}`).slice(0, 200);
+            const finalRemarks = formatAttachmentRemarks(att.remarks, originalName)?.slice(0, 200) || null;
   
             await trx.insertInto('OGI_ATTACHMENT').values({
               ogi_attachment_id: att.id || att.ogi_attachment_id || uuidv4(),

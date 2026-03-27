@@ -9,6 +9,7 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 
 const router = Router();
 const upload = createModuleUpload('mnr', { attachmentType: 'mnr-main' });
+const responseUpload = createModuleUpload('mnr', { attachmentType: 'mnr-response' });
 
 // Protect all routes
 router.use(requireAuth);
@@ -37,12 +38,12 @@ router.post('/:id/issue-main', requirePermission('MNR-12-07', 'issue'), mnrContr
 router.post('/:id/close', requirePermission('MNR-12-09', 'edit'), mnrController.close);
 router.post('/:id/cancel', requirePermission('MNR-12-08', 'delete'), mnrController.cancel);
 router.post('/:id/cancel-main', requirePermission('MNR-12-08', 'delete'), mnrController.cancelMain.bind(mnrController));
-router.post('/:id/save-initial-response', requirePermission('MNR-12-09', 'edit'), mnrController.saveInitialResponse.bind(mnrController));
-router.post('/:id/submit-initial-response', requirePermission('MNR-12-09', 'submit'), mnrController.submitInitialResponse.bind(mnrController));
-router.post('/:id/save-final-response', requirePermission('MNR-12-09', 'edit'), mnrController.saveFinalResponse.bind(mnrController));
-router.post('/:id/submit-final-response', requirePermission('MNR-12-09', 'submit'), mnrController.submitFinalResponse.bind(mnrController));
-router.post('/:id/save-response-review', requirePermission('MNR-12-10', 'edit'), mnrController.saveResponseReview.bind(mnrController));
-router.post('/:id/submit-response-review', requirePermission('MNR-12-10', 'submit'), mnrController.submitResponseReview.bind(mnrController));
+router.post('/:id/save-initial-response', requirePermission('MNR-12-09', 'edit'), responseUpload.any(), logUploads, handleUploadError, mnrController.saveInitialResponse.bind(mnrController));
+router.post('/:id/submit-initial-response', requirePermission('MNR-12-09', 'submit'), responseUpload.any(), logUploads, handleUploadError, mnrController.submitInitialResponse.bind(mnrController));
+router.post('/:id/save-final-response', requirePermission('MNR-12-09', 'edit'), responseUpload.any(), logUploads, handleUploadError, mnrController.saveFinalResponse.bind(mnrController));
+router.post('/:id/submit-final-response', requirePermission('MNR-12-09', 'submit'), responseUpload.any(), logUploads, handleUploadError, mnrController.submitFinalResponse.bind(mnrController));
+router.post('/:id/save-response-review', requirePermission('MNR-12-10', 'edit'), responseUpload.any(), logUploads, handleUploadError, mnrController.saveResponseReview.bind(mnrController));
+router.post('/:id/submit-response-review', requirePermission('MNR-12-10', 'submit'), responseUpload.any(), logUploads, handleUploadError, mnrController.submitResponseReview.bind(mnrController));
 router.post('/:id/check-response', requirePermission('MNR-12-10', 'check'), mnrController.checkResponse.bind(mnrController));
 router.post('/:id/approve-response', requirePermission('MNR-12-10', 'approve'), mnrController.approveResponse.bind(mnrController));
 router.post('/:id/reject-response', requirePermission('MNR-12-10', 'reject'), mnrController.rejectResponse.bind(mnrController));

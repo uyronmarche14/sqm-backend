@@ -22,6 +22,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import type { NextFunction, Request, Response } from 'express';
+import { ATTACHMENT_TYPE_FOLDERS } from '../shared/services/file-storage.service.js';
 
 // ---------------------------------------------------------------------------
 // Path resolution (ESM compat)
@@ -62,38 +63,6 @@ const ALLOWED_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.gif', '.webp',
   '.ppt', '.pptx',
 ]);
-
-/** 
- * NEW: Attachment Type to Subfolder Mapping
- * This allows logical grouping within module directories
- */
-const ATTACHMENT_TYPE_FOLDERS: Record<string, string> = {
-  // QMQA Module
-  'qmqa-plan': 'schedules',
-  'qmqa-record': 'records',
-  'qmqa-response-initial': 'response-initial',
-  'qmqa-response-final': 'response-final',
-  'qmqa-response-verification': 'response-verification',
-  
-  // SQMP Module
-  'sqmp-document': 'documents',
-  'sqmp-appendix': 'appendix',
-  'sqmp-response-document': 'response-documents',
-  'sqmp-response-appendix': 'response-appendix',
-  'sqmp-response-closure': 'response-closure',
-  
-  // MNR Module
-  'mnr-main': 'main',
-  'mnr-response': 'response',
-  
-  // Simple modules
-  'npi': 'attachments',
-  'npi-main': 'attachments',
-  'sqpr': 'attachments',
-  'sqpr-main': 'attachments',
-  'ogi': 'attachments',
-  'ogi-main': 'attachments',
-};
 
 interface UploadedFile {
   originalname: string;

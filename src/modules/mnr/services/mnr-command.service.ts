@@ -2,17 +2,34 @@ import { v4 as uuidv4 } from 'uuid';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { assertWorkflowRecordAccess } from '../../../shared/utils/workflow-access.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { mnrRepository } from '../mnr.repository.js';
 import { MNRCreationInput, MNRUpdateInput } from '../mnr.schema.js';
 import type { MnrWorkflowActorContext } from '../workflow/mnr-workflow.utils.js';
 import { mnrAccessService } from './mnr-access.service.js';
 import { mnrResponseService } from './mnr-response.service.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+} from '../../../shared/utils/attachment-remarks.js';
+
+const MNR_MAIN_ATTACHMENT_RECORD_CONFIG = {
+  tableName: 'MNR_ATTACHMENT',
+  ownerColumn: 'mnr_id',
+  idColumn: 'mnr_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
 
 export class MnrCommandService {
   async saveResponseContent(
     id: string,
     responsePayload: Record<string, any>,
     actor: MnrWorkflowActorContext = {},
+    files: any[] = [],
   ) {
     const now = new Date();
     const existingRecord = await mnrRepository.findByIdDetailed(id);
@@ -26,7 +43,7 @@ export class MnrCommandService {
       moduleName: 'MNR',
     });
 
-    return await mnrRepository.executeTransaction(async (trx) => {
+    const result = await mnrRepository.executeTransaction(async (trx) => {
       const currentRecord = await trx.selectFrom('MNR_LOTS')
         .select(['mnr_id'])
         .where((eb) => eb.or([
@@ -36,7 +53,14 @@ export class MnrCommandService {
         .executeTakeFirst();
 
       if (!currentRecord) throw new NotFoundError('MNR Record not found');
-      await mnrResponseService.persistResponseArtifacts(trx, currentRecord.mnr_id, responsePayload, actor.userId || 'SYSTEM', now);
+      const attachmentSync = await mnrResponseService.persistResponseArtifacts(
+        trx,
+        currentRecord.mnr_id,
+        responsePayload,
+        actor.userId || 'SYSTEM',
+        now,
+        files,
+      );
 
       return {
         success: true,
@@ -44,8 +68,18 @@ export class MnrCommandService {
         data: {
           id: currentRecord.mnr_id,
         },
+        _attachmentCleanupQueue: attachmentSync.cleanupQueue,
       };
     });
+
+    const cleanupQueue = (result as any)._attachmentCleanupQueue || [];
+    await attachmentService.deleteStoredAttachments('mnr-response', cleanupQueue);
+
+    if ('_attachmentCleanupQueue' in (result as any)) {
+      delete (result as any)._attachmentCleanupQueue;
+    }
+
+    return result;
   }
 
   async createRecord(payload: MNRCreationInput, userId: string, files: any[] = []) {
@@ -135,7 +169,7 @@ export class MnrCommandService {
       updateby: userId,
     };
 
-    return await mnrRepository.executeTransaction(async (trx) => {
+    const result = await mnrRepository.executeTransaction(async (trx) => {
       const controlNo = await controlNumberService.buildMnrDraft(
         {
           siteId: main.mfgSites,
@@ -203,7 +237,14 @@ export class MnrCommandService {
       }
 
       const responsePayload = (payload as any).response8D || {};
-      await mnrResponseService.persistResponseArtifacts(trx, mnrId, responsePayload, userId, now);
+      const responseAttachmentSync = await mnrResponseService.persistResponseArtifacts(
+        trx,
+        mnrId,
+        responsePayload,
+        userId,
+        now,
+        files,
+      );
 
       const ccUsers: string[] = [];
       if (payload.copiedUsers && Array.isArray(payload.copiedUsers)) {
@@ -225,33 +266,24 @@ export class MnrCommandService {
         }).execute();
       }
 
-      if (payload.attachments && Array.isArray(payload.attachments)) {
-        for (const att of payload.attachments) {
-          const originalName = att.file_name || att.name;
-          if (!originalName) {
-            console.warn('[MNR] Skipping attachment missing file_name:', att);
-            continue;
-          }
-
-          const uploadedFile = files.find((file) => file.originalname === originalName);
-          const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-          const originalLabel = uploadedFile?.originalname || originalName;
-          const remarkBase = (att.remarks || '').trim();
-          const withOriginalMarker = remarkBase.includes('(Original:')
-            ? remarkBase
-            : `${remarkBase}${remarkBase ? ' ' : ''}(Original: ${originalLabel})`;
-
-          await trx.insertInto('MNR_ATTACHMENT').values({
-            mnr_attachment_id: att.id || uuidv4(),
-            mnr_id: mnrId,
-            file_name: diskFileName,
-            file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
-            remarks: withOriginalMarker || null,
-            last_update: now,
-            updateby: userId,
-          }).execute();
-        }
-      }
+      const mainAttachmentSync = await attachmentService.syncAttachments(
+        trx,
+        payload.attachments,
+        files,
+        {
+          ownerId: mnrId,
+          userId,
+          now,
+          recordConfig: MNR_MAIN_ATTACHMENT_RECORD_CONFIG,
+          createId: () => uuidv4(),
+          remarkFormatter: ({ command, existing, originalName }) =>
+            formatAttachmentRemarks(
+              command.remarks ?? existing?.remarks ?? null,
+              originalName,
+              extractOriginalFilenameMarker(existing?.remarks),
+            ),
+        },
+      );
 
       return {
         success: true,
@@ -263,15 +295,31 @@ export class MnrCommandService {
         },
         mnr_id: mnrId,
         message: 'Record created successfully',
+        _attachmentCleanupQueue: {
+          main: mainAttachmentSync.cleanupQueue,
+          response: responseAttachmentSync.cleanupQueue,
+        },
       };
     });
+
+    const cleanupQueue = (result as any)._attachmentCleanupQueue;
+    if (cleanupQueue) {
+      await attachmentService.deleteStoredAttachments('mnr-main', cleanupQueue.main || []);
+      await attachmentService.deleteStoredAttachments('mnr-response', cleanupQueue.response || []);
+    }
+
+    if ('_attachmentCleanupQueue' in (result as any)) {
+      delete (result as any)._attachmentCleanupQueue;
+    }
+
+    return result;
   }
 
   async updateRecord(id: string, payload: MNRUpdateInput, actor: MnrWorkflowActorContext, files: any[] = []) {
     const updates = payload.updates || payload;
     const now = new Date();
 
-    return await mnrRepository.executeTransaction(async (trx) => {
+    const result = await mnrRepository.executeTransaction(async (trx) => {
       const currentRecord = await trx.selectFrom('MNR_LOTS')
         .select(['mnr_id', 'request_status', 'report_issuance_8d'])
         .where((eb) => eb.or([
@@ -372,41 +420,29 @@ export class MnrCommandService {
       }
 
       const updateAtts = (updates as any).attachments;
+      let mainAttachmentSync = {
+        cleanupQueue: [] as Array<{ fileName: string; storedPath?: string | null }>,
+      };
       if (updateAtts !== undefined && Array.isArray(updateAtts)) {
         console.log(`[MNR Update] Syncing ${updateAtts.length} attachments for record ${id}`);
-        const existingAttachments = await trx.selectFrom('MNR_ATTACHMENT')
-          .select(['mnr_attachment_id', 'file_name', 'remarks'])
-          .where('mnr_id', '=', realId)
-          .execute();
-        const existingById = new Map(existingAttachments.map((attachment) => [attachment.mnr_attachment_id, attachment]));
-        await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', realId).execute();
-        for (const att of updateAtts) {
-          const originalName = att.file_name || att.name;
-          const existing = att.id ? existingById.get(att.id) : undefined;
-          if (!originalName && !existing?.file_name) continue;
-
-          const uploadedFile = originalName
-            ? files.find((file) => file.originalname === originalName)
-            : undefined;
-          const diskFileName = uploadedFile
-            ? uploadedFile.filename
-            : (existing?.file_name || originalName);
-          const originalLabel = uploadedFile?.originalname || originalName || existing?.file_name || '';
-          const remarkBase = (att.remarks || existing?.remarks || '').replace(/\s*\(Original:\s.*?\)\s*$/, '').trim();
-          const withOriginalMarker = originalLabel
-            ? `${remarkBase}${remarkBase ? ' ' : ''}(Original: ${originalLabel})`
-            : remarkBase;
-
-          await trx.insertInto('MNR_ATTACHMENT').values({
-            mnr_attachment_id: att.id || uuidv4(),
-            mnr_id: realId,
-            file_name: diskFileName,
-            file_extension: diskFileName.split('.').pop() || att.extension || 'bin',
-            remarks: withOriginalMarker || null,
-            last_update: now,
-            updateby: actor.userId || 'SYSTEM',
-          }).execute();
-        }
+        mainAttachmentSync = await attachmentService.syncAttachments(
+          trx,
+          updateAtts,
+          files,
+          {
+            ownerId: realId,
+            userId: actor.userId || 'SYSTEM',
+            now,
+            recordConfig: MNR_MAIN_ATTACHMENT_RECORD_CONFIG,
+            createId: () => uuidv4(),
+            remarkFormatter: ({ command, existing, originalName }) =>
+              formatAttachmentRemarks(
+                command.remarks ?? existing?.remarks ?? null,
+                originalName,
+                extractOriginalFilenameMarker(existing?.remarks),
+              ),
+          },
+        );
       }
 
       const updateCcList = (updates as any).ccList;
@@ -478,12 +514,46 @@ export class MnrCommandService {
         }
       }
 
-      return { success: true, message: 'Record updated successfully' };
+      const responsePayload = (updates as any).response8D;
+      let responseAttachmentSync = {
+        cleanupQueue: [] as Array<{ fileName: string; storedPath?: string | null }>,
+      };
+      if (responsePayload && typeof responsePayload === 'object') {
+        responseAttachmentSync = await mnrResponseService.persistResponseArtifacts(
+          trx,
+          realId,
+          responsePayload,
+          actor.userId || 'SYSTEM',
+          now,
+          files,
+        );
+      }
+
+      return {
+        success: true,
+        message: 'Record updated successfully',
+        _attachmentCleanupQueue: {
+          main: mainAttachmentSync.cleanupQueue,
+          response: responseAttachmentSync.cleanupQueue,
+        },
+      };
     });
+
+    const cleanupQueue = (result as any)._attachmentCleanupQueue;
+    if (cleanupQueue) {
+      await attachmentService.deleteStoredAttachments('mnr-main', cleanupQueue.main || []);
+      await attachmentService.deleteStoredAttachments('mnr-response', cleanupQueue.response || []);
+    }
+
+    if ('_attachmentCleanupQueue' in (result as any)) {
+      delete (result as any)._attachmentCleanupQueue;
+    }
+
+    return result;
   }
 
   async deleteRecord(id: string, actor: MnrWorkflowActorContext = {}) {
-    return await mnrRepository.executeTransaction(async (trx) => {
+    const result = await mnrRepository.executeTransaction(async (trx) => {
       const record = await trx.selectFrom('MNR_LOTS')
         .select('mnr_id')
         .where((eb) => eb.or([
@@ -494,6 +564,11 @@ export class MnrCommandService {
 
       if (!record) return { success: false, message: 'Record not found' };
       const realId = record.mnr_id;
+      const existingMainAttachments = await trx
+        .selectFrom('MNR_ATTACHMENT')
+        .select(['file_name', 'mnr_attachment_id'])
+        .where('mnr_id', '=', realId)
+        .execute();
       const existingRecord = await mnrRepository.findByIdDetailed(realId);
       assertWorkflowRecordAccess({
         allowed: mnrAccessService.canDeleteRecord(existingRecord?.record || {}, actor),
@@ -505,14 +580,43 @@ export class MnrCommandService {
       await trx.deleteFrom('MNR_ATTACHMENT').where('mnr_id', '=', realId).execute();
       await trx.deleteFrom('MNR_VERIFICATION').where('mnr_id', '=', realId).execute();
       const responses = await trx.selectFrom('MNR_RESPONSE').select('mnr_response_id').where('mnr_id', '=', realId).execute();
+      const responseAttachments = await Promise.all(
+        responses.map(async (response) =>
+          trx
+            .selectFrom('MNR_RESPONSE_ATTACHMENT')
+            .select(['file_name', 'mnr_response_attachment_id'])
+            .where('mnr_response_id', '=', response.mnr_response_id)
+            .execute(),
+        ),
+      );
       for (const response of responses) {
         await trx.deleteFrom('MNR_RESPONSE_ATTACHMENT').where('mnr_response_id', '=', response.mnr_response_id).execute();
       }
       await trx.deleteFrom('MNR_RESPONSE').where('mnr_id', '=', realId).execute();
       await trx.deleteFrom('MNR_DETAILS').where('mnr_id', '=', realId).execute();
       await trx.deleteFrom('MNR_LOTS').where('mnr_id', '=', realId).execute();
-      return { success: true, message: 'Record and all associated data deleted successfully' };
+      return {
+        success: true,
+        message: 'Record and all associated data deleted successfully',
+        _attachmentCleanupQueue: {
+          main: existingMainAttachments.map((attachment) => ({
+            fileName: attachment.file_name,
+          })),
+          response: responseAttachments.flat().map((attachment) => ({
+            fileName: attachment.file_name,
+          })),
+        },
+      };
     });
+
+    const cleanupQueue = (result as any)._attachmentCleanupQueue;
+    if (cleanupQueue) {
+      await attachmentService.deleteStoredAttachments('mnr-main', cleanupQueue.main || []);
+      await attachmentService.deleteStoredAttachments('mnr-response', cleanupQueue.response || []);
+      delete (result as any)._attachmentCleanupQueue;
+    }
+
+    return result;
   }
 }
 

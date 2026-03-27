@@ -104,9 +104,17 @@ const MnrDefectSchema = z.object({
 const MnrAttachmentSchema = z.object({
     name: z.string().optional(),
     file_name: z.string().optional(),
+    fileName: z.string().optional(),
     extension: z.string().optional(),
+    file_extension: z.string().optional(),
     remarks: z.string().optional(),
     id: z.string().optional(),
+    attachmentId: z.string().optional(),
+    client_upload_id: z.string().optional(),
+    clientUploadId: z.string().optional(),
+    file_field: z.string().optional(),
+    fileField: z.string().optional(),
+    category: z.string().optional().nullable(),
     action: z.string().optional()
 });
 const MnrCcItemSchema = z.object({
@@ -219,7 +227,11 @@ export const MnrUpdateSchema = z.object({
         actualInitialReport: z.string().optional(),
         actualFinalReport: z.string().optional(),
         remarks: z.string().optional(),
-        reference: z.string().optional()
+        reference: z.string().optional(),
+        defects: JsonParsedArray(MnrDefectSchema.extend({ id: z.string().optional() })),
+        copiedUsers: JsonParsedArray(z.string()),
+        ccList: JsonParsedArray(MnrCcItemSchema),
+        attachments: JsonParsedArray(MnrAttachmentSchema),
     })
 });
 export const MnrIdParamSchema = z.object({

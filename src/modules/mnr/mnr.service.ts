@@ -9,8 +9,9 @@ export class MnrService {
     id: string,
     responsePayload: Record<string, any>,
     actor: MnrWorkflowActorContext = {},
+    files: any[] = [],
   ) {
-    return mnrCommandService.saveResponseContent(id, responsePayload, actor);
+    return mnrCommandService.saveResponseContent(id, responsePayload, actor, files);
   }
 
   async getAllRecords(

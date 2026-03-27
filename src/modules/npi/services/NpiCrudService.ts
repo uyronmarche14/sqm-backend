@@ -34,6 +34,7 @@ import {
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
 import { buildNpiWorkflowMetadata, getNpiDbStatus, getNpiDbStatusesForFilter } from '../workflow/npi-workflow.utils.js';
 import { NPI_WORKFLOW_STAGE } from '../workflow/npi-workflow.constants.js';
+import { formatAttachmentRemarks } from '../../../shared/utils/attachment-remarks.js';
 import {
   assertWorkflowRecordAccess,
   filterWorkflowRecordsByScope,
@@ -730,9 +731,7 @@ export class NpiCrudService implements INpiService {
       
       const uploadedFile = files.find(f => f.originalname === originalName);
       const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-      const finalRemarks = att.remarks 
-        ? `${att.remarks} (Original: ${originalName})` 
-        : `Original: ${originalName}`;
+      const finalRemarks = formatAttachmentRemarks(att.remarks, originalName);
 
       await trx.insertInto('NPI_ATTACHMENT').values({
         npi_attachment_id: att.npi_attachment_id || uuidv4(),
