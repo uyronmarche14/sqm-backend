@@ -667,7 +667,13 @@ export class QmqaWorkflowService {
     return this.refetchResult(id, userId, 'Final response submitted');
   }
 
-  async saveResponseReview(id: string, userId: string, roleId?: string, payload: Record<string, any> = {}) {
+  async saveResponseReview(
+    id: string,
+    userId: string,
+    roleId?: string,
+    payload: Record<string, any> = {},
+    files: any[] = [],
+  ) {
     const context = await this.getWorkflowContext(id, userId);
     const stage = this.getStage(context);
 
@@ -691,18 +697,18 @@ export class QmqaWorkflowService {
       'Only the assigned issuer can save the response review.'
     );
 
-    await qmqaService.saveResponseReviewContent(context.record.qmqa_id, userId, payload);
-
-    await this.repository.executeTransaction(async (trx) => {
-      await this.updateMainStatus(trx, context.record.qmqa_id, userId, {
-        request_status: QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_2ND],
-      });
-    });
+    await qmqaService.saveResponseReviewContent(context.record.qmqa_id, userId, payload, files);
 
     return this.refetchResult(id, userId, 'Response review saved');
   }
 
-  async submitResponseReview(id: string, userId: string, roleId?: string, payload: Record<string, any> = {}) {
+  async submitResponseReview(
+    id: string,
+    userId: string,
+    roleId?: string,
+    payload: Record<string, any> = {},
+    files: any[] = [],
+  ) {
     const context = await this.getWorkflowContext(id, userId);
     const stage = this.getStage(context);
 
@@ -726,7 +732,7 @@ export class QmqaWorkflowService {
       'Only the assigned issuer can submit the response review.'
     );
 
-    await qmqaService.saveResponseReviewContent(context.record.qmqa_id, userId, payload);
+    await qmqaService.saveResponseReviewContent(context.record.qmqa_id, userId, payload, files);
     const latestResponse = await this.repository.findResponseByQmqaId(context.record.qmqa_id);
 
     if (!latestResponse?.checker_id || !latestResponse?.approver_id) {
@@ -793,14 +799,13 @@ export class QmqaWorkflowService {
       await this.updateResponseStatus(trx, latestResponse.qmqa_response_id, userId, {
         approver_date: new Date(),
         approver_remarks: remarks || null,
-        accept_date: new Date(), // Directly accept and close
       });
       await this.updateMainStatus(trx, context.record.qmqa_id, userId, {
-        request_status: QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ACCEPT],
+        request_status: QMQA_LEGACY_STAGE_CODE[QMQA_WORKFLOW_STAGE.ISSUER_3RD],
       });
     });
 
-    return this.refetchResult(id, userId, 'Response approved and closed');
+    return this.refetchResult(id, userId, 'Response approved and routed to issuer for final acceptance');
   }
 
   async rejectResponse(id: string, userId: string, roleId?: string, remarks?: string) {
@@ -1022,6 +1027,7 @@ export class QmqaWorkflowService {
       cycle2_approver_id?: string;
       cycle2_approver_remarks?: string;
     } = {},
+    files: any[] = [],
   ) {
     return this.submitResponseReview(id, userId, roleId, {
       verification_remarks: payload.verification_remarks,
@@ -1029,7 +1035,7 @@ export class QmqaWorkflowService {
       cycle2_checker_remarks: payload.cycle2_checker_remarks,
       cycle2_approver_id: payload.cycle2_approver_id,
       cycle2_approver_remarks: payload.cycle2_approver_remarks,
-    });
+    }, files);
   }
 
   async saveInitialReport(
