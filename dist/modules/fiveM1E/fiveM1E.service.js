@@ -744,6 +744,11 @@ export class FiveM1EService {
             moduleName: '5M1E',
         });
         const cn = existing.ControlNo;
+        const existingAttachments = await this.repository.findAttachments(cn);
+        const cleanupQueue = existingAttachments.map((attachment) => ({
+            fileName: attachment.FileName,
+            storedPath: attachment.Attribute1,
+        }));
         // Delete child tables first, then approval, then application
         await this.repository.replaceParts(cn, []);
         await this.repository.replaceAttachments(cn, []);
@@ -753,6 +758,7 @@ export class FiveM1EService {
         await this.repository.replaceCCUsers(cn, []);
         await this.repository.deleteApproval(cn);
         await this.repository.deleteByControlNo(cn);
+        await this.attachments.deleteStoredAttachments('5m1e-main', cleanupQueue);
         return { success: true, message: 'Application deleted successfully', data: { controlNo } };
     }
     /**
