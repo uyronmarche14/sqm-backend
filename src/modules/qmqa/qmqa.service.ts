@@ -51,8 +51,9 @@ export class QmqaService {
     id: string,
     payload: QMQARecordUpdateInput,
     actor: { userId: string; roleName?: string | null },
+    files: any[] = [],
   ) {
-    return qmqaRecordCommandService.updateRecord(id, payload, actor);
+    return qmqaRecordCommandService.updateRecord(id, payload, actor, files);
   }
 
   async saveSupplierResponseContent(

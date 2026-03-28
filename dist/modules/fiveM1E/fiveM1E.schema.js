@@ -25,7 +25,13 @@ const PartSchema = z.object({
 });
 const AttachmentSchema = z.object({
     id: z.string().optional(),
+    attachmentId: z.string().optional(),
     file_name: z.string().optional(),
+    category: z.string().optional(),
+    action: z.string().optional(),
+    client_upload_id: z.string().optional(),
+    file_field: z.string().optional(),
+    download_url: z.string().optional(),
     attribute_1: z.string().optional(),
     attribute_2: z.string().optional(),
 });

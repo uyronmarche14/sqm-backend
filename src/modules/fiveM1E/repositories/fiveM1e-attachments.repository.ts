@@ -5,12 +5,25 @@ export class FiveM1eAttachmentsRepository {
     return await db.selectFrom('TBL_5M1E_Attachment').selectAll().where('ControlNo', '=', controlNo).execute();
   }
 
+  async reserveAttachmentIds(count: number, trxOrDb: any = db) {
+    if (count <= 0) {
+      return [];
+    }
+
+    const nextIdResult = await trxOrDb
+      .selectFrom('TBL_5M1E_Attachment')
+      .select(db.fn.max('ID').as('maxId'))
+      .executeTakeFirst();
+
+    const startId = (Number(nextIdResult?.maxId) || 0) + 1;
+    return Array.from({ length: count }, (_, index) => startId + index);
+  }
+
   async insertAttachments(controlNo: string, attachments: Array<{ id?: string; file_name?: string; attribute_1?: string; attribute_2?: string }>) {
     const now = new Date();
     for (const attachment of attachments) {
       if (!attachment.file_name) continue;
-      const nextIdResult = await db.selectFrom('TBL_5M1E_Attachment').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
-      const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
+      const nextId = Number(attachment.id) || (await this.reserveAttachmentIds(1))[0];
 
       await db.insertInto('TBL_5M1E_Attachment').values({
         ID: nextId,

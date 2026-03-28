@@ -4,17 +4,42 @@ import { sqmpRepository } from '../sqmp.repository.js';
 import { userRepository } from '../../users/user.repository.js';
 import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
 import { NotFoundError, ForbiddenError } from '../../../shared/errors/AppError.js';
-import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
 import { SQMP_STAGE_CODE } from '../workflow/workflow.constants.js';
 import { buildSqmpWorkflowMetadata } from '../workflow/workflow.utils.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+} from '../../../shared/utils/attachment-remarks.js';
 import {
   assertWorkflowRecordAccess,
   filterWorkflowRecordsByScope,
   type WorkflowListScope,
 } from '../../../shared/utils/workflow-access.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
+
+const SQMP_MAIN_DOCUMENT_RECORD_CONFIG = {
+  tableName: 'SQMP_DOCUMENT',
+  ownerColumn: 'sqmp_id',
+  idColumn: 'sqmp_document_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
+const SQMP_APPENDIX_RECORD_CONFIG = {
+  tableName: 'SQMP_APPENDIX',
+  ownerColumn: 'sqmp_id',
+  idColumn: 'sqmp_appendix_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
 
 const SQMP_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
   NEW: ['SQMP-09-01'],
@@ -300,6 +325,134 @@ export class MainSqmpService {
       return val;
   }
 
+  private buildAttachmentView(
+    attachment: Record<string, any>,
+    {
+      attachmentId,
+      category,
+      downloadUrl,
+      attachmentType,
+    }: {
+      attachmentId: string;
+      category: string;
+      downloadUrl: string;
+      attachmentType: string;
+    },
+  ) {
+    return {
+      ...attachment,
+      attachmentId,
+      id: attachmentId,
+      category,
+      attachment_type: attachmentType,
+      downloadUrl,
+      download_url: downloadUrl,
+      file_url: downloadUrl,
+      url: downloadUrl,
+    };
+  }
+
+  private decorateMainAttachment(attachment: Record<string, any>, category: 'document' | 'appendix') {
+    const attachmentId = String(
+      attachment.sqmp_document_id ||
+      attachment.sqmp_appendix_id ||
+      attachment.sqmp_attachment_id ||
+      attachment.attachmentId ||
+      attachment.id ||
+      '',
+    );
+    const downloadUrl = attachmentId ? `/api/sqmp/attachments/${attachmentId}` : '';
+
+    return this.buildAttachmentView(attachment, {
+      attachmentId,
+      category: category === 'document' ? 'sqmp-document' : 'sqmp-appendix',
+      downloadUrl,
+      attachmentType: category === 'document' ? 'MAIN_DOC' : 'APPENDIX',
+    });
+  }
+
+  private decorateResponseAttachment(
+    attachment: Record<string, any>,
+    category: 'document' | 'appendix' | 'closure',
+  ) {
+    const attachmentId = String(
+      attachment.sqmp_response_document_id ||
+      attachment.sqmp_response_appendix_id ||
+      attachment.sqmp_response_closure_id ||
+      attachment.sqmp_attachment_id ||
+      attachment.attachmentId ||
+      attachment.id ||
+      '',
+    );
+    const downloadUrl = attachmentId ? `/api/sqmp/response-attachments/${attachmentId}` : '';
+
+    return this.buildAttachmentView(attachment, {
+      attachmentId,
+      category:
+        category === 'document'
+          ? 'sqmp-response-document'
+          : category === 'appendix'
+            ? 'sqmp-response-appendix'
+            : 'sqmp-response-closure',
+      downloadUrl,
+      attachmentType:
+        category === 'document'
+          ? 'SUPPLIER_SIGNED_MAIN'
+          : category === 'appendix'
+            ? 'SUPPLIER_SIGNED_APPENDIX'
+            : ((attachment.remarks || '').includes('[APPEND]') ? 'TIP_SIGNED_APPENDIX' : 'TIP_SIGNED_MAIN'),
+    });
+  }
+
+  private async syncMainAttachments(
+    trx: any,
+    sqmpId: string,
+    payload: Pick<SQMPUpdateInput, 'main_documents' | 'appendix_documents'> | Pick<SQMPCreationInput, 'main_documents' | 'appendix_documents'>,
+    files: any[],
+    userId: string,
+    now: Date,
+  ) {
+    const documentSync = await attachmentService.syncAttachments(
+      trx,
+      payload.main_documents,
+      files,
+      {
+        ownerId: sqmpId,
+        userId,
+        now,
+        recordConfig: SQMP_MAIN_DOCUMENT_RECORD_CONFIG,
+        createId: () => uuidv4(),
+        remarkFormatter: ({ command, existing, originalName }) =>
+          formatAttachmentRemarks(
+            command.remarks ?? existing?.remarks ?? null,
+            originalName,
+            extractOriginalFilenameMarker(existing?.remarks),
+          ),
+      },
+    );
+
+    const appendixSync = await attachmentService.syncAttachments(
+      trx,
+      payload.appendix_documents,
+      files,
+      {
+        ownerId: sqmpId,
+        userId,
+        now,
+        recordConfig: SQMP_APPENDIX_RECORD_CONFIG,
+        createId: () => uuidv4(),
+        remarkFormatter: ({ command, existing, originalName }) =>
+          formatAttachmentRemarks(
+            command.remarks ?? existing?.remarks ?? null,
+            originalName,
+            extractOriginalFilenameMarker(existing?.remarks),
+          ),
+      },
+    );
+
+    return { documentSync, appendixSync };
+  }
+
   async previewControlNo(query: {
     fiscalYear: number;
     siteId?: string;
@@ -442,10 +595,21 @@ export class MainSqmpService {
       ...metadata,
       status: metadata.status,
       semester: this.fromDBSemester(record.semester),
-      documents: mainDocuments || [],
-      appendixes: appendixDocuments || [],
+      documents: (mainDocuments || []).map((attachment: any) => this.decorateMainAttachment(attachment, 'document')),
+      appendixes: (appendixDocuments || []).map((attachment: any) => this.decorateMainAttachment(attachment, 'appendix')),
       cc_list: ccList || [],
-      responses: responses || [],
+      responses: (responses || []).map((response: any) => ({
+        ...response,
+        documents: (response.documents || []).map((attachment: any) =>
+          this.decorateResponseAttachment(attachment, 'document'),
+        ),
+        appendixes: (response.appendixes || []).map((attachment: any) =>
+          this.decorateResponseAttachment(attachment, 'appendix'),
+        ),
+        closures: (response.closures || []).map((attachment: any) =>
+          this.decorateResponseAttachment(attachment, 'closure'),
+        ),
+      })),
       status_remarks: statusRemarks || []
     };
   }
@@ -493,41 +657,7 @@ export class MainSqmpService {
 
       await trx.insertInto('SQMP').values(dbPayload).execute();
 
-      if (payload.main_documents?.length) {
-        for (const doc of payload.main_documents) {
-          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
-          const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
-          const finalRemarks = sanitizeAttachmentRemarks(doc.remarks, uploadedFile?.originalname);
-
-          await trx.insertInto('SQMP_DOCUMENT').values({
-            sqmp_document_id: doc.sqmp_attachment_id || uuidv4(),
-            sqmp_id: sqmpId,
-            file_name: diskFileName || 'Unknown',
-            file_extension: diskFileName ? diskFileName.split('.').pop()! : (doc.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId
-          }).execute();
-        }
-      }
-
-      if (payload.appendix_documents?.length) {
-        for (const app of payload.appendix_documents) {
-          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
-          const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
-          const finalRemarks = sanitizeAttachmentRemarks(app.remarks, uploadedFile?.originalname);
-
-          await trx.insertInto('SQMP_APPENDIX').values({
-            sqmp_appendix_id: app.sqmp_attachment_id || uuidv4(),
-            sqmp_id: sqmpId,
-            file_name: diskFileName || 'Unknown',
-            file_extension: diskFileName ? diskFileName.split('.').pop()! : (app.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId
-          }).execute();
-        }
-      }
+      await this.syncMainAttachments(trx, sqmpId, payload, files, userId, now);
 
       if (payload.cc_list?.length) {
         for (const cc of payload.cc_list) {
@@ -599,8 +729,16 @@ export class MainSqmpService {
     if (payload.approver_remarks !== undefined) dbUpdates.approver_remarks = payload.approver_remarks;
     if (payload.approver_date !== undefined) dbUpdates.approver_date = this.parseDate(payload.approver_date);
 
-    return await sqmpRepository.executeTransaction(async (trx) => {
+    const result = await sqmpRepository.executeTransaction(async (trx) => {
       const recordId = record.sqmp_id;
+      let attachmentCleanupQueue: {
+        main: Array<{ fileName: string; storedPath?: string | null }>;
+        appendix: Array<{ fileName: string; storedPath?: string | null }>;
+      } = {
+        main: [],
+        appendix: [],
+      };
+
       if (payload.attention_id !== undefined) {
         dbUpdates.attention_id = await this.resolveAttentionId(trx, payload.attention_id);
       }
@@ -625,42 +763,12 @@ export class MainSqmpService {
         await trx.updateTable('SQMP').set(dbUpdates).where('sqmp_id', '=', recordId).execute();
       }
 
-      if (payload.main_documents !== undefined) {
-        await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', recordId).execute();
-        for (const doc of payload.main_documents) {
-          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
-          const diskFileName = uploadedFile ? uploadedFile.filename : doc.file_name;
-          const finalRemarks = sanitizeAttachmentRemarks(doc.remarks, uploadedFile?.originalname);
-
-          await trx.insertInto('SQMP_DOCUMENT').values({
-            sqmp_document_id: doc.sqmp_attachment_id || uuidv4(),
-            sqmp_id: recordId,
-            file_name: diskFileName || 'Unknown',
-            file_extension: diskFileName ? diskFileName.split('.').pop()! : (doc.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId
-          }).execute();
-        }
-      }
-
-      if (payload.appendix_documents !== undefined) {
-        await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', recordId).execute();
-        for (const app of payload.appendix_documents) {
-          const uploadedFile = files.find(f => f.originalname.trim().toLowerCase() === app.file_name.trim().toLowerCase());
-          const diskFileName = uploadedFile ? uploadedFile.filename : app.file_name;
-          const finalRemarks = sanitizeAttachmentRemarks(app.remarks, uploadedFile?.originalname);
-
-          await trx.insertInto('SQMP_APPENDIX').values({
-            sqmp_appendix_id: app.sqmp_attachment_id || uuidv4(),
-            sqmp_id: recordId,
-            file_name: diskFileName || 'Unknown',
-            file_extension: diskFileName ? diskFileName.split('.').pop()! : (app.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId
-          }).execute();
-        }
+      if (payload.main_documents !== undefined || payload.appendix_documents !== undefined) {
+        const syncResult = await this.syncMainAttachments(trx, recordId, payload, files, userId, now);
+        attachmentCleanupQueue = {
+          main: syncResult.documentSync.cleanupQueue,
+          appendix: syncResult.appendixSync.cleanupQueue,
+        };
       }
 
       if (payload.cc_list !== undefined) {
@@ -684,9 +792,19 @@ export class MainSqmpService {
           controlNo: dbUpdates.control_no || record.control_no,
           controlNoState: controlNumberService.getControlNoState(dbUpdates.control_no || record.control_no),
         },
+        cleanupQueue: attachmentCleanupQueue,
         message: 'SQM Plan updated successfully',
       };
     });
+
+    await attachmentService.deleteStoredAttachments('sqmp-document', result.cleanupQueue.main || []);
+    await attachmentService.deleteStoredAttachments('sqmp-appendix', result.cleanupQueue.appendix || []);
+
+    return {
+      success: result.success,
+      data: result.data,
+      message: result.message,
+    };
   }
 
   async deleteRecord(id: string, userId: string, roleId: string) {
@@ -701,13 +819,29 @@ export class MainSqmpService {
       moduleName: 'SQM Plan',
     });
 
-    return await sqmpRepository.executeTransaction(async (trx) => {
+    const result = await sqmpRepository.executeTransaction(async (trx) => {
+        const cleanupQueue = {
+          main: (existing.mainDocuments || []).map((attachment: any) => ({
+            fileName: attachment.file_name,
+          })),
+          appendix: (existing.appendixDocuments || []).map((attachment: any) => ({
+            fileName: attachment.file_name,
+          })),
+        };
         await trx.deleteFrom('SQMP_CC').where('sqmp_id', '=', existing.record.sqmp_id).execute();
         await trx.deleteFrom('SQMP_DOCUMENT').where('sqmp_id', '=', existing.record.sqmp_id).execute();
         await trx.deleteFrom('SQMP_APPENDIX').where('sqmp_id', '=', existing.record.sqmp_id).execute();
         await trx.deleteFrom('SQMP').where('sqmp_id', '=', existing.record.sqmp_id).execute();
-        return { success: true, message: 'Record deleted successfully' };
+        return { success: true, message: 'Record deleted successfully', cleanupQueue };
     });
+
+    await attachmentService.deleteStoredAttachments('sqmp-document', result.cleanupQueue.main || []);
+    await attachmentService.deleteStoredAttachments('sqmp-appendix', result.cleanupQueue.appendix || []);
+
+    return {
+      success: result.success,
+      message: result.message,
+    };
   }
 
   async issueRecord(id: string, userId: string, roleId: string, remarks?: string) {

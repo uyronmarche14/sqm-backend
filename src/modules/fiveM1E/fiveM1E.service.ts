@@ -3,6 +3,7 @@ import { CreateFiveM1EInput, UpdateFiveM1EInput } from './fiveM1E.schema.js';
 import { SmartMapper, MapperSchema } from '../../shared/infrastructure/SmartMapper.js';
 import { FiveM1EApplicationTable, NewFiveM1EApp, FiveM1EAppUpdate } from './fiveM1E.db.types.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
+import { db } from '../../shared/infrastructure/db.js';
 import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
 import {
   FIVE_M1E_WORKFLOW_STAGE,
@@ -17,12 +18,26 @@ import {
 import { permissionService } from '../../shared/services/permission.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
-import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+} from '../../shared/utils/attachment-remarks.js';
 
 type WorkflowActor = {
   userId?: string;
   roleName?: string | null;
 };
+
+const FIVE_M1E_ATTACHMENT_RECORD_CONFIG = {
+  tableName: 'TBL_5M1E_Attachment',
+  ownerColumn: 'ControlNo',
+  idColumn: 'ID',
+  fileNameColumn: 'FileName',
+  pathColumn: 'Attribute1',
+  remarksColumn: 'Attribute2',
+  lastUpdateColumn: null,
+  updatedByColumn: null,
+} as const;
 
 /**
  * 5M1E Domain Service
@@ -119,6 +134,62 @@ export class FiveM1EService {
       record.QACheckerID,
       record.FinalApprover,
     ].includes(userId);
+  }
+
+  private buildAttachmentView(attachment: Record<string, any>) {
+    const attachmentId = String(attachment.ID || attachment.id || attachment.attachmentId || '');
+    const downloadUrl = attachmentId ? `/api/5m1e/attachments/${attachmentId}` : '';
+
+    return {
+      ...attachment,
+      id: attachmentId,
+      attachmentId,
+      downloadUrl,
+      download_url: downloadUrl,
+      attachmentUrl: downloadUrl,
+      attribute_1: downloadUrl,
+    };
+  }
+
+  private async syncMainAttachments(
+    controlNo: string,
+    attachments: Array<Record<string, any>> | undefined,
+    files: any[],
+    userId: string,
+  ) {
+    if (attachments === undefined) {
+      return {
+        cleanupQueue: [] as Array<{ fileName: string; storedPath?: string | null }>,
+      };
+    }
+
+    const newAttachmentCount = attachments.filter((attachment) => {
+      const attachmentId = attachment.id || attachment.attachmentId;
+      return !attachmentId;
+    }).length;
+    const reservedIds = await this.repository.reserveAttachmentIds(newAttachmentCount, db);
+    let nextIdIndex = 0;
+
+    return this.attachments.syncAttachments(
+      db,
+      attachments as any,
+      files,
+      {
+        ownerId: controlNo,
+        userId,
+        now: new Date(),
+        recordConfig: FIVE_M1E_ATTACHMENT_RECORD_CONFIG,
+        createId: () => String(reservedIds[nextIdIndex++] || Date.now()),
+        remarkFormatter: ({ command, existing, originalName }) =>
+          formatAttachmentRemarks(
+            command.remarks ?? existing?.remarks ?? null,
+            originalName,
+            extractOriginalFilenameMarker(existing?.remarks),
+          )?.slice(0, 200) || null,
+        pathValueResolver: ({ uploadedFile, existing }) =>
+          uploadedFile ? null : (existing?.storagePath ?? null),
+      },
+    );
   }
 
   private async hasReadableRolePermission(userId: string, formId: string) {
@@ -315,9 +386,9 @@ export class FiveM1EService {
     }
     
     // Process attachments with file uploads
-    if (data.attachments && data.attachments.length > 0) {
+    if (data.attachments !== undefined) {
       console.log(`[5M1E Service] Processing ${data.attachments.length} attachment(s) with ${files.length} file(s)`);
-      await this.processAttachments(cn, data.attachments, files);
+      await this.syncMainAttachments(cn, data.attachments as any[], files, userId);
     }
     
     if (data.action_items && data.action_items.length > 0) {
@@ -574,9 +645,10 @@ export class FiveM1EService {
       envi_approve_dt_aprd: (record as any).envi_approve_dt_aprd,
       // Child tables
       parts: parts.map((p: any) => ({ part_id: p.part_id })),
-      attachments: attachments.map((a: any) => ({
-        id: a.ID, file_name: a.FileName,
-        attribute_1: a.Attribute1, attribute_2: a.Attribute2,
+      attachments: attachments.map((a: any) => this.buildAttachmentView({
+        ...a,
+        file_name: a.FileName,
+        attribute_2: a.Attribute2,
       })),
       action_items: actionItems.map((ai: any) => ({
         id: ai.ID, action_item: ai.ActionItem, pic: ai.PIC, pic_name: ai.PICName,
@@ -724,10 +796,10 @@ export class FiveM1EService {
     if (data.parts) {
       await this.repository.replaceParts(cn, data.parts);
     }
-    if (data.attachments) {
+    if (data.attachments !== undefined) {
       console.log(`[5M1E Service] Update - Processing ${data.attachments.length} attachment(s) with ${files.length} file(s)`);
-      await this.repository.replaceAttachments(cn, []); // Clear existing
-      await this.processAttachments(cn, data.attachments, files); // Insert new with files
+      const attachmentSync = await this.syncMainAttachments(cn, data.attachments as any[], files, actor.userId || 'SYSTEM');
+      await this.attachments.deleteStoredAttachments('5m1e-main', attachmentSync.cleanupQueue || []);
     }
     if (data.action_items) {
       await this.repository.replaceActionItems(cn, data.action_items);
@@ -763,40 +835,6 @@ export class FiveM1EService {
   }
 
   /**
-   * Process attachments with file uploads
-   * Matches uploaded files to attachment metadata by original filename
-   */
-  private async processAttachments(
-    controlNo: string,
-    attachments: Array<{ file_name?: string; fileName?: string; attribute_1?: string; attribute_2?: string; id?: string }>,
-    files: any[]
-  ) {
-    for (const att of attachments) {
-      const originalName = att.file_name || att.fileName;
-      if (!originalName) {
-        console.log('[5M1E Service] Skipping attachment with no filename');
-        continue;
-      }
-      
-      // Find the uploaded file that matches this attachment's original name
-      const uploadedFile = files.find(f => f.originalname === originalName);
-      const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-      
-      // Build remarks with original filename reference
-      const finalRemarks = formatAttachmentRemarks(att.attribute_2 || '', originalName)?.slice(0, 200) || null;
-      
-      console.log(`[5M1E Service] Processing attachment: ${originalName} -> ${diskFileName}`);
-
-      await this.repository.insertAttachments(controlNo, [{
-        id: att.id || undefined,
-        file_name: diskFileName || 'Unknown',
-        attribute_1: uploadedFile ? uploadedFile.path : (att.attribute_1 || null), // Store file path or URL
-        attribute_2: finalRemarks || undefined,
-      }]);
-    }
-  }
-
-  /**
    * Deletes a 5M1E Application and all child tables
    */
   async deleteApplication(controlNo: string, actor: WorkflowActor = {}) {
@@ -815,6 +853,11 @@ export class FiveM1EService {
     });
 
     const cn = existing.ControlNo;
+    const existingAttachments = await this.repository.findAttachments(cn);
+    const cleanupQueue = existingAttachments.map((attachment: any) => ({
+      fileName: attachment.FileName,
+      storedPath: attachment.Attribute1,
+    }));
 
     // Delete child tables first, then approval, then application
     await this.repository.replaceParts(cn, []);
@@ -825,6 +868,7 @@ export class FiveM1EService {
     await this.repository.replaceCCUsers(cn, []);
     await this.repository.deleteApproval(cn);
     await this.repository.deleteByControlNo(cn);
+    await this.attachments.deleteStoredAttachments('5m1e-main', cleanupQueue);
 
     return { success: true, message: 'Application deleted successfully', data: { controlNo } };
   }

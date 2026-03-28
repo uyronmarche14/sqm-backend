@@ -1,6 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { BadRequestError, ConflictError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+} from '../../../shared/utils/attachment-remarks.js';
 import { assertWorkflowRecordAccess } from '../../../shared/utils/workflow-access.js';
 import { qmqaRepository } from '../qmqa.repository.js';
 import { QMQARecordCreationInput, QMQARecordUpdateInput } from '../qmqa.schema.js';
@@ -9,8 +14,79 @@ import { qmqaResponseService } from './qmqa-response.service.js';
 import { sanitizeUUID } from './qmqa-module-strategy.js';
 
 const QMQA_DUPLICATE_KEY_NUMBERS = new Set([2601, 2627]);
+const QMQA_PLAN_ATTACHMENT_RECORD_CONFIG = {
+  tableName: 'QMQA_PLAN_ATTACHMENT',
+  ownerColumn: 'qmqa_id',
+  idColumn: 'qmqa_plan_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
+const QMQA_RECORD_ATTACHMENT_RECORD_CONFIG = {
+  tableName: 'QMQA_ATTACHMENT',
+  ownerColumn: 'qmqa_id',
+  idColumn: 'qmqa_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
 
 export class QmqaRecordCommandService {
+  private async syncRecordAttachments(
+    trx: any,
+    qmqaId: string,
+    payload: Pick<QMQARecordCreationInput, 'audit_plan_attachments' | 'attachments'>
+      | Pick<QMQARecordUpdateInput, 'audit_plan_attachments' | 'attachments'>,
+    files: any[],
+    userId: string,
+    now: Date,
+  ) {
+    const planSync = await attachmentService.syncAttachments(
+      trx,
+      payload.audit_plan_attachments,
+      files,
+      {
+        ownerId: qmqaId,
+        userId,
+        now,
+        recordConfig: QMQA_PLAN_ATTACHMENT_RECORD_CONFIG,
+        createId: () => uuidv4(),
+        remarkFormatter: ({ command, existing, originalName }) =>
+          formatAttachmentRemarks(
+            command.remarks ?? existing?.remarks ?? null,
+            originalName,
+            extractOriginalFilenameMarker(existing?.remarks),
+          ),
+      },
+    );
+
+    const recordSync = await attachmentService.syncAttachments(
+      trx,
+      payload.attachments,
+      files,
+      {
+        ownerId: qmqaId,
+        userId,
+        now,
+        recordConfig: QMQA_RECORD_ATTACHMENT_RECORD_CONFIG,
+        createId: () => uuidv4(),
+        remarkFormatter: ({ command, existing, originalName }) =>
+          formatAttachmentRemarks(
+            command.remarks ?? existing?.remarks ?? null,
+            originalName,
+            extractOriginalFilenameMarker(existing?.remarks),
+          ),
+      },
+    );
+
+    return { planSync, recordSync };
+  }
+
   private assertRecordControlNoInputs(payload: QMQARecordCreationInput) {
     if (!payload.site_id) {
       throw new BadRequestError('Site is required before creating an ad hoc QMQA record.');
@@ -158,39 +234,7 @@ export class QmqaRecordCommandService {
             }
           }
 
-          if (payload.attachments?.length) {
-            for (const attachment of payload.attachments) {
-              const originalName = attachment.file_name || attachment.fileName;
-              if (!originalName) continue;
-
-              const uploadedFile = files.find((file) => file.originalname === originalName);
-              const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-
-              await trx.insertInto('QMQA_ATTACHMENT').values({
-                qmqa_attachment_id: attachment.id || uuidv4(),
-                qmqa_id: qmqaId,
-                file_name: diskFileName || 'Unknown',
-                file_extension: diskFileName ? diskFileName.split('.').pop()! : 'unknown',
-                remarks: attachment.remarks || null,
-                last_update: now,
-                updateby: effectiveUserId,
-              }).execute();
-            }
-          }
-
-          if (files?.length) {
-            for (const file of files) {
-              await trx.insertInto('QMQA_PLAN_ATTACHMENT').values({
-                qmqa_plan_attachment_id: uuidv4(),
-                qmqa_id: qmqaId,
-                file_name: file.filename || file.originalname,
-                file_extension: (file.originalname || '').split('.').pop() || 'unknown',
-                remarks: `(Original: ${file.originalname})`,
-                last_update: now,
-                updateby: effectiveUserId,
-              }).execute();
-            }
-          }
+          await this.syncRecordAttachments(trx, qmqaId, payload, files, effectiveUserId, now);
 
           return {
             success: true,
@@ -215,6 +259,7 @@ export class QmqaRecordCommandService {
     id: string,
     payload: QMQARecordUpdateInput,
     actor: { userId: string; roleName?: string | null },
+    files: any[] = [],
   ) {
     const existing = await qmqaRepository.findRecordByIdDetailed(id);
     if (!existing) {
@@ -268,7 +313,15 @@ export class QmqaRecordCommandService {
     if (payload.audit_plan_date !== undefined) planUpdates.audit_plan_date = payload.audit_plan_date ? new Date(payload.audit_plan_date) : null;
     if (payload.sqe_pic_id !== undefined) planUpdates.sqe_pic_id = payload.sqe_pic_id;
 
-    return qmqaRepository.executeTransaction(async (trx) => {
+    const result = await qmqaRepository.executeTransaction(async (trx) => {
+      let attachmentCleanupQueue: {
+        plan: Array<{ fileName: string; storedPath?: string | null }>;
+        record: Array<{ fileName: string; storedPath?: string | null }>;
+      } = {
+        plan: [],
+        record: [],
+      };
+
       if (Object.keys(qmqaUpdates).length > 2) {
         await trx.updateTable('QMQA')
           .set(qmqaUpdates)
@@ -283,8 +336,35 @@ export class QmqaRecordCommandService {
           .execute();
       }
 
-      return { success: true, message: 'QMQA Record updated successfully' };
+      if (payload.audit_plan_attachments !== undefined || payload.attachments !== undefined) {
+        const syncResult = await this.syncRecordAttachments(
+          trx,
+          id,
+          payload,
+          files,
+          actor.userId || 'SYSTEM',
+          now,
+        );
+        attachmentCleanupQueue = {
+          plan: syncResult.planSync.cleanupQueue,
+          record: syncResult.recordSync.cleanupQueue,
+        };
+      }
+
+      return {
+        success: true,
+        message: 'QMQA Record updated successfully',
+        cleanupQueue: attachmentCleanupQueue,
+      };
     });
+
+    await attachmentService.deleteStoredAttachments('qmqa-plan', result.cleanupQueue.plan || []);
+    await attachmentService.deleteStoredAttachments('qmqa-record', result.cleanupQueue.record || []);
+
+    return {
+      success: result.success,
+      message: result.message,
+    };
   }
 
   async deleteRecord(id: string, actor?: { userId?: string | null; roleName?: string | null }) {

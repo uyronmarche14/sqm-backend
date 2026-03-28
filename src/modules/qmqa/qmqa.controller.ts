@@ -79,6 +79,7 @@ export class QmqaController {
       ...(skipInitial !== undefined ? { skip_initial: skipInitial } : {}),
       ...(typeof initialRemarks === 'string' ? { initial_remarks: initialRemarks } : {}),
       ...(typeof finalRemarks === 'string' ? { final_remarks: finalRemarks } : {}),
+      ...(Array.isArray(req.body?.attachments) ? { attachments: req.body.attachments } : {}),
     };
   }
 
@@ -89,6 +90,7 @@ export class QmqaController {
       cycle2_checker_remarks: req.body?.cycle2_checker_remarks || null,
       cycle2_approver_id: req.body?.cycle2_approver_id || req.body?.approver_id || null,
       cycle2_approver_remarks: req.body?.cycle2_approver_remarks || null,
+      ...(Array.isArray(req.body?.attachments) ? { attachments: req.body.attachments } : {}),
     };
   }
 
@@ -213,6 +215,7 @@ export class QmqaController {
     try {
       const parsed = QmqaRecordUpdateSchema.parse({ params: req.params, body: req.body });
       const actor = await this.getActor(req);
+      const files = (req as any).files || [];
       const result = await qmqaService.updateRecord(
         parsed.params.id,
         parsed.body,
@@ -220,6 +223,7 @@ export class QmqaController {
           userId: actor.userId,
           roleName: actor.roleName,
         },
+        files,
       );
       res.json(result);
     } catch (error) {

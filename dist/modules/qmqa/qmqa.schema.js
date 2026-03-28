@@ -13,8 +13,14 @@ const JsonParsedArray = (schema) => z.preprocess((val) => {
 }, z.array(schema).optional());
 const QmqaAttachmentSchema = z.object({
     id: z.string().uuid().optional(),
+    attachmentId: z.string().min(1).optional(),
     fileName: z.string().optional(),
     file_name: z.string().optional(),
+    category: z.string().optional(),
+    action: z.string().optional(),
+    client_upload_id: z.string().optional(),
+    file_field: z.string().optional(),
+    download_url: z.string().optional(),
     remarks: z.string().optional()
 });
 const QmqaCcListSchema = z.object({
@@ -84,6 +90,7 @@ export const QmqaRecordCreateSchema = z.object({
         approver_id: z.string().uuid().optional().or(z.literal('')),
         // Arrays
         cc_list: JsonParsedArray(QmqaCcListSchema),
+        audit_plan_attachments: JsonParsedArray(QmqaAttachmentSchema),
         attachments: JsonParsedArray(QmqaAttachmentSchema)
     })
 });
@@ -119,6 +126,7 @@ export const QmqaRecordUpdateSchema = z.object({
         approver_id: z.string().uuid().optional().or(z.literal('')),
         // Arrays
         cc_list: JsonParsedArray(QmqaCcListSchema).optional(),
+        audit_plan_attachments: JsonParsedArray(QmqaAttachmentSchema).optional(),
         attachments: JsonParsedArray(QmqaAttachmentSchema).optional()
     })
 });

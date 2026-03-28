@@ -9,6 +9,37 @@ import { type QmqaModuleVariant } from './qmqa-module-strategy.js';
 import { qmqaResponseService } from './qmqa-response.service.js';
 
 export class QmqaRecordQueryService {
+  private buildAttachmentView(
+    attachment: Record<string, any>,
+    moduleType: QmqaAttachmentModuleType,
+  ) {
+    const attachmentId = String(
+      attachment.qmqa_plan_attachment_id ||
+      attachment.qmqa_attachment_id ||
+      attachment.qmqa_response_initial_attachment_id ||
+      attachment.qmqa_response_final_attachment_id ||
+      attachment.qmqa_response_verification_attachment_id ||
+      attachment.attachmentId ||
+      attachment.id ||
+      '',
+    );
+    const downloadUrl = attachmentId
+      ? `/api/qmqa/attachments/${moduleType}/${attachmentId}`
+      : '';
+
+    return {
+      ...attachment,
+      attachmentId,
+      id: attachmentId,
+      category: attachment.category || moduleType,
+      downloadUrl,
+      download_url: downloadUrl,
+      fileUrl: downloadUrl,
+      file_url: downloadUrl,
+      url: downloadUrl,
+    };
+  }
+
   private async findLatestResponseMap(qmqaIds: string[]) {
     const latestResponseMap = new Map<string, Record<string, any>>();
     const latestResponses = await qmqaRepository.findLatestResponsesByQmqaIds(qmqaIds);
@@ -127,8 +158,8 @@ export class QmqaRecordQueryService {
 
     return {
       ...this.decorateRecord(data, actorContext, response),
-      audit_plan_attachments: planAttachments,
-      attachments,
+      audit_plan_attachments: planAttachments.map((attachment: any) => this.buildAttachmentView(attachment, 'qmqa-plan')),
+      attachments: attachments.map((attachment: any) => this.buildAttachmentView(attachment, 'qmqa-record')),
       cc_list: ccList,
       response: response || null,
       response_initial_attachments: responseInitialAttachments,

@@ -48,6 +48,9 @@ export class FiveM1ERepository extends BaseRepository {
     findAttachments(controlNo) {
         return fiveM1eAttachmentsRepository.findAttachments(controlNo);
     }
+    reserveAttachmentIds(count, trxOrDb) {
+        return fiveM1eAttachmentsRepository.reserveAttachmentIds(count, trxOrDb);
+    }
     insertAttachments(controlNo, attachments) {
         return fiveM1eAttachmentsRepository.insertAttachments(controlNo, attachments);
     }

@@ -27,8 +27,8 @@ export class QmqaService {
     async createRecord(payload, userId, files = []) {
         return qmqaRecordCommandService.createRecord(payload, userId, files);
     }
-    async updateRecord(id, payload, actor) {
-        return qmqaRecordCommandService.updateRecord(id, payload, actor);
+    async updateRecord(id, payload, actor, files = []) {
+        return qmqaRecordCommandService.updateRecord(id, payload, actor, files);
     }
     async saveSupplierResponseContent(id, userId, payload, files = [], section = 'initial') {
         return qmqaResponseService.saveSupplierResponseContent(id, userId, payload, files, section);

@@ -1,6 +1,7 @@
 import { fiveM1ERepository } from './fiveM1E.repository.js';
 import { SmartMapper } from '../../shared/infrastructure/SmartMapper.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
+import { db } from '../../shared/infrastructure/db.js';
 import { fiveM1EWorkflowService } from './workflow/fiveM1E-workflow.service.js';
 import { FIVE_M1E_WORKFLOW_STAGE, } from './workflow/fiveM1E-workflow.constants.js';
 import { getFiveM1EWorkflowStageFormIds } from './workflow/fiveM1E-workflow.utils.js';
@@ -8,7 +9,17 @@ import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../..
 import { permissionService } from '../../shared/services/permission.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
-import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
+import { extractOriginalFilenameMarker, formatAttachmentRemarks, } from '../../shared/utils/attachment-remarks.js';
+const FIVE_M1E_ATTACHMENT_RECORD_CONFIG = {
+    tableName: 'TBL_5M1E_Attachment',
+    ownerColumn: 'ControlNo',
+    idColumn: 'ID',
+    fileNameColumn: 'FileName',
+    pathColumn: 'Attribute1',
+    remarksColumn: 'Attribute2',
+    lastUpdateColumn: null,
+    updatedByColumn: null,
+};
 /**
  * 5M1E Domain Service
  * Encapsulates core business logic and mapping.
@@ -99,6 +110,41 @@ export class FiveM1EService {
             record.QACheckerID,
             record.FinalApprover,
         ].includes(userId);
+    }
+    buildAttachmentView(attachment) {
+        const attachmentId = String(attachment.ID || attachment.id || attachment.attachmentId || '');
+        const downloadUrl = attachmentId ? `/api/5m1e/attachments/${attachmentId}` : '';
+        return {
+            ...attachment,
+            id: attachmentId,
+            attachmentId,
+            downloadUrl,
+            download_url: downloadUrl,
+            attachmentUrl: downloadUrl,
+            attribute_1: downloadUrl,
+        };
+    }
+    async syncMainAttachments(controlNo, attachments, files, userId) {
+        if (attachments === undefined) {
+            return {
+                cleanupQueue: [],
+            };
+        }
+        const newAttachmentCount = attachments.filter((attachment) => {
+            const attachmentId = attachment.id || attachment.attachmentId;
+            return !attachmentId;
+        }).length;
+        const reservedIds = await this.repository.reserveAttachmentIds(newAttachmentCount, db);
+        let nextIdIndex = 0;
+        return this.attachments.syncAttachments(db, attachments, files, {
+            ownerId: controlNo,
+            userId,
+            now: new Date(),
+            recordConfig: FIVE_M1E_ATTACHMENT_RECORD_CONFIG,
+            createId: () => String(reservedIds[nextIdIndex++] || Date.now()),
+            remarkFormatter: ({ command, existing, originalName }) => formatAttachmentRemarks(command.remarks ?? existing?.remarks ?? null, originalName, extractOriginalFilenameMarker(existing?.remarks))?.slice(0, 200) || null,
+            pathValueResolver: ({ uploadedFile, existing }) => uploadedFile ? null : (existing?.storagePath ?? null),
+        });
     }
     async hasReadableRolePermission(userId, formId) {
         return ((await this.permissions.checkRolePermission(userId, formId, 'viewlist')) ||
@@ -272,9 +318,9 @@ export class FiveM1EService {
             await this.repository.insertParts(cn, data.parts);
         }
         // Process attachments with file uploads
-        if (data.attachments && data.attachments.length > 0) {
+        if (data.attachments !== undefined) {
             console.log(`[5M1E Service] Processing ${data.attachments.length} attachment(s) with ${files.length} file(s)`);
-            await this.processAttachments(cn, data.attachments, files);
+            await this.syncMainAttachments(cn, data.attachments, files, userId);
         }
         if (data.action_items && data.action_items.length > 0) {
             await this.repository.replaceActionItems(cn, data.action_items);
@@ -493,9 +539,10 @@ export class FiveM1EService {
             envi_approve_dt_aprd: record.envi_approve_dt_aprd,
             // Child tables
             parts: parts.map((p) => ({ part_id: p.part_id })),
-            attachments: attachments.map((a) => ({
-                id: a.ID, file_name: a.FileName,
-                attribute_1: a.Attribute1, attribute_2: a.Attribute2,
+            attachments: attachments.map((a) => this.buildAttachmentView({
+                ...a,
+                file_name: a.FileName,
+                attribute_2: a.Attribute2,
             })),
             action_items: actionItems.map((ai) => ({
                 id: ai.ID, action_item: ai.ActionItem, pic: ai.PIC, pic_name: ai.PICName,
@@ -646,10 +693,10 @@ export class FiveM1EService {
         if (data.parts) {
             await this.repository.replaceParts(cn, data.parts);
         }
-        if (data.attachments) {
+        if (data.attachments !== undefined) {
             console.log(`[5M1E Service] Update - Processing ${data.attachments.length} attachment(s) with ${files.length} file(s)`);
-            await this.repository.replaceAttachments(cn, []); // Clear existing
-            await this.processAttachments(cn, data.attachments, files); // Insert new with files
+            const attachmentSync = await this.syncMainAttachments(cn, data.attachments, files, actor.userId || 'SYSTEM');
+            await this.attachments.deleteStoredAttachments('5m1e-main', attachmentSync.cleanupQueue || []);
         }
         if (data.action_items) {
             await this.repository.replaceActionItems(cn, data.action_items);
@@ -680,31 +727,6 @@ export class FiveM1EService {
             message: 'Application updated successfully',
             data: { controlNo }
         };
-    }
-    /**
-     * Process attachments with file uploads
-     * Matches uploaded files to attachment metadata by original filename
-     */
-    async processAttachments(controlNo, attachments, files) {
-        for (const att of attachments) {
-            const originalName = att.file_name || att.fileName;
-            if (!originalName) {
-                console.log('[5M1E Service] Skipping attachment with no filename');
-                continue;
-            }
-            // Find the uploaded file that matches this attachment's original name
-            const uploadedFile = files.find(f => f.originalname === originalName);
-            const diskFileName = uploadedFile ? uploadedFile.filename : originalName;
-            // Build remarks with original filename reference
-            const finalRemarks = formatAttachmentRemarks(att.attribute_2 || '', originalName)?.slice(0, 200) || null;
-            console.log(`[5M1E Service] Processing attachment: ${originalName} -> ${diskFileName}`);
-            await this.repository.insertAttachments(controlNo, [{
-                    id: att.id || undefined,
-                    file_name: diskFileName || 'Unknown',
-                    attribute_1: uploadedFile ? uploadedFile.path : (att.attribute_1 || null), // Store file path or URL
-                    attribute_2: finalRemarks || undefined,
-                }]);
-        }
     }
     /**
      * Deletes a 5M1E Application and all child tables

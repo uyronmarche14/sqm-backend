@@ -96,24 +96,45 @@ type MulterFileFilterCallback = (error: Error | null, acceptFile?: boolean) => v
  * @param {string} [attachmentType] - Optional subfolder trigger
  */
 function createStorage(moduleName: string, attachmentType?: string) {
-  let moduleDir = path.join(ROOT_UPLOAD_DIR, moduleName);
+  const ensureDir = (directory: string) => {
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+      console.log(`📁 [Upload] Created directory: ${directory.replace(ROOT_UPLOAD_DIR, 'uploads')}/`);
+    }
+  };
 
-  // If attachmentType is provided and has a mapping, append subfolder
-  if (attachmentType && ATTACHMENT_TYPE_FOLDERS[attachmentType]) {
-    moduleDir = path.join(moduleDir, ATTACHMENT_TYPE_FOLDERS[attachmentType]);
-    console.log(`📁 [Upload] Using hierarchical structure: uploads/${moduleName}/${ATTACHMENT_TYPE_FOLDERS[attachmentType]}/`);
-  } else {
-    console.log(`📁 [Upload] Using flat structure: uploads/${moduleName}/`);
-  }
+  const resolveAttachmentType = (file: UploadedFile) => {
+    const fieldname = String(file.fieldname || '');
+    const match = /^file:([^:]+):[^:]+$/.exec(fieldname);
+    if (match?.[1] && ATTACHMENT_TYPE_FOLDERS[match[1]]) {
+      return match[1];
+    }
 
-  // Ensure the directory tree exists at startup, not per-request
-  if (!fs.existsSync(moduleDir)) {
-    fs.mkdirSync(moduleDir, { recursive: true });
-    console.log(`📁 [Upload] Created directory: ${moduleDir.replace(ROOT_UPLOAD_DIR, 'uploads')}/`);
-  }
+    return attachmentType;
+  };
+
+  const resolveModuleDir = (file: UploadedFile) => {
+    const dynamicAttachmentType = resolveAttachmentType(file);
+    let moduleDir = path.join(ROOT_UPLOAD_DIR, moduleName);
+
+    if (dynamicAttachmentType && ATTACHMENT_TYPE_FOLDERS[dynamicAttachmentType]) {
+      moduleDir = path.join(moduleDir, ATTACHMENT_TYPE_FOLDERS[dynamicAttachmentType]);
+      console.log(
+        `📁 [Upload] Using hierarchical structure: uploads/${moduleName}/${ATTACHMENT_TYPE_FOLDERS[dynamicAttachmentType]}/`,
+      );
+    } else {
+      console.log(`📁 [Upload] Using flat structure: uploads/${moduleName}/`);
+    }
+
+    ensureDir(moduleDir);
+    return moduleDir;
+  };
+
+  ensureDir(path.join(ROOT_UPLOAD_DIR, moduleName));
 
   return multer.diskStorage({
-    destination: (_req: Request, _file: UploadedFile, cb: MulterStorageCallback) => cb(null, moduleDir),
+    destination: (_req: Request, file: UploadedFile, cb: MulterStorageCallback) =>
+      cb(null, resolveModuleDir(file)),
     filename:    (_req: Request, file: UploadedFile, cb: MulterStorageCallback) => {
       const ext        = path.extname(file.originalname).toLowerCase();
       const uniqueName = `${Date.now()}-${uuidv4()}${ext}`;

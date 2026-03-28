@@ -15,7 +15,15 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
  */
 export const SqmpAttachmentSchema = z.object({
   sqmp_attachment_id: z.string().uuid().optional(),
+  id: z.string().min(1).optional(),
+  attachmentId: z.string().min(1).optional(),
   file_name: z.string(),
+  category: z.string().optional(),
+  action: z.string().optional(),
+  client_upload_id: z.string().optional(),
+  file_field: z.string().optional(),
+  download_url: z.string().optional(),
+  attachment_type: z.string().optional(),
   file_extension: z.string().optional(),
   remarks: z.string().optional(),
 });

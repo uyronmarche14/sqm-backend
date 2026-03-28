@@ -4,7 +4,44 @@ import { userRepository } from '../../users/user.repository.js';
 import { SQMPResponseUpsertInput } from './response.schema.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../../shared/errors/AppError.js';
 import { mapStatusToDB } from '../../../shared/utils/status-mapper.js';
-import { sanitizeAttachmentRemarks } from '../utils/attachment.util.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+} from '../../../shared/utils/attachment-remarks.js';
+
+const SQMP_RESPONSE_DOCUMENT_RECORD_CONFIG = {
+  tableName: 'SQMP_RESPONSE_DOCUMENT',
+  ownerColumn: 'sqmp_response_id',
+  idColumn: 'sqmp_response_document_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
+const SQMP_RESPONSE_APPENDIX_RECORD_CONFIG = {
+  tableName: 'SQMP_RESPONSE_APPENDIX',
+  ownerColumn: 'sqmp_response_id',
+  idColumn: 'sqmp_response_appendix_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
+const SQMP_RESPONSE_CLOSURE_RECORD_CONFIG = {
+  tableName: 'SQMP_RESPONSE_CLOSURE',
+  ownerColumn: 'sqmp_response_id',
+  idColumn: 'sqmp_response_closure_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
 
 interface PersistResponseContentOptions {
   mainRecordRequestStatus: string;
@@ -79,7 +116,14 @@ export class SqmpResponseService {
     userId: string,
     files: any[] = [],
     options: PersistResponseContentOptions,
-  ): Promise<{ sqmp_response_id: string }> {
+  ): Promise<{
+    sqmp_response_id: string;
+    cleanupQueue: {
+      documents: Array<{ fileName: string; storedPath?: string | null }>;
+      appendixes: Array<{ fileName: string; storedPath?: string | null }>;
+      closures: Array<{ fileName: string; storedPath?: string | null }>;
+    };
+  }> {
     const now = new Date();
     const responseId = payload.sqmp_response_id || uuidv4();
 
@@ -135,68 +179,62 @@ export class SqmpResponseService {
           .execute();
       }
 
-      if (payload.documents !== undefined) {
-        await trx.deleteFrom('SQMP_RESPONSE_DOCUMENT')
-          .where('sqmp_response_id', '=', responseIdToUse)
-          .execute();
+      const documentSync = await attachmentService.syncAttachments(
+        trx,
+        payload.documents,
+        files,
+        {
+          ownerId: responseIdToUse,
+          userId,
+          now,
+          recordConfig: SQMP_RESPONSE_DOCUMENT_RECORD_CONFIG,
+          createId: () => uuidv4(),
+          remarkFormatter: ({ command, existing, originalName }) =>
+            formatAttachmentRemarks(
+              command.remarks ?? existing?.remarks ?? null,
+              originalName,
+              extractOriginalFilenameMarker(existing?.remarks),
+            ),
+        },
+      );
 
-        for (const doc of payload.documents) {
-          const uploadedFile = files.find((f) => f.originalname.trim().toLowerCase() === doc.file_name.trim().toLowerCase());
-          const finalRemarks = sanitizeAttachmentRemarks(doc.remarks, uploadedFile?.originalname);
+      const appendixSync = await attachmentService.syncAttachments(
+        trx,
+        payload.appendixes,
+        files,
+        {
+          ownerId: responseIdToUse,
+          userId,
+          now,
+          recordConfig: SQMP_RESPONSE_APPENDIX_RECORD_CONFIG,
+          createId: () => uuidv4(),
+          remarkFormatter: ({ command, existing, originalName }) =>
+            formatAttachmentRemarks(
+              command.remarks ?? existing?.remarks ?? null,
+              originalName,
+              extractOriginalFilenameMarker(existing?.remarks),
+            ),
+        },
+      );
 
-          await trx.insertInto('SQMP_RESPONSE_DOCUMENT').values({
-            sqmp_response_document_id: doc.sqmp_attachment_id || uuidv4(),
-            sqmp_response_id: responseIdToUse,
-            file_name: uploadedFile ? uploadedFile.filename : doc.file_name,
-            file_extension: uploadedFile ? uploadedFile.filename.split('.').pop()! : (doc.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId,
-          }).execute();
-        }
-      }
-
-      if (payload.appendixes !== undefined) {
-        await trx.deleteFrom('SQMP_RESPONSE_APPENDIX')
-          .where('sqmp_response_id', '=', responseIdToUse)
-          .execute();
-
-        for (const appendix of payload.appendixes) {
-          const uploadedFile = files.find((f) => f.originalname.trim().toLowerCase() === appendix.file_name.trim().toLowerCase());
-          const finalRemarks = sanitizeAttachmentRemarks(appendix.remarks, uploadedFile?.originalname);
-
-          await trx.insertInto('SQMP_RESPONSE_APPENDIX').values({
-            sqmp_response_appendix_id: appendix.sqmp_attachment_id || uuidv4(),
-            sqmp_response_id: responseIdToUse,
-            file_name: uploadedFile ? uploadedFile.filename : appendix.file_name,
-            file_extension: uploadedFile ? uploadedFile.filename.split('.').pop()! : (appendix.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId,
-          }).execute();
-        }
-      }
-
-      if (payload.closures !== undefined) {
-        await trx.deleteFrom('SQMP_RESPONSE_CLOSURE')
-          .where('sqmp_response_id', '=', responseIdToUse)
-          .execute();
-
-        for (const closure of payload.closures) {
-          const uploadedFile = files.find((f) => f.originalname.trim().toLowerCase() === closure.file_name.trim().toLowerCase());
-          const finalRemarks = sanitizeAttachmentRemarks(closure.remarks, uploadedFile?.originalname);
-
-          await trx.insertInto('SQMP_RESPONSE_CLOSURE').values({
-            sqmp_response_closure_id: closure.sqmp_attachment_id || uuidv4(),
-            sqmp_response_id: responseIdToUse,
-            file_name: uploadedFile ? uploadedFile.filename : closure.file_name,
-            file_extension: uploadedFile ? uploadedFile.filename.split('.').pop()! : (closure.file_extension || 'dat'),
-            remarks: finalRemarks,
-            last_update: now,
-            updateby: userId,
-          }).execute();
-        }
-      }
+      const closureSync = await attachmentService.syncAttachments(
+        trx,
+        payload.closures,
+        files,
+        {
+          ownerId: responseIdToUse,
+          userId,
+          now,
+          recordConfig: SQMP_RESPONSE_CLOSURE_RECORD_CONFIG,
+          createId: () => uuidv4(),
+          remarkFormatter: ({ command, existing, originalName }) =>
+            formatAttachmentRemarks(
+              command.remarks ?? existing?.remarks ?? null,
+              originalName,
+              extractOriginalFilenameMarker(existing?.remarks),
+            ),
+        },
+      );
 
       let requestStatusToPersist: string | undefined;
 
@@ -231,7 +269,14 @@ export class SqmpResponseService {
           .execute();
       }
 
-      return { sqmp_response_id: responseIdToUse };
+      return {
+        sqmp_response_id: responseIdToUse,
+        cleanupQueue: {
+          documents: documentSync.cleanupQueue,
+          appendixes: appendixSync.cleanupQueue,
+          closures: closureSync.cleanupQueue,
+        },
+      };
     });
   }
 
@@ -252,9 +297,15 @@ export class SqmpResponseService {
       useLegacySubmitTransition: true,
     });
 
+    await attachmentService.deleteStoredAttachments('sqmp-response-document', result.cleanupQueue.documents || []);
+    await attachmentService.deleteStoredAttachments('sqmp-response-appendix', result.cleanupQueue.appendixes || []);
+    await attachmentService.deleteStoredAttachments('sqmp-response-closure', result.cleanupQueue.closures || []);
+
     return {
       success: true,
-      data: result,
+      data: {
+        sqmp_response_id: result.sqmp_response_id,
+      },
       message: 'Response submitted successfully',
     };
   }
@@ -275,9 +326,15 @@ export class SqmpResponseService {
       mainRecordRequestStatus: String(mainRecord.record.request_status || ''),
     });
 
+    await attachmentService.deleteStoredAttachments('sqmp-response-document', result.cleanupQueue.documents || []);
+    await attachmentService.deleteStoredAttachments('sqmp-response-appendix', result.cleanupQueue.appendixes || []);
+    await attachmentService.deleteStoredAttachments('sqmp-response-closure', result.cleanupQueue.closures || []);
+
     return {
       success: true,
-      data: result,
+      data: {
+        sqmp_response_id: result.sqmp_response_id,
+      },
       message: 'Response content saved successfully',
     };
   }
@@ -297,9 +354,15 @@ export class SqmpResponseService {
       mainRecordRequestStatus: String(mainRecord.record.request_status || ''),
     });
 
+    await attachmentService.deleteStoredAttachments('sqmp-response-document', result.cleanupQueue.documents || []);
+    await attachmentService.deleteStoredAttachments('sqmp-response-appendix', result.cleanupQueue.appendixes || []);
+    await attachmentService.deleteStoredAttachments('sqmp-response-closure', result.cleanupQueue.closures || []);
+
     return {
       success: true,
-      data: result,
+      data: {
+        sqmp_response_id: result.sqmp_response_id,
+      },
       message: 'Closure content saved successfully',
     };
   }

@@ -69,6 +69,11 @@ export interface AttachmentSyncConfig {
     existingOriginalName?: string | null;
   }) => string | null;
   categoryResolver?: (command: AttachmentCommand, existing?: AttachmentRecord) => string | null | undefined;
+  pathValueResolver?: (context: {
+    command: AttachmentCommand;
+    existing?: AttachmentRecord;
+    uploadedFile?: UploadedAttachmentFile;
+  }) => string | null | undefined;
 }
 
 export interface AttachmentSyncResult {
@@ -272,6 +277,11 @@ export class AttachmentService {
         if (options.recordConfig.extensionColumn) {
           updateValues[options.recordConfig.extensionColumn] = nextExtension;
         }
+        if (options.recordConfig.pathColumn) {
+          updateValues[options.recordConfig.pathColumn] = options.pathValueResolver
+            ? options.pathValueResolver({ command, existing, uploadedFile })
+            : (uploadedFile?.path ?? existing.storagePath ?? null);
+        }
         if (options.recordConfig.remarksColumn) {
           updateValues[options.recordConfig.remarksColumn] = formattedRemarks;
         }
@@ -314,6 +324,11 @@ export class AttachmentService {
       };
       if (options.recordConfig.extensionColumn) {
         insertValues[options.recordConfig.extensionColumn] = nextExtension;
+      }
+      if (options.recordConfig.pathColumn) {
+        insertValues[options.recordConfig.pathColumn] = options.pathValueResolver
+          ? options.pathValueResolver({ command, existing, uploadedFile })
+          : (uploadedFile?.path ?? null);
       }
       if (options.recordConfig.remarksColumn) {
         insertValues[options.recordConfig.remarksColumn] = formattedRemarks;
@@ -379,6 +394,9 @@ export class AttachmentService {
         fileExtension: options.recordConfig.extensionColumn
           ? (entry.values[options.recordConfig.extensionColumn] as string | null | undefined) ?? entry.record.fileExtension
           : entry.record.fileExtension,
+        storagePath: options.recordConfig.pathColumn
+          ? (entry.values[options.recordConfig.pathColumn] as string | null | undefined) ?? entry.record.storagePath
+          : entry.record.storagePath,
         remarks: options.recordConfig.remarksColumn
           ? (entry.values[options.recordConfig.remarksColumn] as string | null | undefined) ?? entry.record.remarks
           : entry.record.remarks,

@@ -15,8 +15,14 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
 
 const QmqaAttachmentSchema = z.object({
   id: z.string().uuid().optional(),
+  attachmentId: z.string().min(1).optional(),
   fileName: z.string().optional(),
   file_name: z.string().optional(),
+  category: z.string().optional(),
+  action: z.string().optional(),
+  client_upload_id: z.string().optional(),
+  file_field: z.string().optional(),
+  download_url: z.string().optional(),
   remarks: z.string().optional()
 });
 
@@ -103,6 +109,7 @@ export const QmqaRecordCreateSchema = z.object({
 
     // Arrays
     cc_list: JsonParsedArray(QmqaCcListSchema),
+    audit_plan_attachments: JsonParsedArray(QmqaAttachmentSchema),
     attachments: JsonParsedArray(QmqaAttachmentSchema)
   })
 });
@@ -146,6 +153,7 @@ export const QmqaRecordUpdateSchema = z.object({
 
     // Arrays
     cc_list: JsonParsedArray(QmqaCcListSchema).optional(),
+    audit_plan_attachments: JsonParsedArray(QmqaAttachmentSchema).optional(),
     attachments: JsonParsedArray(QmqaAttachmentSchema).optional()
   })
 });

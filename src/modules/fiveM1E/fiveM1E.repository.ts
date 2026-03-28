@@ -67,6 +67,10 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     return fiveM1eAttachmentsRepository.findAttachments(controlNo);
   }
 
+  reserveAttachmentIds(count: number, trxOrDb?: any) {
+    return fiveM1eAttachmentsRepository.reserveAttachmentIds(count, trxOrDb);
+  }
+
   insertAttachments(controlNo: string, attachments: Array<{ id?: string; file_name?: string; attribute_1?: string; attribute_2?: string }>) {
     return fiveM1eAttachmentsRepository.insertAttachments(controlNo, attachments);
   }

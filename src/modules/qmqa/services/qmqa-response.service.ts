@@ -1,20 +1,152 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../../../shared/infrastructure/db.js';
+import { attachmentService } from '../../../shared/services/attachment.service.js';
+import {
+  extractOriginalFilenameMarker,
+  formatAttachmentRemarks,
+  stripOriginalFilenameMarker,
+} from '../../../shared/utils/attachment-remarks.js';
 import { qmqaRepository } from '../qmqa.repository.js';
 import { sanitizeUUID } from './qmqa-module-strategy.js';
 
+const QMQA_RESPONSE_INITIAL_RECORD_CONFIG = {
+  tableName: 'QMQA_RESPONSE_INITIAL',
+  ownerColumn: 'qmqa_response_id',
+  idColumn: 'qmqa_response_initial_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
+const QMQA_RESPONSE_FINAL_RECORD_CONFIG = {
+  tableName: 'QMQA_RESPONSE_FINAL',
+  ownerColumn: 'qmqa_response_id',
+  idColumn: 'qmqa_response_final_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
+const QMQA_RESPONSE_VERIFICATION_RECORD_CONFIG = {
+  tableName: 'QMQA_RESPONSE_VERIFICATION',
+  ownerColumn: 'qmqa_response_id',
+  idColumn: 'qmqa_response_verification_attachment_id',
+  fileNameColumn: 'file_name',
+  extensionColumn: 'file_extension',
+  remarksColumn: 'remarks',
+  lastUpdateColumn: 'last_update',
+  updatedByColumn: 'updateby',
+} as const;
+
 export class QmqaResponseService {
+  private buildAttachmentView(
+    attachment: any,
+    moduleType: 'qmqa-response-initial' | 'qmqa-response-final' | 'qmqa-response-verification',
+    category?: string,
+  ) {
+    const attachmentId = String(
+      attachment.qmqa_response_initial_attachment_id ||
+      attachment.qmqa_response_final_attachment_id ||
+      attachment.qmqa_response_verification_attachment_id ||
+      attachment.id ||
+      '',
+    );
+    const downloadUrl = attachmentId
+      ? `/api/qmqa/attachments/${moduleType}/${attachmentId}`
+      : '';
+
+    return {
+      ...attachment,
+      attachmentId,
+      id: attachmentId,
+      category: category || moduleType,
+      downloadUrl,
+      download_url: downloadUrl,
+      fileUrl: downloadUrl,
+      file_url: downloadUrl,
+      url: downloadUrl,
+    };
+  }
+
   private getAttachmentRole(remarks: unknown) {
     if (typeof remarks !== 'string') {
       return null;
     }
 
-    const normalized = remarks.trim().toLowerCase();
+    const normalized = stripOriginalFilenameMarker(remarks).trim().toLowerCase();
     if (!normalized) {
       return null;
     }
 
     return normalized;
+  }
+
+  private getAttachmentId(attachment: any) {
+    return String(
+      attachment.qmqa_response_initial_attachment_id ||
+      attachment.qmqa_response_final_attachment_id ||
+      attachment.qmqa_response_verification_attachment_id ||
+      attachment.id ||
+      '',
+    );
+  }
+
+  private buildCompatibilityAttachmentCommands(
+    existingAttachments: any[],
+    files: any[],
+    fallbackRole: string,
+  ) {
+    const existingByRole = new Map<string, any>();
+
+    for (const attachment of existingAttachments) {
+      const role = this.getAttachmentRole(attachment.remarks) || fallbackRole;
+      if (!existingByRole.has(role)) {
+        existingByRole.set(role, attachment);
+      }
+    }
+
+    const commands = files.map((file) => {
+      const role = this.getAttachmentRole(file.fieldname) || fallbackRole;
+      const existing = existingByRole.get(role);
+
+      return {
+        id: existing ? this.getAttachmentId(existing) : undefined,
+        attachmentId: existing ? this.getAttachmentId(existing) : undefined,
+        file_name: file.originalname || file.filename,
+        file_field: typeof file.fieldname === 'string' ? file.fieldname : undefined,
+        category: role,
+        action: existing ? 'replace' : 'add',
+      };
+    });
+
+    const incomingRoles = new Set(
+      commands
+        .map((command) => String(command.category || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    for (const attachment of existingAttachments) {
+      const role = this.getAttachmentRole(attachment.remarks) || fallbackRole;
+      if (incomingRoles.has(role)) {
+        continue;
+      }
+
+      const attachmentId = this.getAttachmentId(attachment);
+      commands.push({
+        id: attachmentId,
+        attachmentId,
+        file_name: attachment.file_name,
+        file_field: undefined,
+        category: role,
+        action: 'keep',
+      });
+    }
+
+    return commands;
   }
 
   async resolveAttentionId(
@@ -35,42 +167,39 @@ export class QmqaResponseService {
   }
 
   mapInitialAttachments(rawAttachments: any[]) {
-    return rawAttachments.map((attachment: any) => ({
-      id: attachment.qmqa_response_initial_attachment_id,
+    return rawAttachments.map((attachment: any) => this.buildAttachmentView({
+      ...attachment,
       fileName: attachment.file_name,
       fileExtension: attachment.file_extension,
       fileSize: attachment.file_size,
-      fileUrl: attachment.file_url,
       remarks: attachment.remarks,
       uploadedBy: attachment.updateby,
       uploadedAt: attachment.last_update,
-    }));
+    }, 'qmqa-response-initial', 'initial-report-attachment'));
   }
 
   mapFinalAttachments(rawAttachments: any[]) {
-    return rawAttachments.map((attachment: any) => ({
-      id: attachment.qmqa_response_final_attachment_id,
+    return rawAttachments.map((attachment: any) => this.buildAttachmentView({
+      ...attachment,
       fileName: attachment.file_name,
       fileExtension: attachment.file_extension,
       fileSize: attachment.file_size,
-      fileUrl: attachment.file_url,
       remarks: attachment.remarks,
       uploadedBy: attachment.updateby,
       uploadedAt: attachment.last_update,
-    }));
+    }, 'qmqa-response-final', this.getAttachmentRole(attachment.remarks) || 'final-report-attachment'));
   }
 
   mapVerificationAttachments(rawAttachments: any[]) {
-    return rawAttachments.map((attachment: any) => ({
-      id: attachment.qmqa_response_verification_attachment_id,
+    return rawAttachments.map((attachment: any) => this.buildAttachmentView({
+      ...attachment,
       fileName: attachment.file_name,
       fileExtension: attachment.file_extension,
       fileSize: attachment.file_size,
-      fileUrl: attachment.file_url,
       remarks: attachment.remarks,
       uploadedBy: attachment.updateby,
       uploadedAt: attachment.last_update,
-    }));
+    }, 'qmqa-response-verification', 'verification-attachment'));
   }
 
   resolveInitialAttachment(rawAttachments: any[]) {
@@ -116,6 +245,7 @@ export class QmqaResponseService {
       skip_initial?: boolean;
       initial_remarks?: string | null;
       final_remarks?: string | null;
+      attachments?: any[];
     },
     files: any[] = [],
     section: 'initial' | 'final' = 'initial',
@@ -123,7 +253,7 @@ export class QmqaResponseService {
     const now = new Date();
     const existingResponse = await qmqaRepository.findResponseByQmqaId(id);
 
-    return qmqaRepository.executeTransaction(async (trx) => {
+    const result = await qmqaRepository.executeTransaction(async (trx) => {
       const responseId = existingResponse?.qmqa_response_id || uuidv4();
 
       if (existingResponse) {
@@ -170,24 +300,43 @@ export class QmqaResponseService {
         }).execute();
       }
 
-      const attachmentTable = section === 'initial'
-        ? 'QMQA_RESPONSE_INITIAL'
-        : 'QMQA_RESPONSE_FINAL';
-      const attachmentIdColumn = section === 'initial'
-        ? 'qmqa_response_initial_attachment_id'
-        : 'qmqa_response_final_attachment_id';
+      const existingAttachments = section === 'initial'
+        ? await qmqaRepository.findResponseInitialAttachments(responseId)
+        : await qmqaRepository.findResponseFinalAttachments(responseId);
 
-      for (const file of files) {
-        await trx.insertInto(attachmentTable).values({
-          [attachmentIdColumn]: uuidv4(),
-          qmqa_response_id: responseId,
-          file_name: file.filename || file.originalname,
-          file_extension: (file.filename || file.originalname || '').split('.').pop() || 'unknown',
-          remarks: typeof file.fieldname === 'string' ? file.fieldname : null,
-          last_update: now,
-          updateby: userId,
-        } as any).execute();
-      }
+      const attachmentCommands = Array.isArray(payload.attachments)
+        ? payload.attachments
+        : this.buildCompatibilityAttachmentCommands(
+            existingAttachments,
+            files,
+            section === 'initial' ? 'initialreportattachment' : 'finalreportattachment',
+          );
+
+      const attachmentSync = await attachmentService.syncAttachments(
+        trx,
+        attachmentCommands,
+        files,
+        {
+          ownerId: responseId,
+          userId,
+          now,
+          recordConfig: section === 'initial'
+            ? QMQA_RESPONSE_INITIAL_RECORD_CONFIG
+            : QMQA_RESPONSE_FINAL_RECORD_CONFIG,
+          createId: () => uuidv4(),
+          remarkFormatter: ({ command, existing, originalName }) => {
+            const role = this.getAttachmentRole(command.category || command.remarks)
+              || this.getAttachmentRole(existing?.remarks)
+              || (section === 'initial' ? 'initialreportattachment' : 'finalreportattachment');
+
+            return formatAttachmentRemarks(
+              role,
+              originalName,
+              extractOriginalFilenameMarker(existing?.remarks),
+            );
+          },
+        },
+      );
 
       await trx.updateTable('QMQA')
         .set({
@@ -203,9 +352,21 @@ export class QmqaResponseService {
           id,
           responseId,
         },
+        cleanupQueue: attachmentSync.cleanupQueue,
         message: 'QMQA supplier response saved',
       };
     });
+
+    await attachmentService.deleteStoredAttachments(
+      section === 'initial' ? 'qmqa-response-initial' : 'qmqa-response-final',
+      result.cleanupQueue || [],
+    );
+
+    return {
+      success: result.success,
+      data: result.data,
+      message: result.message,
+    };
   }
 
   async saveResponseReviewContent(
@@ -218,6 +379,7 @@ export class QmqaResponseService {
       cycle2_checker_remarks?: string | null;
       cycle2_approver_id?: string | null;
       cycle2_approver_remarks?: string | null;
+      attachments?: any[];
     },
     files: any[] = [],
   ) {
@@ -226,7 +388,7 @@ export class QmqaResponseService {
     const cleanCheckerId = sanitizeUUID(payload.cycle2_checker_id);
     const cleanApproverId = sanitizeUUID(payload.cycle2_approver_id);
 
-    return qmqaRepository.executeTransaction(async (trx) => {
+    const result = await qmqaRepository.executeTransaction(async (trx) => {
       const responseId = existingResponse?.qmqa_response_id || uuidv4();
 
       if (existingResponse) {
@@ -272,17 +434,38 @@ export class QmqaResponseService {
         }).execute();
       }
 
-      for (const file of files) {
-        await trx.insertInto('QMQA_RESPONSE_VERIFICATION').values({
-          qmqa_response_verification_attachment_id: uuidv4(),
-          qmqa_response_id: responseId,
-          file_name: file.filename || file.originalname,
-          file_extension: (file.filename || file.originalname || '').split('.').pop() || 'unknown',
-          remarks: typeof file.fieldname === 'string' ? file.fieldname : null,
-          last_update: now,
-          updateby: userId,
-        }).execute();
-      }
+      const existingAttachments = await qmqaRepository.findResponseVerificationAttachments(responseId);
+      const attachmentCommands = Array.isArray(payload.attachments)
+        ? payload.attachments
+        : this.buildCompatibilityAttachmentCommands(
+            existingAttachments,
+            files,
+            'verificationattachment',
+          );
+
+      const attachmentSync = await attachmentService.syncAttachments(
+        trx,
+        attachmentCommands,
+        files,
+        {
+          ownerId: responseId,
+          userId,
+          now,
+          recordConfig: QMQA_RESPONSE_VERIFICATION_RECORD_CONFIG,
+          createId: () => uuidv4(),
+          remarkFormatter: ({ command, existing, originalName }) => {
+            const role = this.getAttachmentRole(command.category || command.remarks)
+              || this.getAttachmentRole(existing?.remarks)
+              || 'verificationattachment';
+
+            return formatAttachmentRemarks(
+              role,
+              originalName,
+              extractOriginalFilenameMarker(existing?.remarks),
+            );
+          },
+        },
+      );
 
       await trx.updateTable('QMQA')
         .set({
@@ -298,9 +481,18 @@ export class QmqaResponseService {
           id,
           responseId,
         },
+        cleanupQueue: attachmentSync.cleanupQueue,
         message: 'QMQA response review saved',
       };
     });
+
+    await attachmentService.deleteStoredAttachments('qmqa-response-verification', result.cleanupQueue || []);
+
+    return {
+      success: result.success,
+      data: result.data,
+      message: result.message,
+    };
   }
 }
 
