@@ -1113,7 +1113,7 @@ Database: master
 | Column | Type | Nullable | Key |
 | :--- | :--- | :--- | :--- |
 | `sfr_id` | nvarchar(72) | NO | 🔑 PK |
-| `control_no` | nvarchar(40) | NO |  |
+| `control_no` | nvarchar(20) | NO |  |
 | `registration_date` | datetime | YES |  |
 | `site_id` | nvarchar(72) | NO |  |
 | `supplier_id` | nvarchar(72) | NO |  |
@@ -2305,4 +2305,3 @@ Database: master
 | `updateby` | nvarchar(72) | NO |  |
 | `new_flag` | bit | YES |  |
 | `change_pw` | bit | YES |  |
-

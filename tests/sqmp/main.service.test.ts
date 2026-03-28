@@ -26,6 +26,11 @@ const permissionServiceMock = vi.hoisted(() => ({
 
 const attachmentServiceMock = vi.hoisted(() => ({
   downloadAttachment: vi.fn(),
+  syncAttachments: vi.fn().mockResolvedValue({
+    persisted: [],
+    cleanupQueue: [],
+  }),
+  deleteStoredAttachments: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/modules/sqmp/sqmp.repository.js', () => ({
@@ -102,7 +107,7 @@ const makeTransactionHarness = (resolvedAttentionUserId?: string) => {
 describe('MainSqmpService attention resolution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    controlNumberServiceMock.previewSqmp.mockResolvedValue('SQMP-2026-SITE-0-1ST');
+    controlNumberServiceMock.previewSqmp.mockResolvedValue('SQMP-2026-SITE-0-A');
     controlNumberServiceMock.getControlNoState.mockReturnValue('manual');
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
     attachmentServiceMock.downloadAttachment.mockResolvedValue({

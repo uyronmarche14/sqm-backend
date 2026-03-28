@@ -311,8 +311,8 @@ export class MainSqmpService {
   }
 
   private toDBSemester(sem?: string | number): number {
-      if (sem === '1ST' || sem === 1) return 1;
-      if (sem === '2ND' || sem === 2) return 2;
+      if (sem === '1ST' || sem === 'A' || sem === 1) return 1;
+      if (sem === '2ND' || sem === 'B' || sem === 2) return 2;
       return 1;
   }
 

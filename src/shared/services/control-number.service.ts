@@ -59,6 +59,8 @@ type FiveM1EFinalInput = {
 };
 
 export class ControlNumberService {
+  private static readonly LEGACY_MANUAL_CONTROL_NO_MAX_LENGTH = 20;
+
   private getExecutor(trxOrDb?: DBLike) {
     return trxOrDb || db;
   }
@@ -94,13 +96,23 @@ export class ControlNumberService {
     return String(Math.trunc(parsed));
   }
 
-  private normalizeSemester(value?: string | number | null) {
-    const normalized = String(value || '1ST').trim().toUpperCase();
-    if (normalized === '2' || normalized === '2ND') {
-      return '2ND';
+  private normalizeSqmpSemesterToken(value?: string | number | null) {
+    const normalized = String(value || 'A').trim().toUpperCase();
+    if (normalized === '2' || normalized === '2ND' || normalized === 'B') {
+      return 'B';
     }
 
-    return '1ST';
+    return 'A';
+  }
+
+  private ensureLegacyManualControlNoFits(moduleName: string, controlNo: string) {
+    if (controlNo.length > ControlNumberService.LEGACY_MANUAL_CONTROL_NO_MAX_LENGTH) {
+      throw new BadRequestError(
+        `${moduleName} control number exceeds the legacy ${ControlNumberService.LEGACY_MANUAL_CONTROL_NO_MAX_LENGTH}-character limit: ${controlNo}`,
+      );
+    }
+
+    return controlNo;
   }
 
   private escapeForRegex(value: string) {
@@ -299,9 +311,12 @@ export class ControlNumberService {
       trxOrDb,
     );
     const series = this.normalizeManualSeries(input.series ?? input.revision ?? 0);
-    const semester = this.normalizeSemester(input.semester);
+    const semester = this.normalizeSqmpSemesterToken(input.semester);
 
-    return `SQMP-${fiscalYear}-${siteCode}-${series}-${semester}`;
+    return this.ensureLegacyManualControlNoFits(
+      'SQMP',
+      `SQMP-${fiscalYear}-${siteCode}-${series}-${semester}`,
+    );
   }
 
   async previewSfr(input: SfrPreviewInput) {
@@ -314,7 +329,10 @@ export class ControlNumberService {
       throw new BadRequestError('Frequency and supplier code are required to preview the SFR control number.');
     }
 
-    return `SFR-${fiscalYear}-${frequency}-${supplierCode}-${series}`;
+    return this.ensureLegacyManualControlNoFits(
+      'SFR',
+      `SFR-${fiscalYear}-${frequency}-${supplierCode}-${series}`,
+    );
   }
 
   private async buildDatedSiteSequence(

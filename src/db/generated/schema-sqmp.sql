@@ -3,7 +3,7 @@
 IF OBJECT_ID('[dbo].[SQMP]', 'U') IS NOT NULL DROP TABLE [dbo].[SQMP];
 CREATE TABLE [dbo].[SQMP] (
     [sqmp_id] nvarchar(72) NOT NULL PRIMARY KEY,
-    [control_no] nvarchar(40) NOT NULL,
+    [control_no] nvarchar(20) NOT NULL,
     [registration_date] datetime NOT NULL,
     [site_id] nvarchar(72) NOT NULL,
     [supplier_id] nvarchar(72) NOT NULL,

@@ -11,7 +11,8 @@ This document captures the legacy-visible control number rules that the modern b
 
 - `SQMP`
   - Manual format.
-  - Format: `SQMP-{fiscalYear}-{siteCode}-{series}-{semester}`.
+  - Format: `SQMP-{fiscalYear}-{siteCode}-{series}-{semesterCode}`.
+  - `semesterCode` remains the legacy single-letter token: `A` for first semester, `B` for second semester.
   - Modern assumption: `series` is supplied explicitly when available, otherwise the current `revision` field is used as the backend-authoritative series value.
 
 - `SFR`

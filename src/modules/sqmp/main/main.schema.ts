@@ -10,6 +10,8 @@ const JsonParsedArray = <T extends z.ZodTypeAny>(schema: T) =>
     return val;
   }, z.array(schema).optional());
 
+const SqmpSemesterSchema = z.string().regex(/^(1ST|2ND|1st|2nd|A|B|a|b)$/).or(z.coerce.number().int());
+
 /**
  * Common SQMP Attachment Shape
  */
@@ -48,7 +50,7 @@ export const SqmpCreateSchema = z.object({
     supplier_id: z.string().uuid().or(z.string().length(0)).nullable().optional(), 
     attention_id: z.string().uuid().or(z.string().length(0)).nullable().optional(),
     fiscal_year: z.coerce.number().int().min(2000).max(2100).optional(),
-    semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()).optional(), 
+    semester: SqmpSemesterSchema.optional(), 
     control_series: z.coerce.number().int().min(0).optional(),
     issued_date: z.string().or(z.date()).nullable().optional(),
     due_date: z.string().or(z.date()).nullable().optional(),
@@ -80,7 +82,7 @@ export const SqmpUpdateSchema = z.object({
     registration_date: z.string().or(z.date()).nullable().optional(),
     site_id: z.string().uuid().optional(),
     fiscal_year: z.coerce.number().int().optional(),
-    semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()).optional(), 
+    semester: SqmpSemesterSchema.optional(), 
     control_series: z.coerce.number().int().min(0).optional(),
     issued_date: z.string().or(z.date()).nullable().optional(),
     due_date: z.string().or(z.date()).nullable().optional(),
@@ -139,7 +141,7 @@ export const SqmpControlNoPreviewSchema = z.object({
     fiscalYear: z.coerce.number().int().min(2000).max(2100),
     siteId: z.string().uuid().optional(),
     siteCode: z.string().optional(),
-    semester: z.string().regex(/^(1ST|2ND|1st|2nd)$/).or(z.coerce.number().int()),
+    semester: SqmpSemesterSchema,
     series: z.coerce.number().int().min(0).optional(),
     revision: z.coerce.number().int().min(0).optional(),
   }),
