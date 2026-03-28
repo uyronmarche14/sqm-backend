@@ -73,7 +73,6 @@ export class NpiService {
     const defaultUserId = '6a15b66a-079b-433b-b70f-dc15dce25631'; // System Fallback
     const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
     
-    const dbStatus = mapStatusToDB(payload.status || 'DRAFT');
     const defaultInspector = await npiRepository.findDefaultInspector();
     
     // Generate control number if not provided
@@ -122,7 +121,7 @@ export class NpiService {
         ssi_accept: 1, // Legacy default mapping
         
         judgment: payload.judgment || null,
-        request_status: dbStatus,
+        request_status: mapStatusToDB('DRAFT'),
         last_update: now,
         updateby: effectiveUserId,
         
@@ -294,9 +293,6 @@ export class NpiService {
     if (payload.approverId || payload.approver_id) {
         dbUpdates.approver_id = payload.approverId || payload.approver_id;
     }
-
-    const statusVal = payload.status || payload.request_status;
-    if (statusVal) dbUpdates.request_status = mapStatusToDB(statusVal);
 
     return await npiRepository.executeTransaction(async (trx) => {
       // 1. Update Base Record

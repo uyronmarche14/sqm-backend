@@ -21,7 +21,7 @@ describe('NpiMapper', () => {
 
       const result = mapper.toListDTO(record);
 
-      expect(result.status).toBe('draft');
+      expect(result.status).toBe('DRAFT');
       expect(result.created_at).toEqual(record.datecreated);
       expect(result.control_no).toBe('NPI-001');
     });
@@ -50,8 +50,8 @@ describe('NpiMapper', () => {
       const result = mapper.toListDTOs(records);
 
       expect(result).toHaveLength(2);
-      expect(result[0].status).toBe('draft');
-      expect(result[1].status).toBe('submitted');
+      expect(result[0].status).toBe('DRAFT');
+      expect(result[1].status).toBe('PENDING');
     });
 
     it('should handle empty array', () => {
@@ -78,7 +78,7 @@ describe('NpiMapper', () => {
 
       const result = mapper.toDetailDTO(data);
 
-      expect(result.status).toBe('approved');
+      expect(result.status).toBe('APPROVED');
       expect(result.attachments).toHaveLength(1);
       expect(result.visual_categories).toHaveLength(1);
       expect(result.data_categories).toHaveLength(1);

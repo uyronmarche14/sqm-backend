@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 
 const OptionalUuidField = z.preprocess(
   (value) => (value === '' || value == null ? undefined : value),
@@ -180,8 +179,6 @@ export const NpiCreateSchema = z.object({
     ssiAccept: z.preprocess((v) => v === 'true' || v === '1' || v === true ? 1 : 0, z.number()).optional(),
     ogiRefNo: OptionalStringField,
     
-    status: z.nativeEnum(WorkflowStatusEnum).optional(),
-
     // Complex Sub-arrays
     attachments: JsonParsedArray(NpiAttachmentSchema),
     visual_categories: JsonParsedArray(NpiVisualCategorySchema),
@@ -198,9 +195,6 @@ export const NpiUpdateSchema = z.object({
     id: z.string().uuid('Invalid NPI ID format')
   }),
   body: z.object({
-    status: z.nativeEnum(WorkflowStatusEnum).optional(),
-    request_status: OptionalStringField,
-    
     siteId: OptionalUuidField,
     supplierId: OptionalUuidField,
     partId: OptionalUuidField,

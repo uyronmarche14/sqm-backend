@@ -9,6 +9,8 @@ import {
   MnrResponseWorkflowSchema,
 } from './mnr.schema.js';
 import { mnrWorkflowService } from './workflow/mnr-workflow.service.js';
+import { successResponse } from '../../shared/utils/api-response.js';
+import { assertNoWorkflowMutationFields } from '../../shared/utils/reject-workflow-mutation-fields.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class MnrController {
@@ -61,7 +63,7 @@ export class MnrController {
         { status, scope: resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }) },
         actor,
       );
-      res.json({ data: records });
+      res.json(successResponse(records));
     } catch (error) {
       console.error('[MNR] GET ALL error:', error);
       next(error);
@@ -73,7 +75,7 @@ export class MnrController {
       const { id } = MnrIdParamSchema.parse({ params: req.params }).params;
       const actor = this.getActor(req);
       const record = await mnrService.getRecordById(id, actor);
-      res.json({ data: record });
+      res.json(successResponse(record));
     } catch (error) {
       console.error('[MNR] GET BY ID error:', error);
       next(error);
@@ -82,6 +84,7 @@ export class MnrController {
 
   async create(req: Request, res: Response, next: NextFunction) {
     try {
+      assertNoWorkflowMutationFields(req.body as Record<string, unknown>, 'MNR');
       const payload = MnrCreateSchema.parse({ body: req.body }).body;
       const userId = (req as any).user?.userId || (req as any).user?.id || 'SYSTEM';
       const files = (req as any).files || [];
@@ -97,8 +100,14 @@ export class MnrController {
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = MnrUpdateSchema.parse({ params: req.params, body: req.body }).params;
-      const payload = MnrUpdateSchema.parse({ params: req.params, body: req.body }).body;
+      assertNoWorkflowMutationFields(req.body as Record<string, unknown>, 'MNR');
+      assertNoWorkflowMutationFields(
+        (req.body as { updates?: Record<string, unknown> } | undefined)?.updates,
+        'MNR',
+      );
+      const parsed = MnrUpdateSchema.parse({ params: req.params, body: req.body });
+      const { id } = parsed.params;
+      const payload = parsed.body;
       const actor = this.getActor(req);
       const files = (req as any).files || [];
 

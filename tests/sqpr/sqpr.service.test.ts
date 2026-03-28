@@ -273,6 +273,52 @@ describe('SqprService workflow metadata hydration', () => {
     });
   });
 
+  it('ignores workflow status fields on generic updates for editable owner stages', async () => {
+    let updatedValues: Record<string, unknown> | undefined;
+
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-draft',
+        request_status: '2',
+        incharge_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        control_no: 'DRF-2026-3-T',
+      },
+      attachments: [],
+      ccList: [],
+    });
+    repositoryMock.executeTransaction.mockImplementation(async (callback: any) => {
+      const trx = {
+        updateTable: vi.fn(() => ({
+          set: (values: Record<string, unknown>) => {
+            updatedValues = values;
+            return {
+              where: () => ({
+                execute: vi.fn().mockResolvedValue(undefined),
+              }),
+            };
+          },
+        })),
+      };
+
+      return callback(trx);
+    });
+
+    const service = new SqprService();
+    await service.updateRecord(
+      'sqpr-draft',
+      { remarks: 'save only', status: 'APPROVED', request_status: '10' } as any,
+      { userId: 'issuer-1', roleName: 'USER' },
+      [],
+    );
+
+    expect(updatedValues).toEqual(expect.objectContaining({
+      remarks: 'save only',
+    }));
+    expect(updatedValues).not.toHaveProperty('request_status');
+  });
+
   it('rejects deleting issued records even for the originator', async () => {
     repositoryMock.findByIdDetailed.mockResolvedValue({
       record: {

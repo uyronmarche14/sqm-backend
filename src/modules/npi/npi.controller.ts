@@ -12,7 +12,9 @@ import {
   NpiUpdateSchema,
 } from './npi.schema.js';
 import { createResponse, successResponse } from '../../shared/utils/api-response.js';
+import { assertNoWorkflowMutationFields } from '../../shared/utils/reject-workflow-mutation-fields.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
+import { normalizeNpiWorkflowStage } from './workflow/npi-workflow.utils.js';
 
 const repository = new NpiRepository();
 const mapper = new NpiMapper();
@@ -98,6 +100,7 @@ export class NpiController {
 
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      assertNoWorkflowMutationFields(req.body as Record<string, unknown>, 'NPI');
       const payload = NpiCreateSchema.parse({ body: req.body }).body;
       const actor = await this.getActor(req);
       const userId = actor.userId;
@@ -115,6 +118,7 @@ export class NpiController {
 
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      assertNoWorkflowMutationFields(req.body as Record<string, unknown>, 'NPI');
       const parsed = NpiUpdateSchema.parse({ params: req.params, body: req.body });
       const files = ((req as unknown as { files?: unknown[] }).files || []) as any[];
       const actor = await this.getActor(req);
@@ -129,11 +133,41 @@ export class NpiController {
   async getStats(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { db } = await import('../../shared/infrastructure/db.js');
-      const stats = await db
+      const rawStats = await db
         .selectFrom('NPI_LOTS')
         .select(['request_status as status', db.fn.count('npi_lot_id').as('count')])
         .groupBy('request_status')
         .execute();
+
+      const stats = rawStats.reduce(
+        (acc, row) => {
+          const stage = normalizeNpiWorkflowStage(String(row.status || ''));
+          const count = Number(row.count || 0);
+
+          switch (stage) {
+            case 'DRAFT':
+              acc.draft += count;
+              break;
+            case 'CHECKER':
+            case 'APPROVER':
+              acc.pending += count;
+              break;
+            case 'ACCEPT':
+            case 'LOT_TRACKING':
+              acc.approved += count;
+              break;
+            case 'REJECT_CHECKER':
+            case 'REJECT_APPROVER':
+              acc.rejected += count;
+              break;
+            default:
+              break;
+          }
+
+          return acc;
+        },
+        { pending: 0, approved: 0, rejected: 0, draft: 0 },
+      );
 
       res.json(successResponse(stats));
     } catch (error) {

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 /**
  * Common SQPR Attachment Shape
  */
@@ -61,17 +60,12 @@ export const SqprUpdateSchema = z.object({
         attention_id: z.string().uuid().or(z.string().length(0)).optional(),
         attention: z.string().optional(),
         remarks: z.string().optional(),
-        status: z.nativeEnum(WorkflowStatusEnum).optional(),
-        request_status: z.string().optional(), // Legacy compat
-        submit_date: z.string().datetime().or(z.date()).optional(),
         incharge_id: z.string().uuid().optional(),
         incharge_remarks: z.string().optional(),
         checker_id: z.string().uuid().optional(),
         checker_remarks: z.string().optional(),
-        checker_date: z.string().datetime().or(z.date()).optional(),
         approver_id: z.string().uuid().optional(),
         approver_remarks: z.string().optional(),
-        approver_date: z.string().datetime().or(z.date()).optional(),
         attachments: z.array(SqprAttachmentSchema).optional(),
         cc_list: z.array(SqprCcUserSchema).optional()
     })

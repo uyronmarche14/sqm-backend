@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { sqprRepository } from './sqpr.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
-import { buildSqprWorkflowMetadata, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, normalizeSqprWorkflowStage, } from './workflow/sqpr-workflow.utils.js';
+import { buildSqprWorkflowMetadata, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, } from './workflow/sqpr-workflow.utils.js';
 import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
@@ -119,32 +119,31 @@ export class SqprService {
         const stage = this.getWorkflowStage(record);
         return this.isEditableOriginatorStage(stage) && record.incharge_id === actor.userId;
     }
-    /**
-     * Safe Date Parser
-     */
-    parseDate(d) {
-        if (!d)
-            return null;
-        const parsed = new Date(d);
-        return isNaN(parsed.getTime()) ? null : parsed;
-    }
-    decorateRecord(record, actor = {}) {
+    decorateRecord(record, actor = {}, roleViewListForms = new Set()) {
         const workflow = buildSqprWorkflowMetadata(record, { actor });
+        const status = getSqprCompatibilityStatus(workflow.workflowStage, record);
+        const requestStatus = getSqprCompatibilityRequestStatus(workflow.workflowStage, record);
+        const permissions = {
+            canView: this.canReadRecord(record, actor, roleViewListForms),
+            canEdit: this.canMutateMainRecord(record, actor),
+            canDelete: this.canDeleteRecord(record, actor),
+        };
         return {
             ...record,
-            status: getSqprCompatibilityStatus(workflow.workflowStage, record),
-            request_status: getSqprCompatibilityRequestStatus(workflow.workflowStage, record),
+            status,
+            request_status: requestStatus,
             created_at: record.date_created,
+            workflow: {
+                status,
+                availableActions: workflow.availableActions,
+                blockers: [],
+                stage: workflow.workflowStage,
+                stageCode: workflow.workflowStageCode,
+                stageLabel: workflow.workflowStageLabel,
+            },
+            permissions,
             ...workflow,
         };
-    }
-    normalizeStatusForStorage(status) {
-        const raw = String(status || '').trim();
-        if (/^\d+$/.test(raw)) {
-            return raw;
-        }
-        const workflowStage = normalizeSqprWorkflowStage(raw);
-        return SQPR_LEGACY_STAGE_CODE[workflowStage] || raw;
     }
     async getAllRecords(filters = {}, actor = {}) {
         const records = await sqprRepository.findAllDetailed();
@@ -160,7 +159,7 @@ export class SqprService {
             });
         return visibleRecords
             .filter((record) => matchesSqprStatusFilter(record, filters.status))
-            .map((record) => this.decorateRecord(record, actor));
+            .map((record) => this.decorateRecord(record, actor, roleViewListForms));
     }
     async getRecordById(id, actor = {}) {
         const data = await sqprRepository.findByIdDetailed(id);
@@ -176,7 +175,7 @@ export class SqprService {
         });
         const { record, attachments, ccList } = data;
         return {
-            ...this.decorateRecord(record, actor),
+            ...this.decorateRecord(record, actor, roleViewListForms),
             attachments: attachments || [],
             cc_list: ccList || []
         };
@@ -340,10 +339,6 @@ export class SqprService {
             dbUpdates.attention = payload.attention;
         if (payload.remarks !== undefined)
             dbUpdates.remarks = payload.remarks;
-        // Status Mapping
-        const statusVal = payload.status || payload.request_status;
-        if (statusVal)
-            dbUpdates.request_status = this.normalizeStatusForStorage(statusVal);
         if (payload.incharge_id)
             dbUpdates.incharge_id = payload.incharge_id;
         if (payload.incharge_remarks !== undefined)
@@ -352,14 +347,10 @@ export class SqprService {
             dbUpdates.checker_id = payload.checker_id;
         if (payload.checker_remarks !== undefined)
             dbUpdates.checker_remarks = payload.checker_remarks;
-        if (payload.checker_date)
-            dbUpdates.checker_date = this.parseDate(payload.checker_date);
         if (payload.approver_id)
             dbUpdates.approver_id = payload.approver_id;
         if (payload.approver_remarks !== undefined)
             dbUpdates.approver_remarks = payload.approver_remarks;
-        if (payload.approver_date)
-            dbUpdates.approver_date = this.parseDate(payload.approver_date);
         return await sqprRepository.executeTransaction(async (trx) => {
             // 1. Update Header
             if (Object.keys(dbUpdates).length > 2) {

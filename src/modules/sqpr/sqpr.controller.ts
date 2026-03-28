@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { sqprService } from './sqpr.service.js';
 import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema, SqprAttachmentParamSchema } from './sqpr.schema.js';
 import { sqprWorkflowService } from './workflow/sqpr-workflow.service.js';
+import { successResponse } from '../../shared/utils/api-response.js';
+import { assertNoWorkflowMutationFields } from '../../shared/utils/reject-workflow-mutation-fields.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 
 export class SqprController {
@@ -49,7 +51,7 @@ export class SqprController {
         },
         { userId: this.getUserId(req), roleName: this.getRoleName(req) },
       );
-      res.json({ data: records });
+      res.json(successResponse(records));
     } catch (error) {
       console.error('[SQPR] GET ALL error:', error);
       next(error);
@@ -63,7 +65,7 @@ export class SqprController {
         userId: this.getUserId(req),
         roleName: this.getRoleName(req),
       });
-      res.json({ data: record });
+      res.json(successResponse(record));
     } catch (error) {
       console.error('[SQPR] GET BY ID error:', error);
       next(error);
@@ -83,6 +85,7 @@ export class SqprController {
       if (typeof body.approval === 'string') {
         body.approval = JSON.parse(body.approval);
       }
+      assertNoWorkflowMutationFields(body, 'SQPR');
       
       // Log received data (BEFORE flattening)
       console.info(`[Backend] Receiving SQPR Create form data by user ${this.getUserId(req)}`, { body });
@@ -93,7 +96,7 @@ export class SqprController {
       
       const result = await sqprService.createRecord(payload, userId, files);
       
-      res.status(201).json(result);
+      res.status(201).json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQPR] CREATE error:', error);
       next(error);
@@ -124,9 +127,11 @@ export class SqprController {
         if (approval.approver_id) body.approver_id = approval.approver_id;
         if (approval.approver_remarks) body.approver_remarks = approval.approver_remarks;
       }
+      assertNoWorkflowMutationFields(body, 'SQPR');
       
-      const { id } = SqprUpdateSchema.parse({ params: req.params, body }).params;
-      const payload = SqprUpdateSchema.parse({ params: req.params, body }).body;
+      const parsed = SqprUpdateSchema.parse({ params: req.params, body });
+      const { id } = parsed.params;
+      const payload = parsed.body;
       const userId = this.getUserId(req);
       const files = (req as any).files || [];
       const result = await sqprService.updateRecord(
@@ -138,7 +143,7 @@ export class SqprController {
       
       console.info(`[Backend] Receiving SQPR Update form data for ${id}`, { body });
       
-      res.json(result);
+      res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[SQPR] UPDATE error:', error);
       next(error);

@@ -10,6 +10,7 @@ const repositoryMock = vi.hoisted(() => ({
 
 const attachmentServiceMock = vi.hoisted(() => ({
   downloadAttachment: vi.fn(),
+  deleteStoredAttachments: vi.fn().mockResolvedValue(undefined),
 }));
 
 const permissionServiceMock = vi.hoisted(() => ({
@@ -611,6 +612,16 @@ describe('MnrService workflow metadata hydration', () => {
         };
       }
 
+      if (table === 'MNR_ATTACHMENT') {
+        return {
+          select: vi.fn(() => ({
+            where: vi.fn(() => ({
+              execute: vi.fn().mockResolvedValue([]),
+            })),
+          })),
+        };
+      }
+
       if (table === 'MNR_RESPONSE') {
         return {
           select: vi.fn(() => ({
@@ -652,11 +663,32 @@ describe('MnrService workflow metadata hydration', () => {
   it('denies deleting post-issuance records', async () => {
     repositoryMock.executeTransaction.mockImplementation(async (callback: any) =>
       callback({
-        selectFrom: vi.fn(() => ({
-          select: vi.fn(() => ({
-            where: vi.fn(() => ({
-              executeTakeFirst: vi.fn().mockResolvedValue({ mnr_id: 'mnr-13' }),
-            })),
+        selectFrom: vi.fn((table: string) => {
+          if (table === 'MNR_LOTS') {
+            return {
+              select: vi.fn(() => ({
+                where: vi.fn(() => ({
+                  executeTakeFirst: vi.fn().mockResolvedValue({ mnr_id: 'mnr-13' }),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'MNR_ATTACHMENT' || table === 'MNR_RESPONSE') {
+            return {
+              select: vi.fn(() => ({
+                where: vi.fn(() => ({
+                  execute: vi.fn().mockResolvedValue([]),
+                })),
+              })),
+            };
+          }
+
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        deleteFrom: vi.fn(() => ({
+          where: vi.fn(() => ({
+            execute: vi.fn().mockResolvedValue(undefined),
           })),
         })),
       }),

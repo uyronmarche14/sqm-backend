@@ -1,6 +1,7 @@
 import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
 import { successResponse } from '../../shared/utils/api-response.js';
+import { assertNoWorkflowMutationFields } from '../../shared/utils/reject-workflow-mutation-fields.js';
 import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
 export class OgiController {
     constructor() {
@@ -42,6 +43,7 @@ export class OgiController {
     }
     async create(req, res, next) {
         try {
+            assertNoWorkflowMutationFields(req.body, 'OGI');
             const payload = OgiCreateSchema.parse({ body: req.body }).body;
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
@@ -56,8 +58,10 @@ export class OgiController {
     }
     async update(req, res, next) {
         try {
-            const { id } = OgiUpdateSchema.parse({ params: req.params, body: req.body }).params;
-            const payload = OgiUpdateSchema.parse({ params: req.params, body: req.body }).body;
+            assertNoWorkflowMutationFields(req.body, 'OGI');
+            const parsed = OgiUpdateSchema.parse({ params: req.params, body: req.body });
+            const { id } = parsed.params;
+            const payload = parsed.body;
             const actor = this.getActor(req);
             const files = req.files || [];
             const result = await ogiService.updateRecord(id, payload, actor, files);

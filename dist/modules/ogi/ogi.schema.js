@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { WorkflowStatusEnum } from '../../shared/types/workflow.js';
 const OgiAttachmentSchema = z.object({
     id: z.string().uuid().optional(),
     ogi_attachment_id: z.string().uuid().optional(),
@@ -45,7 +44,6 @@ const JsonParsedArray = (schema) => z.preprocess((val) => {
 export const OgiCreateSchema = z.object({
     body: z.object({
         controlNo: z.string().optional(),
-        status: z.nativeEnum(WorkflowStatusEnum).optional(),
         siteId: z.string().uuid('Valid Site ID is required'),
         supplierId: z.string().uuid(),
         partId: z.string().uuid(),
@@ -60,8 +58,6 @@ export const OgiUpdateSchema = z.object({
         id: z.string().min(1, 'OGI ID is required')
     }),
     body: z.object({
-        status: z.nativeEnum(WorkflowStatusEnum).optional(),
-        request_status: z.string().optional(),
         siteId: z.string().uuid().optional(),
         supplierId: z.string().uuid().optional(),
         partId: z.string().uuid().optional(),

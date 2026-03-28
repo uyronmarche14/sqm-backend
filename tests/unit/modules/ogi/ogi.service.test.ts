@@ -76,7 +76,7 @@ describe('OgiService legacy workflow alignment', () => {
     ogiRepositoryMock.findUserContactById = vi.fn().mockResolvedValue(null);
   });
 
-  it('finalizes the control number when create is requested directly as submitted', async () => {
+  it('always creates OGI records as drafts even when a legacy status field is passed', async () => {
     let insertedValues: Record<string, unknown> | undefined;
 
     ogiRepositoryMock.executeTransaction.mockImplementation(async (callback: (trx: any) => unknown) => {
@@ -96,26 +96,27 @@ describe('OgiService legacy workflow alignment', () => {
 
     const service = new OgiService();
     const result = await service.createRecord({
-      status: 'SUBMITTED',
       siteId: 'site-1',
       supplierId: 'supplier-1',
       partId: 'part-1',
       lots: [],
       attachments: [],
+      status: 'SUBMITTED',
     } as any, 'user-1');
 
-    expect(controlNumberServiceMock.finalizeOgi).toHaveBeenCalledWith(
+    expect(controlNumberServiceMock.buildOgiDraft).toHaveBeenCalledWith(
       expect.objectContaining({
         siteId: 'site-1',
       }),
       expect.anything(),
     );
+    expect(controlNumberServiceMock.finalizeOgi).not.toHaveBeenCalled();
     expect(insertedValues).toEqual(expect.objectContaining({
-      control_no: 'OGI-2026-3-1-SITE',
-      request_status: 'SB',
+      control_no: 'DRF-2026-3-1-SITE',
+      request_status: 'DR',
     }));
     expect(result.data).toEqual(expect.objectContaining({
-      controlNo: 'OGI-2026-3-1-SITE',
+      controlNo: 'DRF-2026-3-1-SITE',
       controlNoState: 'final',
     }));
   });
@@ -369,6 +370,51 @@ describe('OgiService legacy workflow alignment', () => {
     ).rejects.toMatchObject({
       message: 'You do not have permission to update this OGI record.',
     });
+  });
+
+  it('ignores workflow status fields on generic updates for draft owners', async () => {
+    let updatedValues: Record<string, unknown> | undefined;
+
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'DRF-2026-3-1-SITE',
+        request_status: 'DR',
+        incharge_id: 'owner-1',
+      },
+      lots: [],
+      attachments: [],
+    });
+    ogiRepositoryMock.executeTransaction.mockImplementation(async (callback: (trx: any) => unknown) => {
+      const trx = {
+        updateTable: vi.fn(() => ({
+          set: (values: Record<string, unknown>) => {
+            updatedValues = values;
+            return {
+              where: () => ({
+                execute: vi.fn().mockResolvedValue(undefined),
+              }),
+            };
+          },
+        })),
+      };
+
+      return callback(trx);
+    });
+
+    const service = new OgiService();
+    await service.updateRecord(
+      'ogi-1',
+      { remarks: 'save only', status: 'SUBMITTED', request_status: 'SB' } as any,
+      { userId: 'owner-1', roleName: 'USER' },
+      [],
+    );
+
+    expect(updatedValues).toEqual(expect.objectContaining({
+      remarks: 'save only',
+    }));
+    expect(updatedValues).not.toHaveProperty('request_status');
+    expect(controlNumberServiceMock.finalizeOgi).not.toHaveBeenCalled();
   });
 
   it('rejects deleting submitted records even for the current owner', async () => {

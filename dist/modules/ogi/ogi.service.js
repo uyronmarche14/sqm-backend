@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { ogiRepository } from './ogi.repository.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
-import { mapStatusFromDB, mapStatusToDB } from '../../shared/utils/status-mapper.js';
+import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
 import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
@@ -32,16 +32,6 @@ function resolveOgiQueueFormUniverse() {
 }
 const OGI_QUEUE_FORM_CODES = resolveOgiQueueFormUniverse();
 const OGI_REFERENCE_FORM_CODE = 'OGI-01-04';
-function mapOgiStatusToDB(status) {
-    const normalized = String(status || 'DRAFT').toUpperCase();
-    if (normalized === 'DR' || normalized === 'DRAFT' || normalized === 'NEW') {
-        return OGI_DB_STATUS.DRAFT;
-    }
-    if (normalized === 'SB' || normalized === 'SU' || normalized === 'SUBMITTED') {
-        return OGI_DB_STATUS.SUBMITTED;
-    }
-    return mapStatusToDB(normalized);
-}
 function mapOgiStatusFromDB(code) {
     const normalized = String(code || OGI_DB_STATUS.DRAFT).toUpperCase();
     if (normalized === 'SB' || normalized === 'SU') {
@@ -223,6 +213,26 @@ export class OgiService {
         }
         return mapOgiStatusFromDB(record.request_status ?? record.status) === 'DRAFT';
     }
+    decorateRecord(record, actor, roleViewListForms = new Set()) {
+        const status = mapOgiStatusFromDB(record.request_status);
+        const canEdit = this.canMutateRecord(record, actor);
+        const canDelete = this.canDeleteRecord(record, actor);
+        return {
+            ...record,
+            status,
+            created_at: record.upload_date,
+            workflow: {
+                status,
+                availableActions: canEdit ? ['save', 'submit'] : [],
+                blockers: [],
+            },
+            permissions: {
+                canView: this.canReadRecord(record, actor, roleViewListForms),
+                canEdit,
+                canDelete,
+            },
+        };
+    }
     async generateSequence(siteId) {
         return controlNumberService.buildOgiDraft({ siteId });
     }
@@ -257,9 +267,7 @@ export class OgiService {
                 remarks: a.remarks
             }));
             return {
-                ...r,
-                status: mapOgiStatusFromDB(r.request_status),
-                created_at: r.upload_date,
+                ...this.decorateRecord(r, actor, roleViewListForms),
                 lots: rLots,
                 attachments: rAtts
             };
@@ -279,9 +287,7 @@ export class OgiService {
         });
         const { record, lots, attachments } = data;
         return {
-            ...record,
-            status: mapOgiStatusFromDB(record.request_status),
-            created_at: record.upload_date,
+            ...this.decorateRecord(record, actor, roleViewListForms),
             lots: (lots || []).map((l) => ({
                 id: l.ogi_lot_id,
                 lotNo: l.lot_no,
@@ -301,11 +307,6 @@ export class OgiService {
         const now = new Date();
         const defaultUserId = '6a15b66a-079b-433b-b70f-dc15dce25631';
         const effectiveUserId = userId && userId !== 'current_user' ? userId : defaultUserId;
-        const dbStatus = mapOgiStatusToDB(payload.status || 'DRAFT');
-        const isSubmittedOnCreate = dbStatus === OGI_DB_STATUS.SUBMITTED;
-        if (isSubmittedOnCreate) {
-            this.assertSubmitControlNoInputs({ siteId: payload.siteId });
-        }
         const dbPayload = {
             ogi_id: recordId,
             control_no: '',
@@ -315,21 +316,16 @@ export class OgiService {
             part_id: payload.partId,
             remarks: payload.remarks || null,
             incharge_id: effectiveUserId,
-            request_status: dbStatus,
-            submit_date: dbStatus === 'SB' ? now : null,
+            request_status: OGI_DB_STATUS.DRAFT,
+            submit_date: null,
             last_update: now,
             updateby: effectiveUserId
         };
         return await this.repository.executeTransaction(async (trx) => {
-            const controlNo = isSubmittedOnCreate
-                ? await controlNumberService.finalizeOgi({
-                    siteId: payload.siteId,
-                    date: now,
-                }, trx)
-                : await controlNumberService.buildOgiDraft({
-                    siteId: payload.siteId,
-                    date: now,
-                }, trx);
+            const controlNo = await controlNumberService.buildOgiDraft({
+                siteId: payload.siteId,
+                date: now,
+            }, trx);
             // 1. Insert Main Record
             await trx.insertInto('OGI').values({
                 ...dbPayload,
@@ -404,25 +400,7 @@ export class OgiService {
             dbUpdates.part_id = payload.partId;
         if (payload.remarks !== undefined)
             dbUpdates.remarks = payload.remarks;
-        const statusVal = payload.status || payload.request_status;
-        if (statusVal) {
-            dbUpdates.request_status = mapOgiStatusToDB(statusVal);
-            if (dbUpdates.request_status === 'SB' && existing.record.request_status !== 'SB') {
-                dbUpdates.submit_date = now;
-            }
-        }
         return await this.repository.executeTransaction(async (trx) => {
-            if (dbUpdates.request_status === 'SB' && existing.record.request_status !== 'SB') {
-                this.assertSubmitControlNoInputs({
-                    siteId: dbUpdates.site_id || existing.record.site_id,
-                    siteCode: existing.record.site_code,
-                });
-                dbUpdates.control_no = await controlNumberService.finalizeOgi({
-                    siteId: dbUpdates.site_id || existing.record.site_id,
-                    siteCode: existing.record.site_code,
-                    date: now,
-                }, trx);
-            }
             // 1. Update Base Record
             if (Object.keys(dbUpdates).length > 2) {
                 await trx.updateTable('OGI')

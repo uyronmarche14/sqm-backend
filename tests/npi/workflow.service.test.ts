@@ -43,6 +43,8 @@ function createRecord(overrides: Record<string, unknown> = {}) {
     inspector_id: 'originator-1',
     checker_id: 'checker-1',
     approver_id: 'approver-1',
+    ssi_accept: 1,
+    ogi_ref_no: 'OGI-001',
     ...overrides,
   };
 }

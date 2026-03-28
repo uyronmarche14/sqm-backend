@@ -50,6 +50,21 @@ export interface NpiLegacyParityMetadata {
   requiresOgiRefNo: boolean;
 }
 
+export interface NpiRecordWorkflowSummary {
+  status: string;
+  availableActions: NpiWorkflowAction[];
+  blockers: NpiSubmitBlocker[];
+  stage?: NpiWorkflowStage;
+  stageCode?: number;
+  stageLabel?: string;
+}
+
+export interface NpiRecordPermissions {
+  canView: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
 // ============================================================================
 // DTO Types (Data Transfer Objects)
 // ============================================================================
@@ -85,6 +100,8 @@ export interface NpiListDTO {
   availableActions: NpiWorkflowAction[];
   nextApproverId?: string | null;
   nextApproverName?: string | null;
+  workflow?: NpiRecordWorkflowSummary;
+  permissions?: NpiRecordPermissions;
 }
 
 /**
@@ -127,6 +144,8 @@ export interface NpiDetailDTO extends Omit<NpiLot, 'request_status' | 'datecreat
   nextApproverId?: string | null;
   nextApproverName?: string | null;
   legacyParity: NpiLegacyParityMetadata;
+  workflow?: NpiRecordWorkflowSummary;
+  permissions?: NpiRecordPermissions;
 }
 
 /**

@@ -13,7 +13,7 @@ import { NpiMapper } from './NpiMapper.js';
 import { NPICreationInput, NPIUpdateInput } from '../npi.schema.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
 import { INpiService } from './INpiService.js';
-import { 
+import {
   NpiListDTO, 
   NpiDetailDTO, 
   ServiceResponse, 
@@ -30,6 +30,7 @@ import {
   UploadedFile,
   NpiResolveFormStatePayload,
   NpiResolveFormStateResponse,
+  NpiSubmitBlocker,
 } from '../types/npi.types.js';
 import { NewNpiLot, NpiLotUpdate } from '../npi.db.types.js';
 import { buildNpiWorkflowMetadata, getNpiDbStatus, getNpiDbStatusesForFilter } from '../workflow/npi-workflow.utils.js';
@@ -218,6 +219,37 @@ export class NpiCrudService implements INpiService {
     return this.isEditableOriginatorStage(stage) && record.inspector_id === actor.userId;
   }
 
+  private decorateDto<T extends {
+    status: string;
+    availableActions?: unknown[];
+    workflowStage?: string;
+    workflowStageCode?: number;
+    workflowStageLabel?: string;
+  }>(
+    dto: T,
+    record: Record<string, unknown>,
+    actor?: NpiWorkflowActorContext,
+    roleViewListForms: Set<string> = new Set(),
+    blockers: NpiSubmitBlocker[] = [],
+  ) {
+    return {
+      ...dto,
+      workflow: {
+        status: dto.status,
+        availableActions: Array.isArray(dto.availableActions) ? dto.availableActions : [],
+        blockers,
+        stage: dto.workflowStage,
+        stageCode: dto.workflowStageCode,
+        stageLabel: dto.workflowStageLabel,
+      },
+      permissions: {
+        canView: this.canReadRecord(record, actor, roleViewListForms),
+        canEdit: this.canMutateMainRecord(record, actor),
+        canDelete: this.canDeleteRecord(record, actor),
+      },
+    };
+  }
+
   private getActorId(
     payload: NPICreationInput | NPIUpdateInput,
     camelKey: 'inspectorId' | 'checkerId' | 'approverId',
@@ -292,7 +324,14 @@ export class NpiCrudService implements INpiService {
           isMine: (record) => this.isMineRecord(record, actor),
           isHistoryVisible: (record) => this.canReadRecord(record, actor, roleViewListForms),
         });
-    return this.mapper.toListDTOs(visibleRecords, actor);
+    return visibleRecords.map((record) =>
+      this.decorateDto(
+        this.mapper.toListDTO(record, actor),
+        record,
+        actor,
+        roleViewListForms,
+      ),
+    );
   }
 
   /**
@@ -310,7 +349,13 @@ export class NpiCrudService implements INpiService {
       moduleName: 'NPI',
     });
     const legacyParity = await npiLegacyParityService.evaluateDetailedRecord(data);
-    return this.mapper.toDetailDTO(data, actor, legacyParity);
+    return this.decorateDto(
+      this.mapper.toDetailDTO(data, actor, legacyParity),
+      data.record,
+      actor,
+      roleViewListForms,
+      legacyParity.submitBlockers || [],
+    );
   }
 
   async resolveFormState(payload: NpiResolveFormStatePayload): Promise<NpiResolveFormStateResponse> {
