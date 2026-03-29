@@ -1,4 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
+import {
+  ROLE_ACCESS_DB_FIELD_MAP,
+  ROLE_ACCESS_PERMISSION_FIELDS,
+  ROLE_ACCESS_PERMISSION_PAYLOAD_MAP,
+} from '@sqm/permissions-contract';
 
 import { NotFoundError } from '../../shared/errors/AppError.js';
 
@@ -6,6 +11,23 @@ import { NotFoundError } from '../../shared/errors/AppError.js';
  * Reusable DTO Mappers to maintain 100% backwards compatibility with the 
  * frontend without dirtying the Database layer types.
  */
+const mapRoleAccessPermissionRow = (row: any) =>
+  Object.fromEntries(
+    ROLE_ACCESS_PERMISSION_FIELDS.map((field) => [
+      ROLE_ACCESS_PERMISSION_PAYLOAD_MAP[field],
+      Boolean(row[ROLE_ACCESS_DB_FIELD_MAP[field]]),
+    ]),
+  );
+
+export const mapRoleAccessRow = (r: any) => ({
+  id: r.roleaccess_id,
+  roleId: r.role_id,
+  formId: r.form_id,
+  description: r.roleaccess_desc || '',
+  isActive: !!r.active_flag,
+  permissions: mapRoleAccessPermissionRow(r),
+});
+
 export const mappers = {
   site: (r: any) => ({
     id: r.site_id, name: r.site_name, code: r.site_code || '', 
@@ -90,14 +112,7 @@ export const mappers = {
     id: r.form_id, name: r.form_name, url: r.form_url, menuGroup: r.menu_group,
     icon: r.icon || '', description: r.form_desc || '', isActive: !!r.active_flag
   }),
-  roleAccess: (r: any) => ({
-    id: r.roleaccess_id, roleId: r.role_id, formId: r.form_id, description: r.roleaccess_desc || '', isActive: !!r.active_flag,
-    permissions: {
-      view: r.can_view, viewList: r.can_viewlist, add: r.can_add, edit: r.can_edit, delete: r.can_delete,
-      approve: r.can_approve, check: r.can_check, print: r.can_print, export: r.can_export,
-      perSite: r.per_site, canAttach: r.can_attach, pic: r.pic
-    }
-  }),
+  roleAccess: mapRoleAccessRow,
   supplierInfo: (r: any) => ({
     id: r.supplier_information_id, supplierId: r.supplier_id, firstName: r.first_name,
     middleName: r.middle_name || '', lastName: r.last_name, description: r.supplier_information_desc || '',

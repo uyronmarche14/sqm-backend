@@ -180,10 +180,16 @@ describe('AuthService login SQMP assignment access', () => {
         canDelete: 0,
         canApprove: 0,
         canCheck: 0,
+        canResponse: 1,
+        multipleApproval: 1,
         canPrint: 0,
         canExport: 0,
         canAttach: 0,
         perSite: 0,
+        perSupplier: 1,
+        registrationNotify: 1,
+        maintenanceNotify: 0,
+        transactionNotify: 1,
         pic: 0,
       },
     ]);
@@ -199,6 +205,9 @@ describe('AuthService login SQMP assignment access', () => {
         formId: 'NPILOT-09-01',
         canAdd: 1,
         canView: 1,
+        canResponse: 1,
+        multipleApproval: 1,
+        perSupplier: 1,
       }),
     ]);
   });
@@ -278,10 +287,16 @@ describe('AuthService login SQMP assignment access', () => {
         canDelete: 0,
         canApprove: 1,
         canCheck: 1,
+        canResponse: 1,
+        multipleApproval: 0,
         canPrint: 0,
         canExport: 0,
         canAttach: 0,
         perSite: 0,
+        perSupplier: 1,
+        registrationNotify: 0,
+        maintenanceNotify: 1,
+        transactionNotify: 1,
         pic: 0,
       },
     ]);
@@ -297,6 +312,9 @@ describe('AuthService login SQMP assignment access', () => {
       expect.objectContaining({
         formId: 'SQMP-09-07',
         canApprove: 1,
+        canResponse: 1,
+        perSupplier: 1,
+        maintenanceNotify: 1,
       }),
     ]);
   });

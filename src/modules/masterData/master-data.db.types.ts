@@ -256,6 +256,12 @@ export interface RoleAccessTable extends GenericMasterDataTable {
   can_viewlist: boolean | number | null;
   per_site: boolean | number | null;
   can_attach: boolean | number | null;
+  can_response: boolean | number | null;
+  multiple_approval: boolean | number | null;
+  per_supplier: boolean | number | null;
+  registration_notify: boolean | number | null;
+  maintenance_notify: boolean | number | null;
+  transaction_notify: boolean | number | null;
   pic: boolean | number | null;
 }
 

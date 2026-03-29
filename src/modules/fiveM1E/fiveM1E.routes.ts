@@ -6,6 +6,7 @@ import { CreateFiveM1ESchema, UpdateFiveM1ESchema } from './fiveM1E.schema.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
 
+import { requireAnyPermission } from '../../shared/middleware/requireAnyPermission.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
 import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
@@ -14,6 +15,11 @@ import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess
 
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
+const FIVE_M1E_DELETE_PERMISSION_FORM_IDS = [
+  '5M1EMAIN-11-01',
+  '5M1ESupplier_Submition',
+  '5M1ERAR-06-17',
+];
 
 /**
  * Middleware to parse JSON stringified arrays sent via FormData.
@@ -96,7 +102,7 @@ router.put(
  */
 router.delete(
   '/:id',
-  requirePermission('5M1E', 'delete'),
+  requireAnyPermission(FIVE_M1E_DELETE_PERMISSION_FORM_IDS, 'delete'),
   requireFiveM1EDeleteAccess,
   fiveM1EController.deleteApplication
 );

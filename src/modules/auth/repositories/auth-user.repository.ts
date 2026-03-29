@@ -91,10 +91,16 @@ export class AuthUserRepository extends BaseRepository<'USERS'> {
         'ra.can_delete as canDelete',
         'ra.can_approve as canApprove',
         'ra.can_check as canCheck',
+        'ra.can_response as canResponse',
+        'ra.multiple_approval as multipleApproval',
         'ra.can_print as canPrint',
         'ra.can_export as canExport',
         'ra.can_attach as canAttach',
         'ra.per_site as perSite',
+        'ra.per_supplier as perSupplier',
+        'ra.registration_notify as registrationNotify',
+        'ra.maintenance_notify as maintenanceNotify',
+        'ra.transaction_notify as transactionNotify',
         'ra.pic as pic',
       ])
       .where('ra.role_id', '=', user.role_id)

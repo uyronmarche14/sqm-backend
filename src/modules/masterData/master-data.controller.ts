@@ -1,4 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
+import {
+  ROLE_ACCESS_DB_FIELD_MAP,
+  ROLE_ACCESS_PERMISSION_FIELDS,
+  getRoleAccessPermissionValue,
+} from '@sqm/permissions-contract';
 import { masterDataService, mappers } from './master-data.service.js';
 import * as schemas from './master-data.schema.js';
 import * as repos from './master-data.repository.js';
@@ -48,6 +53,24 @@ const createController = (options: ControllerOptions) => ({
 
 const b = (val: string | number | boolean | undefined | null) => (val === true || val === 1 ? 1 : 0);
 const s = (val: string | undefined | null) => val || '';
+
+const mapRoleAccessPermissionPayloadToDb = (payload: any) =>
+  Object.fromEntries(
+    ROLE_ACCESS_PERMISSION_FIELDS.map((field) => [
+      ROLE_ACCESS_DB_FIELD_MAP[field],
+      b(getRoleAccessPermissionValue(payload, field)),
+    ]),
+  );
+
+export const mapRoleAccessPayloadToDb = (id: string, p: any, userId: string) => ({
+  roleaccess_id: id,
+  role_id: p.roleId,
+  form_id: p.formId,
+  roleaccess_desc: s(p.description),
+  ...mapRoleAccessPermissionPayloadToDb(p),
+  active_flag: b(p.isActive),
+  updateby: userId,
+});
 
 // ============================================================================
 // Core Lookups
@@ -186,12 +209,7 @@ export const formsCtrl = createController({
 
 export const roleAccessCtrl = createController({
   repo: repos.roleAccessRepo, mapper: mappers.roleAccess, schema: schemas.RoleAccessSchema, idCol: 'roleaccess_id',
-  toDB: (id, p, userId) => ({ roleaccess_id: id, role_id: p.roleId, form_id: p.formId, roleaccess_desc: s(p.description), 
-    can_view: b(p.permissions.view), can_add: b(p.permissions.add), can_edit: b(p.permissions.edit), can_delete: b(p.permissions.delete),
-    can_approve: b(p.permissions.approve), can_check: b(p.permissions.check), can_print: b(p.permissions.print), can_export: b(p.permissions.export),
-    can_viewlist: b(p.permissions.viewList || p.permissions.view_list), per_site: b(p.permissions.perSite), can_attach: b(p.permissions.canAttach), pic: b(p.permissions.pic),
-    active_flag: b(p.isActive), updateby: userId 
-  })
+  toDB: (id, p, userId) => mapRoleAccessPayloadToDb(id, p, userId)
 });
 
 // ============================================================================
