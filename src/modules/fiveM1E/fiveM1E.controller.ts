@@ -30,13 +30,12 @@ export class FiveM1EController {
    */
   async createApplication(req: Request, res: Response, next: NextFunction) {
     try {
-      // req.user is guaranteed by requireAuth middleware
-      const userId = req.user!.userId; 
+      const actor = this.getActor(req);
       const files = (req as any).files || [];
       
-      console.info(`[Backend] Receiving 5M1E Create form data from user ${userId}`, { files: files.length, body: req.body });
+      console.info(`[Backend] Receiving 5M1E Create form data from user ${actor.userId}`, { files: files.length, body: req.body });
 
-      const result = await fiveM1EService.createApplication(req.body, userId, files);
+      const result = await fiveM1EService.createApplication(req.body, actor, files);
       
       res.status(201).json(successResponse(result.data, result.message));
     } catch (error) {

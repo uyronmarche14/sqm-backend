@@ -7,9 +7,12 @@ import {
   ChangePasswordPayload,
   TestEmailPayload,
   AssignmentCoverageRequestPayload,
+  LookupUsersQueryPayload,
 } from './user.schema.js';
 import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
 import { permissionService } from '../../shared/services/permission.service.js';
+import { roleQualifiesForAssignment } from '../../shared/utils/assignment-validation.utils.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 import {
   accountNotificationService,
   type UserCreatedNotificationInput,
@@ -42,8 +45,47 @@ export class UserService {
     return await this.repository.findAll();
   }
 
-  async getLookupUsers() {
-    return await this.repository.findLookupUsers();
+  async getLookupUsers(filters?: LookupUsersQueryPayload) {
+    const users = await this.repository.findLookupUsers();
+    const formId = filters?.formId;
+    const assignmentRole = filters?.assignmentRole;
+
+    if (!formId || !assignmentRole) {
+      return users;
+    }
+
+    const qualificationByRoleId = new Map<string, Promise<boolean>>();
+
+    const filteredUsers = await Promise.all(
+      users.map(async (user) => {
+        const isActive = user.active_flag === true || user.active_flag === 1;
+        if (!isActive) {
+          return null;
+        }
+
+        if (isAdminRole(user.role_name)) {
+          return user;
+        }
+
+        if (!user.role_id) {
+          return null;
+        }
+
+        if (!qualificationByRoleId.has(user.role_id)) {
+          qualificationByRoleId.set(
+            user.role_id,
+            roleQualifiesForAssignment(user.role_id, assignmentRole, [formId]),
+          );
+        }
+
+        const isQualified = await qualificationByRoleId.get(user.role_id)!;
+        return isQualified ? user : null;
+      }),
+    );
+
+    return filteredUsers.filter(
+      (user): user is Exclude<(typeof filteredUsers)[number], null> => user !== null,
+    );
   }
 
   async getUserById(id: string) {

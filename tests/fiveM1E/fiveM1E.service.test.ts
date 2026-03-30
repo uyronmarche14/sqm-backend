@@ -39,12 +39,20 @@ const attachmentServiceMock = vi.hoisted(() => ({
   downloadAttachment: vi.fn(),
 }));
 
+const assignmentValidationMock = vi.hoisted(() => ({
+  validateAssignmentActorForForms: vi.fn(),
+}));
+
 vi.mock('../../src/modules/fiveM1E/fiveM1E.repository.js', () => ({
   fiveM1ERepository: repositoryMock,
 }));
 
 vi.mock('../../src/modules/fiveM1E/workflow/fiveM1E-workflow.service.js', () => ({
   fiveM1EWorkflowService: workflowServiceMock,
+}));
+
+vi.mock('../../src/shared/utils/assignment-validation.utils.js', () => ({
+  validateAssignmentActorForForms: assignmentValidationMock.validateAssignmentActorForForms,
 }));
 
 import { FiveM1EService } from '../../src/modules/fiveM1E/fiveM1E.service.js';
@@ -59,6 +67,7 @@ describe('FiveM1EService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    assignmentValidationMock.validateAssignmentActorForForms.mockResolvedValue(undefined);
     repositoryMock.findParts.mockResolvedValue([]);
     repositoryMock.findAttachments.mockResolvedValue([]);
     repositoryMock.findActionItems.mockResolvedValue([]);
@@ -153,7 +162,6 @@ describe('FiveM1EService', () => {
         title: 'Draft 5M1E',
         vendor_id: 'UNKNOWN',
         item_id: 'item-1',
-        reviewer: 'reviewer-1',
         status: 'DRAFT',
       } as any,
       'creator-1',
@@ -174,6 +182,25 @@ describe('FiveM1EService', () => {
       'DRAFT',
       expect.any(Object),
     );
+  });
+
+  it('rejects procurement assignee mutation on create before persistence', async () => {
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
+
+    await expect(
+      service.createApplication(
+        {
+          title: 'Draft 5M1E',
+          vendor_id: 'UNKNOWN',
+          item_id: 'item-1',
+          mpd_approver: 'approver-1',
+        } as any,
+        'creator-1',
+        [],
+      ),
+    ).rejects.toThrow('5M1E generic save cannot modify mpd_approver during DRAFT');
+
+    expect(repositoryMock.createWithApproval).not.toHaveBeenCalled();
   });
 
   it('hides unrelated records on assigned scope', async () => {
@@ -549,18 +576,74 @@ describe('FiveM1EService', () => {
     repositoryMock.findWithApproval.mockResolvedValue({
       ControlNo: '5M-001',
       approval_status: 'SUBMITTED',
+      approval_seq: 1,
       envi_approver_necessary: 'NO',
     });
     repositoryMock.updateApprovalStatus.mockResolvedValue(undefined);
 
     const service = new FiveM1EService();
-    await service.updateApplication('5M-001', { reviewer: 'reviewer-1' } as any, [], { userId: 'user-1' });
+    await service.updateApplication('5M-001', { mpd_approver: 'approver-1' } as any, [], { userId: 'user-1' });
 
     expect(repositoryMock.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
       'SUBMITTED',
       expect.objectContaining({
-        Reviewer: 'reviewer-1',
+        MPDApprover: 'approver-1',
+        ModifiedDate: expect.any(Date),
+      }),
+    );
+  });
+
+  it('rejects out-of-stage final assignee mutation during evaluation editing', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      approval_status: 'FOR APPROVAL',
+      approval_seq: 4,
+      envi_approver_necessary: 'NO',
+    });
+
+    const service = new FiveM1EService();
+
+    await expect(
+      service.updateApplication(
+        '5M-001',
+        { final_approver: 'final-1' } as any,
+        [],
+        { userId: 'reviewer-1' },
+      ),
+    ).rejects.toThrow('5M1E generic save cannot modify final_approver during REVIEWER');
+
+    expect(repositoryMock.updateApprovalStatus).not.toHaveBeenCalled();
+  });
+
+  it('validates allowed stage assignee changes against shared assignment coverage rules', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      approval_status: 'SUBMITTED',
+      approval_seq: 1,
+      envi_approver_necessary: 'NO',
+    });
+    repositoryMock.updateApprovalStatus.mockResolvedValue(undefined);
+
+    const service = new FiveM1EService();
+    await service.updateApplication(
+      '5M-001',
+      { mpd_approver: 'approver-1' } as any,
+      [],
+      { userId: 'mpd-1' },
+    );
+
+    expect(assignmentValidationMock.validateAssignmentActorForForms).toHaveBeenCalledWith(
+      'approver-1',
+      'approver',
+      expect.arrayContaining(['5M1EApprovalSecDes-06-17']),
+      expect.objectContaining({ roleLabel: 'mpd_approver' }),
+    );
+    expect(repositoryMock.updateApprovalStatus).toHaveBeenCalledWith(
+      '5M-001',
+      'SUBMITTED',
+      expect.objectContaining({
+        MPDApprover: 'approver-1',
         ModifiedDate: expect.any(Date),
       }),
     );

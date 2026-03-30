@@ -6,6 +6,7 @@ import {
   ChangePasswordSchema,
   TestEmailSchema,
   AssignmentCoverageRequestSchema,
+  LookupUsersQuerySchema,
 } from './user.schema.js';
 
 // Internal mapper matching original output shape exactly
@@ -26,9 +27,10 @@ const mapUserToDto = (user: any) => ({
 });
 
 export const userController = {
-  getLookupUsers: async (_req: Request, res: Response, next: NextFunction) => {
+  getLookupUsers: async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const users = await userService.getLookupUsers();
+      const query = LookupUsersQuerySchema.parse(req.query);
+      const users = await userService.getLookupUsers(query);
       res.json(users);
     } catch (error) {
       next(error);

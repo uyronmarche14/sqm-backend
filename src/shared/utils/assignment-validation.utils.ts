@@ -37,6 +37,11 @@ export interface AssignmentData {
   approver_id?: string | null;
 }
 
+export interface AssignmentActorValidationOptions {
+  roleLabel?: string;
+  allowSupplierAsIssuer?: boolean;
+}
+
 /**
  * Validate all user assignments for form creation/update
  * @param data - Assignment data to validate
@@ -125,29 +130,106 @@ function deriveAssignmentQualificationActions(
   return groups;
 }
 
+function getAssignmentQualificationGroups(
+  formIds: string[],
+  assignmentRole: AssignmentRole,
+): RolePermissionAction[][] {
+  const mergedActions = new Set<RolePermissionAction>();
+
+  for (const formId of formIds) {
+    for (const group of deriveAssignmentQualificationActions(formId, assignmentRole)) {
+      for (const action of group) {
+        mergedActions.add(action);
+      }
+    }
+  }
+
+  const effectiveActions = Array.from(mergedActions);
+  if (effectiveActions.length === 0) {
+    return [['view', 'viewlist']];
+  }
+
+  const groups: RolePermissionAction[][] = [];
+
+  if (effectiveActions.includes('view') || effectiveActions.includes('viewlist')) {
+    groups.push(['view', 'viewlist']);
+  }
+
+  if (effectiveActions.includes('check')) {
+    groups.push(['check']);
+  }
+
+  if (effectiveActions.includes('approve')) {
+    groups.push(['approve']);
+  }
+
+  if (effectiveActions.includes('edit') || effectiveActions.includes('add')) {
+    groups.push(['edit', 'add']);
+  }
+
+  if (groups.length === 0) {
+    groups.push(['view', 'viewlist']);
+  }
+
+  return groups;
+}
+
+function normalizeAssignmentFormIds(formIds: string[]): string[] {
+  return Array.from(
+    new Set(
+      formIds
+        .filter(Boolean)
+        .flatMap((formId) => getCompatibleFormCodes(formId)),
+    ),
+  );
+}
+
+export async function roleQualifiesForAssignment(
+  roleId: string | null | undefined,
+  assignmentRole: AssignmentRole,
+  formIds: string[],
+): Promise<boolean> {
+  if (!roleId) {
+    return false;
+  }
+
+  const normalizedFormIds = Array.from(new Set(formIds.filter(Boolean)));
+  if (normalizedFormIds.length === 0) {
+    return false;
+  }
+
+  const qualificationGroups = getAssignmentQualificationGroups(normalizedFormIds, assignmentRole);
+  const compatibleFormIds = normalizeAssignmentFormIds(normalizedFormIds);
+
+  for (const actions of qualificationGroups) {
+    const allowed = await hasAnyRolePermissionForForms(roleId, actions, compatibleFormIds);
+    if (!allowed) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 async function validateFormScopedAssignmentAccess(
   actor: AssignmentActorRecord,
   assignmentRole: AssignmentRole,
-  formId: string,
+  formIds: string[],
 ): Promise<void> {
   if (!actor.role_id) {
     throw new BadRequestError(`Selected ${assignmentRole} does not have an assigned role.`);
   }
 
-  const compatibleFormIds = getCompatibleFormCodes(formId);
-  const qualificationGroups = deriveAssignmentQualificationActions(formId, assignmentRole);
-
-  for (const actions of qualificationGroups) {
-    const allowed = await hasAnyRolePermissionForForms(actor.role_id, actions, compatibleFormIds);
-    if (allowed) {
-      continue;
-    }
-
-    const label = actions.join(' or ');
-    throw new BadRequestError(
-      `Selected ${assignmentRole} does not have ${label} permission for ${formId} or a compatible form.`,
-    );
+  const normalizedFormIds = Array.from(new Set(formIds.filter(Boolean)));
+  const qualified = await roleQualifiesForAssignment(actor.role_id, assignmentRole, normalizedFormIds);
+  if (qualified) {
+    return;
   }
+
+  const readableFormIds = normalizedFormIds.join(', ');
+  throw new BadRequestError(
+    `Selected ${assignmentRole} does not have assignment coverage for ${readableFormIds} or a compatible form.`,
+  );
 }
 
 async function validateActiveAssignmentActor(
@@ -196,7 +278,7 @@ export async function validateIssuer(
   if (formId && issuer.role_id) {
     const role = await userRepository.findRoleById(issuer.role_id);
     if (!isAdminRole(role?.role_name)) {
-      await validateFormScopedAssignmentAccess(issuer, 'issuer', formId);
+      await validateFormScopedAssignmentAccess(issuer, 'issuer', [formId]);
     }
   }
 }
@@ -256,7 +338,7 @@ export async function validateChecker(
       }
 
       if (formId) {
-        await validateFormScopedAssignmentAccess(checker, 'checker', formId);
+        await validateFormScopedAssignmentAccess(checker, 'checker', [formId]);
       }
     }
   }
@@ -295,10 +377,48 @@ export async function validateApprover(
       }
 
       if (formId) {
-        await validateFormScopedAssignmentAccess(approver, 'approver', formId);
+        await validateFormScopedAssignmentAccess(approver, 'approver', [formId]);
       }
     }
   }
+}
+
+export async function validateAssignmentActorForForms(
+  actorId: string | null | undefined,
+  assignmentRole: AssignmentRole,
+  formIds: string[],
+  options: AssignmentActorValidationOptions = {},
+): Promise<void> {
+  const normalizedFormIds = Array.from(new Set(formIds.filter(Boolean)));
+  const roleLabel =
+    options.roleLabel ||
+    assignmentRole.charAt(0).toUpperCase() + assignmentRole.slice(1);
+
+  if (assignmentRole === 'supplier') {
+    await validateSupplier(actorId);
+    return;
+  }
+
+  const actor = await validateActiveAssignmentActor(actorId, roleLabel);
+
+  if (assignmentRole === 'issuer' && !options.allowSupplierAsIssuer && actor.role_id) {
+    const role = await userRepository.findRoleById(actor.role_id);
+    const roleName = role?.role_name?.toUpperCase() || '';
+    if (roleName.includes('SUPPLIER') || roleName.includes('VENDOR')) {
+      throw new BadRequestError('Issuer must be an internal user, not a supplier');
+    }
+  }
+
+  if (!actor.role_id || normalizedFormIds.length === 0) {
+    return;
+  }
+
+  const role = await userRepository.findRoleById(actor.role_id);
+  if (isAdminRole(role?.role_name)) {
+    return;
+  }
+
+  await validateFormScopedAssignmentAccess(actor, assignmentRole, normalizedFormIds);
 }
 
 /**

@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConflictError } from '../../../../src/shared/errors/AppError.js';
+
+const assignmentValidationMock = vi.hoisted(() => ({
+  roleQualifiesForAssignment: vi.fn(),
+}));
+
+vi.mock('../../../../src/shared/utils/assignment-validation.utils.js', () => ({
+  roleQualifiesForAssignment: assignmentValidationMock.roleQualifiesForAssignment,
+}));
+
 import { UserService } from '../../../../src/modules/users/user.service.js';
 import type { CreateUserPayload, TestEmailPayload } from '../../../../src/modules/users/user.schema.js';
 import type {
@@ -63,6 +72,7 @@ const basePayload: CreateUserPayload = {
 describe('UserService.createUser', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    assignmentValidationMock.roleQualifiesForAssignment.mockResolvedValue(false);
   });
 
   it('creates a user and dispatches an account-created notification', async () => {
@@ -183,5 +193,50 @@ describe('UserService.createUser', () => {
     });
     expect(repository.create).not.toHaveBeenCalled();
     expect(result.subject).toBe('Account Confirmation');
+  });
+
+  it('filters lookup users by assignment coverage and active status when requested', async () => {
+    const repository = makeRepositoryMock();
+    const notifier = makeNotifierMock();
+    repository.findLookupUsers.mockResolvedValue([
+      {
+        user_id: 'admin-1',
+        full_name: 'Admin User',
+        email: 'admin@example.com',
+        role_id: 'role-admin',
+        active_flag: 1,
+        role_name: 'TIP_ADMIN',
+      },
+      {
+        user_id: 'checker-1',
+        full_name: 'Checker User',
+        email: 'checker@example.com',
+        role_id: 'role-checker',
+        active_flag: 1,
+        role_name: 'SQE',
+      },
+      {
+        user_id: 'inactive-1',
+        full_name: 'Inactive User',
+        email: 'inactive@example.com',
+        role_id: 'role-checker',
+        active_flag: 0,
+        role_name: 'SQE',
+      },
+    ]);
+    assignmentValidationMock.roleQualifiesForAssignment.mockImplementation(async (roleId: string) => roleId === 'role-checker');
+
+    const service = new UserService(repository, notifier);
+    const results = await service.getLookupUsers({
+      formId: '5M1EApprovalSecQA-06-17',
+      assignmentRole: 'checker',
+    });
+
+    expect(results.map((user) => user.user_id)).toEqual(['admin-1', 'checker-1']);
+    expect(assignmentValidationMock.roleQualifiesForAssignment).toHaveBeenCalledWith(
+      'role-checker',
+      'checker',
+      ['5M1EApprovalSecQA-06-17'],
+    );
   });
 });
