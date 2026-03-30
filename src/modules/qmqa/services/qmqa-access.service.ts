@@ -1,4 +1,5 @@
 import { permissionService } from '../../../shared/services/permission.service.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import { buildQmqaWorkflowMetadata, getQmqaCompatibilityStatus, isQmqaSupplierActor, normalizeQmqaWorkflowStage, type QmqaWorkflowActorContext } from '../workflow/qmqa-workflow.utils.js';
 import { QMQA_WORKFLOW_STAGE } from '../workflow/qmqa-workflow.constants.js';
 import { qmqaRepository } from '../qmqa.repository.js';
@@ -28,7 +29,7 @@ export class QmqaAccessService {
   }
 
   isAdminActor(actor?: QmqaWorkflowActorContext) {
-    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(actor?.roleName);
   }
 
   async resolveRoleViewListFormCodes(

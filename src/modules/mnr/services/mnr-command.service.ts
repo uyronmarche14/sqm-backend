@@ -1,8 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { assertWorkflowRecordAccess } from '../../../shared/utils/workflow-access.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
+import {
+  validateApprover,
+  validateChecker,
+  validateIssuer,
+} from '../../../shared/utils/assignment-validation.utils.js';
 import { mnrRepository } from '../mnr.repository.js';
 import { MNRCreationInput, MNRUpdateInput } from '../mnr.schema.js';
 import type { MnrWorkflowActorContext } from '../workflow/mnr-workflow.utils.js';
@@ -23,6 +29,11 @@ const MNR_MAIN_ATTACHMENT_RECORD_CONFIG = {
   lastUpdateColumn: 'last_update',
   updatedByColumn: 'updateby',
 } as const;
+
+const MNR_MAIN_APPROVAL_FORM_ID =
+  getSubFormFormCodes('MNR', 'AAPPROVAL')[0] ?? 'MNR-12-03';
+const MNR_MAIN_ISSUE_FORM_ID =
+  getSubFormFormCodes('MNR', 'APPROVED')[0] ?? 'MNR-12-07';
 
 export class MnrCommandService {
   async saveResponseContent(
@@ -107,6 +118,14 @@ export class MnrCommandService {
     };
     const disp = payload.disposition || (payload as any).disposition_data || {};
     const approval = (payload as any).approval || {};
+
+    await validateIssuer(approval.issuer || userId, false, MNR_MAIN_ISSUE_FORM_ID);
+    if (approval.checker) {
+      await validateChecker(approval.checker, MNR_MAIN_APPROVAL_FORM_ID);
+    }
+    if (approval.approver) {
+      await validateApprover(approval.approver, MNR_MAIN_APPROVAL_FORM_ID);
+    }
 
     console.log('[MNR CREATE] Received payload → defects:', JSON.stringify(payload.defects, null, 2));
     console.log('[MNR CREATE] Received payload → disposition:', JSON.stringify(disp, null, 2));

@@ -1,5 +1,6 @@
 import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { permissionService } from '../../../shared/services/permission.service.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import { buildMnrWorkflowMetadata, type MnrWorkflowActorContext } from '../workflow/mnr-workflow.utils.js';
 import { MNR_WORKFLOW_STAGE, type MnrWorkflowStage } from '../workflow/mnr-workflow.constants.js';
 import { mnrProjectorService } from './mnr-projector.service.js';
@@ -61,7 +62,7 @@ const MNR_QUEUE_FORM_CODES = resolveMnrQueueFormUniverse();
 
 export class MnrAccessService {
   isAdminActor(actor?: MnrWorkflowActorContext) {
-    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(actor?.roleName);
   }
 
   isSupplierActor(actor?: MnrWorkflowActorContext) {

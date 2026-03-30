@@ -22,6 +22,7 @@ import {
   extractOriginalFilenameMarker,
   formatAttachmentRemarks,
 } from '../../shared/utils/attachment-remarks.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 
 type WorkflowActor = {
   userId?: string;
@@ -112,7 +113,7 @@ export class FiveM1EService {
   ) {}
 
   private isAdminActor(actor?: { roleName?: string | null }) {
-    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(actor?.roleName);
   }
 
   private isParticipant(record: Record<string, any>, userId?: string) {

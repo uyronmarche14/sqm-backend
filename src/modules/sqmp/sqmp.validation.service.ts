@@ -1,4 +1,5 @@
 import { ForbiddenError } from '../../shared/errors/AppError.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 import { userRepository } from '../users/user.repository.js';
 
 export class SqmpValidationService {
@@ -15,7 +16,7 @@ export class SqmpValidationService {
      * Checks if the user has a global bypass role.
      */
     isGlobalRole(roleName: string): boolean {
-        return roleName.toUpperCase().includes('ADMIN');
+        return isAdminRole(roleName);
     }
 
     /**

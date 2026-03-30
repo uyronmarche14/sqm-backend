@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { sqmpRepository } from '../sqmp.repository.js';
 import { userRepository } from '../../users/user.repository.js';
 import { SQMPResponseUpsertInput } from './response.schema.js';
@@ -9,6 +10,11 @@ import {
   extractOriginalFilenameMarker,
   formatAttachmentRemarks,
 } from '../../../shared/utils/attachment-remarks.js';
+import {
+  validateApprover,
+  validateChecker,
+} from '../../../shared/utils/assignment-validation.utils.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 
 const SQMP_RESPONSE_DOCUMENT_RECORD_CONFIG = {
   tableName: 'SQMP_RESPONSE_DOCUMENT',
@@ -43,6 +49,9 @@ const SQMP_RESPONSE_CLOSURE_RECORD_CONFIG = {
   updatedByColumn: 'updateby',
 } as const;
 
+const SQMP_RESPONSE_APPROVAL_FORM_ID =
+  getSubFormFormCodes('SQM_PLAN', 'RESPONSE_AWAITING_APPROVAL')[0] ?? 'SQMP-09-07';
+
 interface PersistResponseContentOptions {
   mainRecordRequestStatus: string;
   updateMainStatus?: string;
@@ -64,7 +73,7 @@ export class SqmpResponseService {
     operation: 'upsert' | 'workflow' = 'workflow',
   ): Promise<void> {
     const isSupplier = roleName.toUpperCase().includes('SUPPLIER');
-    const isGlobalRole = roleName.toUpperCase().includes('ADMIN');
+    const isGlobalRole = isAdminRole(roleName);
 
     if (isGlobalRole) return;
 
@@ -89,7 +98,7 @@ export class SqmpResponseService {
   }
 
   private async validateClosureSaveAccess(mainRecord: any, roleName: string, userId: string): Promise<void> {
-    const isGlobalRole = roleName.toUpperCase().includes('ADMIN');
+    const isGlobalRole = isAdminRole(roleName);
     if (isGlobalRole) return;
 
     const isIssuer = mainRecord.issuer_id === userId;
@@ -126,6 +135,15 @@ export class SqmpResponseService {
   }> {
     const now = new Date();
     const responseId = payload.sqmp_response_id || uuidv4();
+    const nextCheckerId = payload.checker_id !== undefined ? this.sanitizeUuid(payload.checker_id) : undefined;
+    const nextApproverId = payload.approver_id !== undefined ? this.sanitizeUuid(payload.approver_id) : undefined;
+
+    if (nextCheckerId) {
+      await validateChecker(nextCheckerId, SQMP_RESPONSE_APPROVAL_FORM_ID);
+    }
+    if (nextApproverId) {
+      await validateApprover(nextApproverId, SQMP_RESPONSE_APPROVAL_FORM_ID);
+    }
 
     return await sqmpRepository.executeTransaction(async (trx) => {
       let existingResp = null;
@@ -160,11 +178,11 @@ export class SqmpResponseService {
       if (payload.issuer_remarks !== undefined) responseUpdates.issuer_remarks = payload.issuer_remarks;
       if (payload.issuer_date !== undefined) responseUpdates.issuer_date = this.parseDate(payload.issuer_date);
 
-      if (payload.checker_id !== undefined) responseUpdates.checker_id = this.sanitizeUuid(payload.checker_id);
+      if (payload.checker_id !== undefined) responseUpdates.checker_id = nextCheckerId;
       if (payload.checker_remarks !== undefined) responseUpdates.checker_remarks = payload.checker_remarks;
       if (payload.checker_date !== undefined) responseUpdates.checker_date = this.parseDate(payload.checker_date);
 
-      if (payload.approver_id !== undefined) responseUpdates.approver_id = this.sanitizeUuid(payload.approver_id);
+      if (payload.approver_id !== undefined) responseUpdates.approver_id = nextApproverId;
       if (payload.approver_remarks !== undefined) responseUpdates.approver_remarks = payload.approver_remarks;
       if (payload.approver_date !== undefined) responseUpdates.approver_date = this.parseDate(payload.approver_date);
 

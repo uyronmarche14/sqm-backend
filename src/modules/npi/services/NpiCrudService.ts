@@ -44,6 +44,11 @@ import {
 import { attachmentService } from '../../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
+import {
+  validateApprover,
+  validateChecker,
+} from '../../../shared/utils/assignment-validation.utils.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import { npiLegacyParityService } from './NpiLegacyParityService.js';
 
 const NPI_QUEUE_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
@@ -87,6 +92,7 @@ function resolveNpiQueueFormUniverse() {
 const NPI_QUEUE_FORM_CODES = resolveNpiQueueFormUniverse();
 const NPI_SEARCH_FORM_CODE = 'NPILOT-09-05';
 const NPI_REFERENCE_FORM_CODE = 'NPILOT-09-06';
+const NPI_MAIN_APPROVAL_FORM_ID = getSubFormFormCodes('NEWPARTS', 'AAPPROVAL')[0] ?? 'NPILOT-09-03';
 
 export class NpiCrudService implements INpiService {
   constructor(
@@ -95,7 +101,7 @@ export class NpiCrudService implements INpiService {
   ) {}
 
   private isAdminActor(actor?: NpiWorkflowActorContext) {
-    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(actor?.roleName);
   }
 
   private async resolveRoleViewListFormCodes(userId?: string | null) {
@@ -382,6 +388,16 @@ export class NpiCrudService implements INpiService {
     });
     
     const defaultInspector = await this.repository.findDefaultInspector();
+    const checkerId = this.getActorId(payload, 'checkerId', 'checker_id');
+    const approverId = this.getActorId(payload, 'approverId', 'approver_id');
+
+    if (checkerId) {
+      await validateChecker(checkerId, NPI_MAIN_APPROVAL_FORM_ID);
+    }
+
+    if (approverId) {
+      await validateApprover(approverId, NPI_MAIN_APPROVAL_FORM_ID);
+    }
     
     return await this.repository.executeTransaction(async (trx) => {
       const parityState = await npiLegacyParityService.prepareForCreate(payload);
@@ -449,6 +465,16 @@ export class NpiCrudService implements INpiService {
     const effectiveUserId = actor?.userId || 'SYSTEM';
     const npiLotId = existing.record.npi_lot_id;
     const parityState = await npiLegacyParityService.prepareForUpdate(payload, existing);
+    const nextCheckerId = this.getActorId(payload, 'checkerId', 'checker_id');
+    const nextApproverId = this.getActorId(payload, 'approverId', 'approver_id');
+
+    if ((payload.checkerId !== undefined || (payload as any).checker_id !== undefined) && nextCheckerId) {
+      await validateChecker(nextCheckerId, NPI_MAIN_APPROVAL_FORM_ID);
+    }
+
+    if ((payload.approverId !== undefined || (payload as any).approver_id !== undefined) && nextApproverId) {
+      await validateApprover(nextApproverId, NPI_MAIN_APPROVAL_FORM_ID);
+    }
 
     const dbUpdates = this.buildUpdatePayload(
       payload,

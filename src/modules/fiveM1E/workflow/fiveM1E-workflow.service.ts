@@ -12,6 +12,7 @@ import {
 } from './fiveM1E-workflow.utils.js';
 import { FIVE_M1E_WORKFLOW_ACTION, FIVE_M1E_WORKFLOW_STAGE } from './fiveM1E-workflow.constants.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import {
   fiveM1ENotificationService,
   type FiveM1ENotificationService,
@@ -281,8 +282,7 @@ export class FiveM1EWorkflowService {
   }
 
   async canUserDeleteRecord(controlNo: string, userId: string, roleName?: string | null) {
-    const normalizedRole = String(roleName || '').toUpperCase();
-    if (normalizedRole.includes('ADMIN')) {
+    if (isAdminRole(roleName)) {
       return true;
     }
 

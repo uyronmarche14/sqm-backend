@@ -1,5 +1,6 @@
 import { NPI_STAGE_DEFINITIONS, NPI_WORKFLOW_ACTION, NPI_WORKFLOW_STAGE, type NpiWorkflowAction, type NpiWorkflowStage } from './npi-workflow.constants.js';
 import type { NpiWorkflowActorContext, NpiWorkflowMetadata } from '../types/npi.types.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 
 const STAGE_ALIASES: Record<string, NpiWorkflowStage> = {
   DR: NPI_WORKFLOW_STAGE.DRAFT,
@@ -114,10 +115,6 @@ export function getNpiLegacyStageCode(stage: NpiWorkflowStage): number {
 
 export function getNpiWorkflowStatus(stage: NpiWorkflowStage): string {
   return NPI_STAGE_DEFINITIONS[stage].workflowStatus;
-}
-
-function isAdminRole(roleName?: string | null): boolean {
-  return (roleName || '').toUpperCase().includes('ADMIN');
 }
 
 function uniqueActions(actions: NpiWorkflowAction[]): NpiWorkflowAction[] {

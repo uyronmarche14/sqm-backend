@@ -7,6 +7,18 @@
 
 import { db } from '../infrastructure/db.js';
 
+export type RolePermissionAction =
+  | 'approve'
+  | 'check'
+  | 'edit'
+  | 'view'
+  | 'viewlist'
+  | 'add'
+  | 'delete'
+  | 'print'
+  | 'export'
+  | 'attach';
+
 export interface RolePermissionCheck {
   canApprove: boolean;
   canCheck: boolean;
@@ -98,7 +110,7 @@ export async function getRolePermissions(
  */
 export async function hasRolePermission(
   roleId: string | undefined,
-  action: 'approve' | 'check' | 'edit' | 'view' | 'viewlist' | 'add' | 'delete' | 'print' | 'export' | 'attach',
+  action: RolePermissionAction,
   formId?: string
 ): Promise<boolean> {
   if (!roleId) return false;
@@ -140,7 +152,7 @@ export async function hasRolePermission(
  */
 export async function hasAnyRolePermission(
   roleId: string | undefined,
-  actions: Array<'approve' | 'check' | 'edit' | 'view' | 'viewlist' | 'add' | 'delete'>,
+  actions: RolePermissionAction[],
   formId?: string
 ): Promise<boolean> {
   if (!roleId || actions.length === 0) return false;
@@ -167,6 +179,44 @@ export async function hasAnyRolePermission(
         return false;
     }
   });
+}
+
+export async function hasRolePermissionForForms(
+  roleId: string | undefined,
+  action: RolePermissionAction,
+  formIds: string[],
+): Promise<boolean> {
+  if (!roleId || formIds.length === 0) {
+    return false;
+  }
+
+  const targets = Array.from(new Set(formIds.filter(Boolean)));
+  for (const formId of targets) {
+    if (await hasRolePermission(roleId, action, formId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function hasAnyRolePermissionForForms(
+  roleId: string | undefined,
+  actions: RolePermissionAction[],
+  formIds: string[],
+): Promise<boolean> {
+  if (!roleId || actions.length === 0 || formIds.length === 0) {
+    return false;
+  }
+
+  const targets = Array.from(new Set(formIds.filter(Boolean)));
+  for (const formId of targets) {
+    if (await hasAnyRolePermission(roleId, actions, formId)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

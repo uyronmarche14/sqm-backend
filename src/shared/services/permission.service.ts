@@ -1,6 +1,7 @@
 import { db } from '../infrastructure/db.js';
 import {
   getAssignmentActions,
+  type AssignmentCoverageResult,
   getAssignmentRoleActions,
   getCompatibleFormCodes,
   getLegacyFormMapping,
@@ -12,6 +13,7 @@ import {
   getAssignedWorkflowFormFetcher,
 } from '../../modules/auth/assigned-form-access.js';
 import type { AssignedFormFetcher } from '../../modules/auth/assigned-form-access.js';
+import { isAdminRole } from '../utils/admin.utils.js';
 
 /**
  * Backend Permission Service
@@ -38,23 +40,6 @@ export type PermissionAction =
 export interface AssignmentCoverageRequest {
   formId: string;
   assignmentRole: AssignmentRole;
-}
-
-export interface AssignmentCoverageResult {
-  userId: string;
-  formId: string;
-  module?: string;
-  assignmentRole: AssignmentRole;
-  target?: {
-    module?: string;
-    subForm?: string;
-    section?: string;
-  };
-  derivedActions: PermissionAction[];
-  baselineActions: PermissionAction[];
-  missingBaselineActions: PermissionAction[];
-  hasBaselineVisibility: boolean;
-  reliesOnAssignment: boolean;
 }
 
 export interface PermissionEligibleUser {
@@ -330,8 +315,7 @@ export class PermissionService {
 
     if (!user) return false;
 
-    const roleName = user.role_name.toUpperCase();
-    if (roleName.includes('ADMIN')) {
+    if (isAdminRole(user.role_name)) {
       return true;
     }
 
@@ -373,8 +357,7 @@ export class PermissionService {
       return false;
     }
 
-    const roleName = user.role_name.toUpperCase();
-    if (roleName.includes('ADMIN')) {
+    if (isAdminRole(user.role_name)) {
       return true;
     }
 
@@ -446,15 +429,14 @@ export class PermissionService {
     const adminUsers = await db
       .selectFrom('USERS as u')
       .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
-      .select(['u.user_id as userId', 'u.full_name as fullName'])
-      .where('r.role_name', 'like', '%ADMIN%')
+      .select(['u.user_id as userId', 'u.full_name as fullName', 'r.role_name as roleName'])
       .execute();
 
     const users = [
       ...roleAccessUsers.filter((user) =>
         this.recordGrantsAction(user as unknown as Record<string, unknown>, action),
       ),
-      ...adminUsers,
+      ...adminUsers.filter((user) => isAdminRole(user.roleName)),
     ];
 
     const seen = new Set<string>();

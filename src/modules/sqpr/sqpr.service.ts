@@ -20,6 +20,7 @@ import { attachmentService } from '../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
 import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 
 const SQPR_QUEUE_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
   NEW: ['SQPR-03-01'],
@@ -63,7 +64,7 @@ const SQPR_REFERENCE_FORM_CODE = 'SQPR-03-04';
 
 export class SqprService {
   private isAdminActor(actor?: SqprWorkflowActorContext) {
-    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(actor?.roleName);
   }
 
   private getWorkflowStage(record: Record<string, any>) {

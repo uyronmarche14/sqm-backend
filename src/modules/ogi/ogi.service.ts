@@ -13,6 +13,7 @@ import { controlNumberService } from '../../shared/services/control-number.servi
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
 import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 import {
   ogiNotificationService,
   type OgiNotificationSender,
@@ -198,7 +199,7 @@ export class OgiService {
   }
 
   private isAdminActor(actor?: { roleName?: string | null }) {
-    return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(actor?.roleName);
   }
 
   private async resolveRoleViewListFormCodes(userId?: string | null) {

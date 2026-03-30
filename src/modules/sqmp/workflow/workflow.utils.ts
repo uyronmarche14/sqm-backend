@@ -5,6 +5,7 @@ import {
   SQMP_WORKFLOW_ACTION,
   type SqmpWorkflowAction,
 } from './workflow.constants.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 
 export interface SqmpActorMetadataInput {
   record: any;
@@ -26,8 +27,7 @@ export interface SqmpWorkflowMetadata {
   availableActions: SqmpWorkflowAction[];
 }
 
-const isGlobalRole = (roleName?: string) =>
-  (roleName || '').toUpperCase().includes('ADMIN');
+const isGlobalRole = (roleName?: string) => isAdminRole(roleName);
 
 const isSupplierRole = (roleName?: string) => (roleName || '').toUpperCase().includes('SUPPLIER');
 

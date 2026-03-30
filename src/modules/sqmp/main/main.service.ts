@@ -18,6 +18,12 @@ import {
   type WorkflowListScope,
 } from '../../../shared/utils/workflow-access.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
+import {
+  validateApprover,
+  validateChecker,
+  validateIssuer,
+} from '../../../shared/utils/assignment-validation.utils.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 
 const SQMP_MAIN_DOCUMENT_RECORD_CONFIG = {
   tableName: 'SQMP_DOCUMENT',
@@ -40,6 +46,11 @@ const SQMP_APPENDIX_RECORD_CONFIG = {
   lastUpdateColumn: 'last_update',
   updatedByColumn: 'updateby',
 } as const;
+
+const SQMP_MAIN_APPROVAL_FORM_ID =
+  getSubFormFormCodes('SQM_PLAN', 'AWAITING_APPROVAL')[0] ?? 'SQMP-09-03';
+const SQMP_MAIN_ISSUE_FORM_ID =
+  getSubFormFormCodes('SQM_PLAN', 'ISSUED')[0] ?? 'SQMP-09-05';
 
 const SQMP_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
   NEW: ['SQMP-09-01'],
@@ -99,7 +110,7 @@ const SQMP_EDITABLE_STAGE_CODES = new Set<string>([
 
 export class MainSqmpService {
   private isGlobalRole(roleName?: string) {
-    return (roleName || '').toUpperCase().includes('ADMIN');
+    return isAdminRole(roleName);
   }
 
   private isSupplierRole(roleName?: string) {
@@ -618,6 +629,13 @@ export class MainSqmpService {
     const sqmpId = uuidv4();
     const now = new Date();
 
+    if (payload.checker_id) {
+      await validateChecker(payload.checker_id, SQMP_MAIN_APPROVAL_FORM_ID);
+    }
+    if (payload.approver_id) {
+      await validateApprover(payload.approver_id, SQMP_MAIN_APPROVAL_FORM_ID);
+    }
+
     return await sqmpRepository.executeTransaction(async (trx) => {
       const controlNo = await controlNumberService.previewSqmp({
         fiscalYear: payload.fiscal_year,
@@ -698,6 +716,20 @@ export class MainSqmpService {
 
     const record = existing.record;
     const now = new Date();
+    const nextIssuerId = payload.issuer_id !== undefined ? this.sanitizeUuid(payload.issuer_id) : undefined;
+    const nextCheckerId = payload.checker_id !== undefined ? this.sanitizeUuid(payload.checker_id) : undefined;
+    const nextApproverId = payload.approver_id !== undefined ? this.sanitizeUuid(payload.approver_id) : undefined;
+
+    if (nextIssuerId) {
+      await validateIssuer(nextIssuerId, false, SQMP_MAIN_ISSUE_FORM_ID);
+    }
+    if (nextCheckerId) {
+      await validateChecker(nextCheckerId, SQMP_MAIN_APPROVAL_FORM_ID);
+    }
+    if (nextApproverId) {
+      await validateApprover(nextApproverId, SQMP_MAIN_APPROVAL_FORM_ID);
+    }
+
     const dbUpdates: any = {
       last_update: now,
       updateby: userId
@@ -717,15 +749,15 @@ export class MainSqmpService {
     if (payload.main_document_remarks !== undefined) dbUpdates.main_document_remarks = payload.main_document_remarks;
     if (payload.appendix_sheet_remarks !== undefined) dbUpdates.appendix_sheet_remarks = payload.appendix_sheet_remarks;
     
-    if (payload.issuer_id !== undefined) dbUpdates.issuer_id = this.sanitizeUuid(payload.issuer_id);
+    if (payload.issuer_id !== undefined) dbUpdates.issuer_id = nextIssuerId;
     if (payload.issuer_remarks !== undefined) dbUpdates.issuer_remarks = payload.issuer_remarks;
     if (payload.issuer_date !== undefined) dbUpdates.issuer_date = this.parseDate(payload.issuer_date);
     
-    if (payload.checker_id !== undefined) dbUpdates.checker_id = this.sanitizeUuid(payload.checker_id);
+    if (payload.checker_id !== undefined) dbUpdates.checker_id = nextCheckerId;
     if (payload.checker_remarks !== undefined) dbUpdates.checker_remarks = payload.checker_remarks;
     if (payload.checker_date !== undefined) dbUpdates.checker_date = this.parseDate(payload.checker_date);
     
-    if (payload.approver_id !== undefined) dbUpdates.approver_id = this.sanitizeUuid(payload.approver_id);
+    if (payload.approver_id !== undefined) dbUpdates.approver_id = nextApproverId;
     if (payload.approver_remarks !== undefined) dbUpdates.approver_remarks = payload.approver_remarks;
     if (payload.approver_date !== undefined) dbUpdates.approver_date = this.parseDate(payload.approver_date);
 

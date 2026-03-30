@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { db } from '../../../shared/infrastructure/db.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
 import {
@@ -6,6 +7,10 @@ import {
   formatAttachmentRemarks,
   stripOriginalFilenameMarker,
 } from '../../../shared/utils/attachment-remarks.js';
+import {
+  validateApprover,
+  validateChecker,
+} from '../../../shared/utils/assignment-validation.utils.js';
 import { qmqaRepository } from '../qmqa.repository.js';
 import { sanitizeUUID } from './qmqa-module-strategy.js';
 
@@ -41,6 +46,9 @@ const QMQA_RESPONSE_VERIFICATION_RECORD_CONFIG = {
   lastUpdateColumn: 'last_update',
   updatedByColumn: 'updateby',
 } as const;
+
+const QMQA_RESPONSE_APPROVAL_FORM_ID =
+  getSubFormFormCodes('QMQA', 'RESPONSE_AWAIT_APPROVAL')[0] ?? 'QMQA-05-09';
 
 export class QmqaResponseService {
   private buildAttachmentView(
@@ -387,6 +395,14 @@ export class QmqaResponseService {
     const existingResponse = await qmqaRepository.findResponseByQmqaId(id);
     const cleanCheckerId = sanitizeUUID(payload.cycle2_checker_id);
     const cleanApproverId = sanitizeUUID(payload.cycle2_approver_id);
+
+    if (cleanCheckerId) {
+      await validateChecker(cleanCheckerId, QMQA_RESPONSE_APPROVAL_FORM_ID);
+    }
+
+    if (cleanApproverId) {
+      await validateApprover(cleanApproverId, QMQA_RESPONSE_APPROVAL_FORM_ID);
+    }
 
     const result = await qmqaRepository.executeTransaction(async (trx) => {
       const responseId = existingResponse?.qmqa_response_id || uuidv4();

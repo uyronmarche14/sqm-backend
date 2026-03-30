@@ -5,9 +5,18 @@
  * Part of Permission System Fix - Phase 1
  */
 
+import {
+  getAssignmentRoleActions,
+  getCompatibleFormCodes,
+  type AssignmentRole,
+} from '@sqm/permissions-contract';
 import { BadRequestError } from '../errors/AppError.js';
 import { userRepository } from '../../modules/users/user.repository.js';
-import { hasRolePermission } from './role-permission.utils.js';
+import {
+  hasAnyRolePermissionForForms,
+  hasRolePermission,
+  type RolePermissionAction,
+} from './role-permission.utils.js';
 import { isAdminRole } from './admin.utils.js';
 
 export interface AssignmentValidationOptions {
@@ -16,6 +25,9 @@ export interface AssignmentValidationOptions {
   requireChecker?: boolean;
   requireApprover?: boolean;
   allowSupplierAsIssuer?: boolean;
+  issuerFormId?: string;
+  checkerFormId?: string;
+  approverFormId?: string;
 }
 
 export interface AssignmentData {
@@ -41,11 +53,14 @@ export async function validateAssignments(
     requireChecker = false,
     requireApprover = false,
     allowSupplierAsIssuer = false,
+    issuerFormId,
+    checkerFormId,
+    approverFormId,
   } = options;
 
   // Validate issuer
   if (requireIssuer) {
-    await validateIssuer(data.issuer_id, allowSupplierAsIssuer);
+    await validateIssuer(data.issuer_id, allowSupplierAsIssuer, issuerFormId);
   }
 
   // Validate supplier
@@ -55,19 +70,104 @@ export async function validateAssignments(
 
   // Validate checker
   if (requireChecker) {
-    await validateChecker(data.checker_id);
+    await validateChecker(data.checker_id, checkerFormId);
   } else if (data.checker_id) {
     // Optional but if provided, must be valid
-    await validateChecker(data.checker_id);
+    await validateChecker(data.checker_id, checkerFormId);
   }
 
   // Validate approver
   if (requireApprover) {
-    await validateApprover(data.approver_id);
+    await validateApprover(data.approver_id, approverFormId);
   } else if (data.approver_id) {
     // Optional but if provided, must be valid
-    await validateApprover(data.approver_id);
+    await validateApprover(data.approver_id, approverFormId);
   }
+}
+
+interface AssignmentActorRecord {
+  user_id: string;
+  active_flag: boolean | number | null;
+  role_id: string | null;
+}
+
+function hasTruthyPermission(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
+function deriveAssignmentQualificationActions(
+  formId: string,
+  assignmentRole: AssignmentRole,
+): RolePermissionAction[][] {
+  const derivedActions = new Set(getAssignmentRoleActions(formId, assignmentRole));
+  const groups: RolePermissionAction[][] = [];
+
+  if (derivedActions.size === 0 || derivedActions.has('view') || derivedActions.has('viewlist')) {
+    groups.push(['view', 'viewlist']);
+  }
+
+  if (derivedActions.has('check')) {
+    groups.push(['check']);
+  }
+
+  if (derivedActions.has('approve') || derivedActions.has('release')) {
+    groups.push(['approve']);
+  }
+
+  if (derivedActions.has('edit') || derivedActions.has('submit') || derivedActions.has('issue')) {
+    groups.push(['edit', 'add']);
+  }
+
+  if (groups.length === 0) {
+    groups.push(['view', 'viewlist']);
+  }
+
+  return groups;
+}
+
+async function validateFormScopedAssignmentAccess(
+  actor: AssignmentActorRecord,
+  assignmentRole: AssignmentRole,
+  formId: string,
+): Promise<void> {
+  if (!actor.role_id) {
+    throw new BadRequestError(`Selected ${assignmentRole} does not have an assigned role.`);
+  }
+
+  const compatibleFormIds = getCompatibleFormCodes(formId);
+  const qualificationGroups = deriveAssignmentQualificationActions(formId, assignmentRole);
+
+  for (const actions of qualificationGroups) {
+    const allowed = await hasAnyRolePermissionForForms(actor.role_id, actions, compatibleFormIds);
+    if (allowed) {
+      continue;
+    }
+
+    const label = actions.join(' or ');
+    throw new BadRequestError(
+      `Selected ${assignmentRole} does not have ${label} permission for ${formId} or a compatible form.`,
+    );
+  }
+}
+
+async function validateActiveAssignmentActor(
+  actorId: string | null | undefined,
+  roleLabel: string,
+): Promise<AssignmentActorRecord> {
+  if (!actorId) {
+    throw new BadRequestError(`${roleLabel} is required`);
+  }
+
+  const actor = await userRepository.findById(actorId);
+  if (!actor) {
+    throw new BadRequestError(`Invalid ${roleLabel.toLowerCase()} user ID`);
+  }
+
+  if (!hasTruthyPermission(actor.active_flag)) {
+    throw new BadRequestError(`${roleLabel} user is inactive`);
+  }
+
+  return actor;
 }
 
 /**
@@ -78,20 +178,10 @@ export async function validateAssignments(
  */
 export async function validateIssuer(
   issuerId: string | null | undefined,
-  allowSupplier: boolean = false
+  allowSupplier: boolean = false,
+  formId?: string,
 ): Promise<void> {
-  if (!issuerId) {
-    throw new BadRequestError('Issuer is required');
-  }
-
-  const issuer = await userRepository.findById(issuerId);
-  if (!issuer) {
-    throw new BadRequestError('Invalid issuer user ID');
-  }
-
-  if (!issuer.active_flag) {
-    throw new BadRequestError('Issuer user is inactive');
-  }
+  const issuer = await validateActiveAssignmentActor(issuerId, 'Issuer');
 
   // Check if issuer is supplier user
   if (!allowSupplier && issuer.role_id) {
@@ -100,6 +190,13 @@ export async function validateIssuer(
     
     if (roleName.includes('SUPPLIER') || roleName.includes('VENDOR')) {
       throw new BadRequestError('Issuer must be an internal user, not a supplier');
+    }
+  }
+
+  if (formId && issuer.role_id) {
+    const role = await userRepository.findRoleById(issuer.role_id);
+    if (!isAdminRole(role?.role_name)) {
+      await validateFormScopedAssignmentAccess(issuer, 'issuer', formId);
     }
   }
 }
@@ -132,20 +229,10 @@ export async function validateSupplier(
  * @throws BadRequestError if validation fails
  */
 export async function validateChecker(
-  checkerId: string | null | undefined
+  checkerId: string | null | undefined,
+  formId?: string,
 ): Promise<void> {
-  if (!checkerId) {
-    throw new BadRequestError('Checker is required');
-  }
-
-  const checker = await userRepository.findById(checkerId);
-  if (!checker) {
-    throw new BadRequestError('Invalid checker user ID');
-  }
-
-  if (!checker.active_flag) {
-    throw new BadRequestError('Checker user is inactive');
-  }
+  const checker = await validateActiveAssignmentActor(checkerId, 'Checker');
 
   // Check if user has check permission OR is admin
   if (checker.role_id) {
@@ -153,11 +240,23 @@ export async function validateChecker(
     const isAdmin = isAdminRole(role?.role_name);
     
     if (!isAdmin) {
-      const hasPermission = await hasRolePermission(checker.role_id, 'check');
+      const hasPermission = formId
+        ? await hasAnyRolePermissionForForms(
+            checker.role_id,
+            ['check'],
+            getCompatibleFormCodes(formId),
+          )
+        : await hasRolePermission(checker.role_id, 'check');
       if (!hasPermission) {
         throw new BadRequestError(
-          'Selected checker does not have check permission. Please assign a user with checker role.'
+          formId
+            ? `Selected checker does not have check permission for ${formId} or a compatible form.`
+            : 'Selected checker does not have check permission. Please assign a user with checker role.'
         );
+      }
+
+      if (formId) {
+        await validateFormScopedAssignmentAccess(checker, 'checker', formId);
       }
     }
   }
@@ -169,20 +268,10 @@ export async function validateChecker(
  * @throws BadRequestError if validation fails
  */
 export async function validateApprover(
-  approverId: string | null | undefined
+  approverId: string | null | undefined,
+  formId?: string,
 ): Promise<void> {
-  if (!approverId) {
-    throw new BadRequestError('Approver is required');
-  }
-
-  const approver = await userRepository.findById(approverId);
-  if (!approver) {
-    throw new BadRequestError('Invalid approver user ID');
-  }
-
-  if (!approver.active_flag) {
-    throw new BadRequestError('Approver user is inactive');
-  }
+  const approver = await validateActiveAssignmentActor(approverId, 'Approver');
 
   // Check if user has approve permission OR is admin
   if (approver.role_id) {
@@ -190,11 +279,23 @@ export async function validateApprover(
     const isAdmin = isAdminRole(role?.role_name);
     
     if (!isAdmin) {
-      const hasPermission = await hasRolePermission(approver.role_id, 'approve');
+      const hasPermission = formId
+        ? await hasAnyRolePermissionForForms(
+            approver.role_id,
+            ['approve'],
+            getCompatibleFormCodes(formId),
+          )
+        : await hasRolePermission(approver.role_id, 'approve');
       if (!hasPermission) {
         throw new BadRequestError(
-          'Selected approver does not have approve permission. Please assign a user with approver role.'
+          formId
+            ? `Selected approver does not have approve permission for ${formId} or a compatible form.`
+            : 'Selected approver does not have approve permission. Please assign a user with approver role.'
         );
+      }
+
+      if (formId) {
+        await validateFormScopedAssignmentAccess(approver, 'approver', formId);
       }
     }
   }

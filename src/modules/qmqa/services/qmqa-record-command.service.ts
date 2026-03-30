@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { BadRequestError, ConflictError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
@@ -12,6 +13,10 @@ import { QMQARecordCreationInput, QMQARecordUpdateInput } from '../qmqa.schema.j
 import { qmqaAccessService } from './qmqa-access.service.js';
 import { qmqaResponseService } from './qmqa-response.service.js';
 import { sanitizeUUID } from './qmqa-module-strategy.js';
+import {
+  validateApprover,
+  validateChecker,
+} from '../../../shared/utils/assignment-validation.utils.js';
 
 const QMQA_DUPLICATE_KEY_NUMBERS = new Set([2601, 2627]);
 const QMQA_PLAN_ATTACHMENT_RECORD_CONFIG = {
@@ -35,6 +40,9 @@ const QMQA_RECORD_ATTACHMENT_RECORD_CONFIG = {
   lastUpdateColumn: 'last_update',
   updatedByColumn: 'updateby',
 } as const;
+
+const QMQA_MAIN_APPROVAL_FORM_ID =
+  getSubFormFormCodes('QMQA', 'AWAITING_APPROVAL')[0] ?? 'QMQA-05-03';
 
 export class QmqaRecordCommandService {
   private async syncRecordAttachments(
@@ -135,6 +143,15 @@ export class QmqaRecordCommandService {
     const effectiveUserId = userId || 'SYSTEM';
     const qmqaId = uuidv4();
     const isLinkedToExistingSchedule = Boolean(payload.schedule_id);
+    const cleanCheckerId = sanitizeUUID(payload.checker_id);
+    const cleanApproverId = sanitizeUUID(payload.approver_id);
+
+    if (cleanCheckerId) {
+      await validateChecker(cleanCheckerId, QMQA_MAIN_APPROVAL_FORM_ID);
+    }
+    if (cleanApproverId) {
+      await validateApprover(cleanApproverId, QMQA_MAIN_APPROVAL_FORM_ID);
+    }
 
     if (!isLinkedToExistingSchedule) {
       this.assertRecordControlNoInputs(payload);
@@ -211,10 +228,10 @@ export class QmqaRecordCommandService {
             issuer_id: effectiveUserId,
             issuer_remarks: null,
             issuer_date: null,
-            checker_id: sanitizeUUID(payload.checker_id),
+            checker_id: cleanCheckerId,
             checker_remarks: null,
             checker_date: null,
-            approver_id: sanitizeUUID(payload.approver_id),
+            approver_id: cleanApproverId,
             approver_remarks: null,
             approver_date: null,
             request_status: '2',
@@ -275,6 +292,15 @@ export class QmqaRecordCommandService {
     });
 
     const now = new Date();
+    const cleanCheckerId = payload.checker_id !== undefined ? sanitizeUUID(payload.checker_id) : undefined;
+    const cleanApproverId = payload.approver_id !== undefined ? sanitizeUUID(payload.approver_id) : undefined;
+
+    if (cleanCheckerId) {
+      await validateChecker(cleanCheckerId, QMQA_MAIN_APPROVAL_FORM_ID);
+    }
+    if (cleanApproverId) {
+      await validateApprover(cleanApproverId, QMQA_MAIN_APPROVAL_FORM_ID);
+    }
     const resolvedAttentionId = payload.attention_id !== undefined
       ? await qmqaResponseService.resolveAttentionId(payload.attention_id)
       : undefined;
@@ -299,8 +325,8 @@ export class QmqaRecordCommandService {
     if (payload.auditors !== undefined) qmqaUpdates.auditors = payload.auditors || null;
     if (payload.attendees !== undefined) qmqaUpdates.attendees = payload.attendees || null;
     if (payload.remarks !== undefined) qmqaUpdates.remarks = payload.remarks || null;
-    if (payload.checker_id !== undefined) qmqaUpdates.checker_id = sanitizeUUID(payload.checker_id);
-    if (payload.approver_id !== undefined) qmqaUpdates.approver_id = sanitizeUUID(payload.approver_id);
+    if (payload.checker_id !== undefined) qmqaUpdates.checker_id = cleanCheckerId;
+    if (payload.approver_id !== undefined) qmqaUpdates.approver_id = cleanApproverId;
 
     const planUpdates: Record<string, any> = {
       last_update: now,

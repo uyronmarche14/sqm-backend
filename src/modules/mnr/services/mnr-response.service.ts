@@ -1,10 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
+import { getSubFormFormCodes } from '@sqm/permissions-contract';
 import { BadRequestError } from '../../../shared/errors/AppError.js';
 import { attachmentService } from '../../../shared/services/attachment.service.js';
 import {
   extractOriginalFilenameMarker,
   formatAttachmentRemarks,
 } from '../../../shared/utils/attachment-remarks.js';
+import {
+  validateApprover,
+  validateChecker,
+} from '../../../shared/utils/assignment-validation.utils.js';
 
 const MNR_RESPONSE_ATTACHMENT_RECORD_CONFIG = {
   tableName: 'MNR_RESPONSE_ATTACHMENT',
@@ -16,6 +21,9 @@ const MNR_RESPONSE_ATTACHMENT_RECORD_CONFIG = {
   lastUpdateColumn: 'last_update',
   updatedByColumn: 'updateby',
 } as const;
+
+const MNR_RESPONSE_APPROVAL_FORM_ID =
+  getSubFormFormCodes('MNR', 'RESPONSE_AWAIT_APPROVAL')[0] ?? 'MNR-12-10';
 
 export class MnrResponseService {
   formatDate(dateStr?: string | null): Date | null {
@@ -109,6 +117,20 @@ export class MnrResponseService {
     now: Date,
     files: any[] = [],
   ) {
+    const nextCheckerId = this.sanitizeUserForeignKey(
+      responsePayload.cycle2CheckerId || responsePayload.checker,
+    );
+    const nextApproverId = this.sanitizeUserForeignKey(
+      responsePayload.cycle2ApproverId || responsePayload.approver,
+    );
+
+    if (nextCheckerId) {
+      await validateChecker(nextCheckerId, MNR_RESPONSE_APPROVAL_FORM_ID);
+    }
+    if (nextApproverId) {
+      await validateApprover(nextApproverId, MNR_RESPONSE_APPROVAL_FORM_ID);
+    }
+
     const existingResponse = await trx
       .selectFrom('MNR_RESPONSE')
       .select('mnr_response_id')
