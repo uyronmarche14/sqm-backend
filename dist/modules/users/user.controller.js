@@ -1,5 +1,5 @@
 import { userService } from './user.service.js';
-import { CreateUserSchema, UpdateUserSchema, ChangePasswordSchema, TestEmailSchema, AssignmentCoverageRequestSchema, } from './user.schema.js';
+import { CreateUserSchema, UpdateUserSchema, ChangePasswordSchema, TestEmailSchema, AssignmentCoverageRequestSchema, LookupUsersQuerySchema, } from './user.schema.js';
 // Internal mapper matching original output shape exactly
 // Note: DB column is `last_pasword_change` (legacy typo in DB — single 's')
 const mapUserToDto = (user) => ({
@@ -17,9 +17,10 @@ const mapUserToDto = (user) => ({
     last_update: user.last_update
 });
 export const userController = {
-    getLookupUsers: async (_req, res, next) => {
+    getLookupUsers: async (req, res, next) => {
         try {
-            const users = await userService.getLookupUsers();
+            const query = LookupUsersQuerySchema.parse(req.query);
+            const users = await userService.getLookupUsers(query);
             res.json(users);
         }
         catch (error) {

@@ -199,6 +199,7 @@ router.delete('/parts-catalog/:id', PARTS_CATALOG.delete, ctrl.partsCatalogCtrl.
 // Forms & Security
 // ============================================================================
 router.get('/forms', FORMS.list, ctrl.formsCtrl.getAll);
+router.post('/forms/sync-registry', FORMS.edit, ctrl.syncFormRegistryInventory);
 router.post('/forms', FORMS.add, ctrl.formsCtrl.create);
 router.put('/forms/:id', FORMS.edit, ctrl.formsCtrl.update);
 router.delete('/forms/:id', FORMS.delete, ctrl.formsCtrl.delete);

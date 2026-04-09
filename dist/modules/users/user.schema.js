@@ -55,3 +55,17 @@ export const AssignmentCoverageItemSchema = z.object({
 export const AssignmentCoverageRequestSchema = z.object({
     assignments: z.array(AssignmentCoverageItemSchema).min(1).max(10),
 });
+export const LookupUsersQuerySchema = z.object({
+    formId: z.string().min(1).optional(),
+    assignmentRole: z.enum(['owner', 'issuer', 'checker', 'approver', 'supplier']).optional(),
+}).superRefine((value, ctx) => {
+    const hasFormId = Boolean(value.formId);
+    const hasAssignmentRole = Boolean(value.assignmentRole);
+    if (hasFormId !== hasAssignmentRole) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'formId and assignmentRole must be provided together.',
+            path: hasFormId ? ['assignmentRole'] : ['formId'],
+        });
+    }
+});

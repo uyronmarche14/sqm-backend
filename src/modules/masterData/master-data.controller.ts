@@ -3,11 +3,14 @@ import {
   ROLE_ACCESS_DB_FIELD_MAP,
   ROLE_ACCESS_PERMISSION_FIELDS,
   getRoleAccessPermissionValue,
+  resolvePageRegistryEntry,
 } from '@sqm/permissions-contract';
 import { masterDataService, mappers } from './master-data.service.js';
 import * as schemas from './master-data.schema.js';
 import * as repos from './master-data.repository.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
+import { BadRequestError } from '../../shared/errors/AppError.js';
+import { formRegistrySyncService } from './form-registry-sync.service.js';
 
 type ControllerOptions = {
   repo: any;
@@ -71,6 +74,49 @@ export const mapRoleAccessPayloadToDb = (id: string, p: any, userId: string) => 
   active_flag: b(p.isActive),
   updateby: userId,
 });
+
+const withFormRegistrySync = <T extends (req: Request, res: Response, next: NextFunction) => Promise<unknown>>(
+  handler: T,
+): T =>
+  (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await formRegistrySyncService.sync();
+      await handler(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }) as T;
+
+function assertRegistryBackedFormWriteAllowed(formName: string | null | undefined, payload: any) {
+  const registryEntry = resolvePageRegistryEntry(formName);
+  if (!registryEntry) {
+    return;
+  }
+
+  const incomingUrl = String(payload?.url || '').trim();
+  const incomingMenuGroup = String(payload?.menuGroup || '').trim();
+
+  if (incomingUrl && incomingUrl !== registryEntry.route) {
+    throw new BadRequestError(
+      `Route for registry-backed form ${registryEntry.canonicalFormCode} is system-managed and must remain ${registryEntry.route}.`,
+    );
+  }
+
+  if (incomingMenuGroup && incomingMenuGroup !== registryEntry.menuGroup) {
+    throw new BadRequestError(
+      `Menu group for registry-backed form ${registryEntry.canonicalFormCode} is system-managed and must remain ${registryEntry.menuGroup}.`,
+    );
+  }
+}
+
+export const syncFormRegistryInventory = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const summary = await formRegistrySyncService.sync();
+    res.json(summary);
+  } catch (error) {
+    next(error);
+  }
+};
 
 // ============================================================================
 // Core Lookups
@@ -202,15 +248,72 @@ export const partsCatalogCtrl = createController({
 // Forms & Security
 // ============================================================================
 
-export const formsCtrl = createController({
+const baseFormsCtrl = createController({
   repo: repos.formsRepo, mapper: mappers.form, schema: schemas.FormSchema, idCol: 'form_id',
   toDB: (id, p, userId) => ({ form_id: id, form_name: p.name, form_url: p.url, menu_group: p.menuGroup, icon: s(p.icon), form_desc: s(p.description), active_flag: b(p.isActive), updateby: userId })
 });
 
-export const roleAccessCtrl = createController({
+export const formsCtrl = {
+  ...baseFormsCtrl,
+  getAll: withFormRegistrySync(baseFormsCtrl.getAll),
+  create: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = schemas.FormSchema.parse(req.body);
+      if (resolvePageRegistryEntry(payload.name)) {
+        throw new BadRequestError(
+          `Registry-backed form ${payload.name} is system-managed. Add it through the shared registry and sync the inventory instead.`,
+        );
+      }
+      await baseFormsCtrl.create(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+  update: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = schemas.ParamIdSchema.parse(req.params);
+      const payload = schemas.FormSchema.parse(req.body);
+      const existing = await repos.formsRepo.findById(id);
+      if (!existing) {
+        throw new BadRequestError('Record not found');
+      }
+
+      assertRegistryBackedFormWriteAllowed(existing.form_name as string | null | undefined, payload);
+      await baseFormsCtrl.update(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+  delete: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = schemas.ParamIdSchema.parse(req.params);
+      const existing = await repos.formsRepo.findById(id);
+      if (!existing) {
+        throw new BadRequestError('Record not found');
+      }
+      if (resolvePageRegistryEntry(existing.form_name as string | null | undefined)) {
+        throw new BadRequestError(
+          `Registry-backed form ${existing.form_name} is system-managed and cannot be deleted from maintenance.`,
+        );
+      }
+      await baseFormsCtrl.delete(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  },
+};
+
+const baseRoleAccessCtrl = createController({
   repo: repos.roleAccessRepo, mapper: mappers.roleAccess, schema: schemas.RoleAccessSchema, idCol: 'roleaccess_id',
   toDB: (id, p, userId) => mapRoleAccessPayloadToDb(id, p, userId)
 });
+
+export const roleAccessCtrl = {
+  ...baseRoleAccessCtrl,
+  getAll: withFormRegistrySync(baseRoleAccessCtrl.getAll),
+  create: withFormRegistrySync(baseRoleAccessCtrl.create),
+  update: withFormRegistrySync(baseRoleAccessCtrl.update),
+};
 
 // ============================================================================
 // Suppliers Ex

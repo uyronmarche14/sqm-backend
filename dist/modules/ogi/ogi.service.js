@@ -8,6 +8,7 @@ import { controlNumberService } from '../../shared/services/control-number.servi
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
 import { formatAttachmentRemarks } from '../../shared/utils/attachment-remarks.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 import { ogiNotificationService, } from '../../shared/notifications/ogi-notification.service.js';
 const OGI_DB_STATUS = {
     DRAFT: 'DR',
@@ -150,7 +151,7 @@ export class OgiService {
         }
     }
     isAdminActor(actor) {
-        return (actor?.roleName || '').toUpperCase().includes('ADMIN');
+        return isAdminRole(actor?.roleName);
     }
     async resolveRoleViewListFormCodes(userId) {
         if (!userId) {

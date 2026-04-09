@@ -3,6 +3,7 @@ import {
   ROLE_ACCESS_DB_FIELD_MAP,
   ROLE_ACCESS_PERMISSION_FIELDS,
   ROLE_ACCESS_PERMISSION_PAYLOAD_MAP,
+  resolvePageRegistryEntry,
 } from '@sqm/permissions-contract';
 
 import { NotFoundError } from '../../shared/errors/AppError.js';
@@ -27,6 +28,29 @@ export const mapRoleAccessRow = (r: any) => ({
   isActive: !!r.active_flag,
   permissions: mapRoleAccessPermissionRow(r),
 });
+
+function mapFormRegistryMetadata(row: any) {
+  const registryEntry = resolvePageRegistryEntry(row.form_name);
+  const isRegistryBacked = Boolean(registryEntry);
+  const canonicalRoute =
+    registryEntry?.kind === 'internal'
+      ? ''
+      : registryEntry?.route || String(row.form_url || '').trim();
+
+  return {
+    title: registryEntry?.title || row.form_name,
+    url: canonicalRoute,
+    menuGroup: registryEntry?.menuGroup || row.menu_group || '',
+    kind: registryEntry?.kind || 'page',
+    assignable: registryEntry?.assignable ?? false,
+    source: isRegistryBacked ? 'registry' : 'database',
+    canonicalRoute,
+    module: registryEntry?.module,
+    pageType: registryEntry?.pageType,
+    stage: registryEntry?.stage,
+    registryStatus: isRegistryBacked ? 'registry' : 'legacy_unregistered',
+  };
+}
 
 export const mappers = {
   site: (r: any) => ({
@@ -109,8 +133,12 @@ export const mappers = {
     aqlId: r.aql_id, isActive: !!r.active_flag
   }),
   form: (r: any) => ({
-    id: r.form_id, name: r.form_name, url: r.form_url, menuGroup: r.menu_group,
-    icon: r.icon || '', description: r.form_desc || '', isActive: !!r.active_flag
+    id: r.form_id,
+    name: r.form_name,
+    icon: r.icon || '',
+    description: r.form_desc || '',
+    isActive: !!r.active_flag,
+    ...mapFormRegistryMetadata(r),
   }),
   roleAccess: mapRoleAccessRow,
   supplierInfo: (r: any) => ({

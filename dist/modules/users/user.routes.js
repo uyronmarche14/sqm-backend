@@ -9,7 +9,7 @@ router.use(requireAuth);
 // Workflow-safe helper endpoints
 router.get('/lookup', userController.getLookupUsers);
 router.post('/test-email', requireAnyPermission(USER_FORM_IDS, 'add'), userController.testEmail);
-router.post('/:id/assignment-coverage-preview', userController.getAssignmentCoverage);
+router.post('/:id/assignment-coverage-preview', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAssignmentCoverage);
 router.get('/', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAllUsers);
 router.get('/:id', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getUserById);
 router.post('/:id/assignment-coverage', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAssignmentCoverage);

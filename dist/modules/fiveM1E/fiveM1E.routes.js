@@ -5,6 +5,7 @@ import { validate } from '../../shared/middleware/validate.js';
 import { CreateFiveM1ESchema, UpdateFiveM1ESchema } from './fiveM1E.schema.js';
 // @ts-ignore
 import { createModuleUpload, logUploads, handleUploadError } from '../../middleware/upload.middleware.js';
+import { requireAnyPermission } from '../../shared/middleware/requireAnyPermission.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireFiveM1EWorkflowAccess } from './requireFiveM1EWorkflowAccess.js';
 import { requireFiveM1EEditAccess } from './requireFiveM1EEditAccess.js';
@@ -12,6 +13,11 @@ import { requireFiveM1EDeleteAccess } from './requireFiveM1EDeleteAccess.js';
 import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
+const FIVE_M1E_DELETE_PERMISSION_FORM_IDS = [
+    '5M1EMAIN-11-01',
+    '5M1ESupplier_Submition',
+    '5M1ERAR-06-17',
+];
 /**
  * Middleware to parse JSON stringified arrays sent via FormData.
  * Multer parses text fields as strings, but our Zod schema (and DB) expects arrays.
@@ -60,7 +66,7 @@ router.put('/:id', requireFiveM1EEditAccess, upload.any(), logUploads, handleUpl
  * @route   DELETE /api/5m1e/:id
  * @desc    Delete 5M1E Record and all child data
  */
-router.delete('/:id', requirePermission('5M1E', 'delete'), requireFiveM1EDeleteAccess, fiveM1EController.deleteApplication);
+router.delete('/:id', requireAnyPermission(FIVE_M1E_DELETE_PERMISSION_FORM_IDS, 'delete'), requireFiveM1EDeleteAccess, fiveM1EController.deleteApplication);
 /**
  * Workflow Action Subroutes
  */

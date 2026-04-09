@@ -1,9 +1,42 @@
 import { v4 as uuidv4 } from 'uuid';
+import { ROLE_ACCESS_DB_FIELD_MAP, ROLE_ACCESS_PERMISSION_FIELDS, ROLE_ACCESS_PERMISSION_PAYLOAD_MAP, resolvePageRegistryEntry, } from '@sqm/permissions-contract';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 /**
  * Reusable DTO Mappers to maintain 100% backwards compatibility with the
  * frontend without dirtying the Database layer types.
  */
+const mapRoleAccessPermissionRow = (row) => Object.fromEntries(ROLE_ACCESS_PERMISSION_FIELDS.map((field) => [
+    ROLE_ACCESS_PERMISSION_PAYLOAD_MAP[field],
+    Boolean(row[ROLE_ACCESS_DB_FIELD_MAP[field]]),
+]));
+export const mapRoleAccessRow = (r) => ({
+    id: r.roleaccess_id,
+    roleId: r.role_id,
+    formId: r.form_id,
+    description: r.roleaccess_desc || '',
+    isActive: !!r.active_flag,
+    permissions: mapRoleAccessPermissionRow(r),
+});
+function mapFormRegistryMetadata(row) {
+    const registryEntry = resolvePageRegistryEntry(row.form_name);
+    const isRegistryBacked = Boolean(registryEntry);
+    const canonicalRoute = registryEntry?.kind === 'internal'
+        ? ''
+        : registryEntry?.route || String(row.form_url || '').trim();
+    return {
+        title: registryEntry?.title || row.form_name,
+        url: canonicalRoute,
+        menuGroup: registryEntry?.menuGroup || row.menu_group || '',
+        kind: registryEntry?.kind || 'page',
+        assignable: registryEntry?.assignable ?? false,
+        source: isRegistryBacked ? 'registry' : 'database',
+        canonicalRoute,
+        module: registryEntry?.module,
+        pageType: registryEntry?.pageType,
+        stage: registryEntry?.stage,
+        registryStatus: isRegistryBacked ? 'registry' : 'legacy_unregistered',
+    };
+}
 export const mappers = {
     site: (r) => ({
         id: r.site_id, name: r.site_name, code: r.site_code || '',
@@ -85,17 +118,14 @@ export const mappers = {
         aqlId: r.aql_id, isActive: !!r.active_flag
     }),
     form: (r) => ({
-        id: r.form_id, name: r.form_name, url: r.form_url, menuGroup: r.menu_group,
-        icon: r.icon || '', description: r.form_desc || '', isActive: !!r.active_flag
+        id: r.form_id,
+        name: r.form_name,
+        icon: r.icon || '',
+        description: r.form_desc || '',
+        isActive: !!r.active_flag,
+        ...mapFormRegistryMetadata(r),
     }),
-    roleAccess: (r) => ({
-        id: r.roleaccess_id, roleId: r.role_id, formId: r.form_id, description: r.roleaccess_desc || '', isActive: !!r.active_flag,
-        permissions: {
-            view: r.can_view, viewList: r.can_viewlist, add: r.can_add, edit: r.can_edit, delete: r.can_delete,
-            approve: r.can_approve, check: r.can_check, print: r.can_print, export: r.can_export,
-            perSite: r.per_site, canAttach: r.can_attach, pic: r.pic
-        }
-    }),
+    roleAccess: mapRoleAccessRow,
     supplierInfo: (r) => ({
         id: r.supplier_information_id, supplierId: r.supplier_id, firstName: r.first_name,
         middleName: r.middle_name || '', lastName: r.last_name, description: r.supplier_information_desc || '',
