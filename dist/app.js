@@ -4,7 +4,9 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import { requestLogger } from './shared/middleware/request-logger.js';
+import { assertJwtConfig } from './shared/utils/jwt.js';
 dotenv.config();
+assertJwtConfig();
 // Middlewares
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { NotFoundError } from './shared/errors/AppError.js';
@@ -21,12 +23,14 @@ const app = express();
 function parseAllowedOrigins() {
     const configuredOrigins = (process.env.CORS_ORIGINS || '')
         .split(',')
-        .map((origin) => origin.trim())
+        .map((origin) => origin.trim().replace(/\/+$/, ''))
         .filter(Boolean);
     const fallbackOrigins = [
         process.env.FRONTEND_BASE_URL,
-        'http://localhost:5173',
-    ].filter((origin) => Boolean(origin?.trim()));
+        process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:5173',
+    ]
+        .filter((origin) => Boolean(origin?.trim()))
+        .map((origin) => origin.replace(/\/+$/, ''));
     return Array.from(new Set([
         ...configuredOrigins,
         ...fallbackOrigins,
@@ -39,10 +43,8 @@ const corsOptions = {
             callback(null, true);
             return;
         }
-        if (allowedOrigins.includes(origin) ||
-            origin.endsWith('.vercel.app') ||
-            origin.endsWith('.trycloudflare.com') ||
-            origin.startsWith('http://localhost:')) {
+        const normalizedOrigin = origin.replace(/\/+$/, '');
+        if (allowedOrigins.includes(normalizedOrigin)) {
             callback(null, true);
             return;
         }

@@ -53,3 +53,19 @@ export const authLimiter = rateLimit({
     }),
     message: 'Too many login attempts, please try again after an hour',
 });
+export const authRefreshLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    passOnStoreError: true,
+    ...(redisClient && {
+        store: new RedisStore({
+            sendCommand: async (...args) => {
+                if (redisClient.status !== 'ready')
+                    throw new Error('Redis not ready');
+                return redisClient.call(...args);
+            },
+            prefix: 'rl:auth:refresh:',
+        })
+    }),
+    message: 'Too many refresh attempts, please try again shortly',
+});

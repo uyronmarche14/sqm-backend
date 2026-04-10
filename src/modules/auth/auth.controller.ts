@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService } from './auth.service.js';
 import { ChangePasswordInput, ForgotPasswordInput, LoginInput, ResetPasswordInput } from './auth.schema.js';
+import {
+  getRefreshCookieClearOptions,
+  getRefreshCookieOptions,
+  REFRESH_COOKIE_NAME,
+} from './auth.cookies.js';
 
 export class AuthController {
   
@@ -11,22 +16,16 @@ export class AuthController {
     try {
       const result = await authService.login(req.body);
 
-      // Set Refresh Token as an HttpOnly, Secure cookie
-      res.cookie('refreshToken', result.tokens.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 Days
-      });
+      res.cookie(REFRESH_COOKIE_NAME, result.tokens.refreshToken, getRefreshCookieOptions());
 
-      // Send Exact Legacy Payload Shape
       res.status(200).json({
         success: result.success,
         message: result.message,
         isSupplier: result.isSupplier,
         userData: result.userData,
-        accessToken: result.tokens.accessToken,
-        refreshToken: result.tokens.refreshToken,
+        tokens: {
+          accessToken: result.tokens.accessToken,
+        },
         mustChangePassword: result.mustChangePassword,
         userMenu: result.userMenu,
         accessibleForms: result.accessibleForms,
@@ -43,31 +42,24 @@ export class AuthController {
    */
   async refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const token = req.body?.refreshToken || req.cookies?.refreshToken;
+      const token = req.cookies?.[REFRESH_COOKIE_NAME];
       
       if (!token) {
-        // Here we could throw UnauthorizedError, but inline is fine to avoid importing AppError
         res.status(401).json({ status: 'fail', message: 'No refresh token provided' });
         return;
       }
       
       const result = await authService.refreshTokens(token);
       
-      res.cookie('refreshToken', result.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      });
+      res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, getRefreshCookieOptions());
       
       res.status(200).json({
         success: true,
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
       });
       return;
     } catch (error) {
-      res.clearCookie('refreshToken');
+      res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieClearOptions());
       return next(error);
     }
   }
@@ -125,13 +117,13 @@ export class AuthController {
   /**
    * Handles logging out by clearing the HttpOnly cookie
    */
-  async logout(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      res.clearCookie('refreshToken');
-      res.status(200).json({
-        status: 'success',
-        message: 'Successfully logged out',
-      });
+      const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
+      const result = await authService.logout(refreshToken);
+
+      res.clearCookie(REFRESH_COOKIE_NAME, getRefreshCookieClearOptions());
+      res.status(200).json(result);
       return;
     } catch (error) {
       return next(error);

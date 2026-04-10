@@ -2,7 +2,11 @@ import { authRepository } from './auth.repository.js';
 import { ChangePasswordInput, ForgotPasswordInput, LoginInput, ResetPasswordInput } from './auth.schema.js';
 import { BadRequestError, UnauthorizedError } from '../../shared/errors/AppError.js';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+} from '../../shared/utils/jwt.js';
 import { getLegacyFormMapping, getModulePermissionManifest } from '@sqm/permissions-contract';
 import { getAssignedWorkflowAccessibleForms } from './assigned-form-access.js';
 import {
@@ -12,6 +16,8 @@ import {
 import { getEmailConfig } from '../../shared/notifications/email.config.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
+
+const SYSTEM_ACTOR = 'SYSTEM';
 
 export class AuthService {
   constructor(private readonly notifications: AuthNotificationServiceContract = authNotificationService) {}
@@ -25,6 +31,58 @@ export class AuthService {
 
   private hashResetToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private isExplicitlyDisabled(value: unknown): boolean {
+    return value === false || value === 0 || value === '0';
+  }
+
+  private ensureUserCanUseSession<T>(user: T | null | undefined, message = 'Invalid session'): asserts user is T {
+    if (!user) {
+      throw new UnauthorizedError(message);
+    }
+
+    const candidate = user as { active_flag?: unknown; login_flag?: unknown };
+
+    if (this.isExplicitlyDisabled(candidate.active_flag) || this.isExplicitlyDisabled(candidate.login_flag)) {
+      throw new UnauthorizedError(message);
+    }
+  }
+
+  private buildAccessTokenPayload(user: any) {
+    return {
+      userId: user.user_id,
+      roleId: user.role_id || undefined,
+    };
+  }
+
+  // With the existing schema, password-change timestamps are the safest built-in
+  // signal we can use to invalidate older refresh tokens without a session table.
+  private wasPasswordChangedAfterTokenIssued(user: any, issuedAtSeconds?: number): boolean {
+    if (typeof issuedAtSeconds !== 'number') {
+      return false;
+    }
+
+    const lastPasswordChange = user?.last_pasword_change;
+    if (!lastPasswordChange) {
+      return false;
+    }
+
+    const changedAtMs = new Date(lastPasswordChange).getTime();
+    if (Number.isNaN(changedAtMs)) {
+      return false;
+    }
+
+    return Math.floor(changedAtMs / 1000) > issuedAtSeconds;
+  }
+
+  private issueLoginTokens(user: any) {
+    const accessPayload = this.buildAccessTokenPayload(user);
+
+    return {
+      accessToken: generateAccessToken(accessPayload),
+      refreshToken: generateRefreshToken(accessPayload),
+    };
   }
 
   private buildAuthContextResponse(user: any, accessibleForms: string[], roleAccessRecords: any[]) {
@@ -94,63 +152,58 @@ export class AuthService {
 
   async refreshTokens(refreshToken: string) {
     const decoded = verifyRefreshToken(refreshToken);
-    
-    const payload = {
-      userId: decoded.userId,
-      roleId: decoded.roleId,
-    };
-    
-    const accessToken = generateAccessToken(payload);
-    const newRefreshToken = generateRefreshToken(payload);
-    
+
+    if (!decoded.userId) {
+      throw new UnauthorizedError('Invalid refresh token');
+    }
+
+    const user = await authRepository.findUserById(decoded.userId);
+    this.ensureUserCanUseSession(user, 'Invalid session');
+
+    if (this.wasPasswordChangedAfterTokenIssued(user, decoded.iat)) {
+      throw new UnauthorizedError('Refresh token expired. Please sign in again.');
+    }
+
+    const accessPayload = this.buildAccessTokenPayload(user);
+
     return {
-      accessToken,
-      refreshToken: newRefreshToken
+      accessToken: generateAccessToken(accessPayload),
+      refreshToken: generateRefreshToken(accessPayload),
     };
   }
+
   async login(input: LoginInput) {
-    // 1. Find User (Fully Typed Result)
     const user = await authRepository.findByEmail(input.email);
-    
+
     if (!user) {
       throw new UnauthorizedError('Invalid credentials');
     }
 
-    // 2. Check Password
-    // In a real AD setup, this might be an LDAP verification
+    this.ensureUserCanUseSession(user, 'Invalid credentials');
+
     if (!user.password) {
-        throw new UnauthorizedError('Invalid account configuration');
+      throw new UnauthorizedError('Invalid account configuration');
     }
-    
+
     const isValid = await verifyPassword(input.password, user.password);
     if (!isValid) {
       throw new UnauthorizedError('Invalid credentials');
     }
 
-    // 3. Generate Tokens
-    const payload = {
-      userId: user.user_id,
-      roleId: user.role_id || undefined,
-    };
-
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(payload);
+    const tokens = this.issueLoginTokens(user);
     const [accessibleForms, roleAccessRecords] = await Promise.all([
       this.buildAccessibleForms(user.user_id),
       authRepository.findCurrentUserRoleAccessRecords(user.user_id),
     ]);
     const authContext = this.buildAuthContextResponse(user, accessibleForms, roleAccessRecords);
-    
+
     return {
       success: true,
       message: 'Welcome back!',
       isSupplier: authContext.isSupplier,
       userData: authContext.userData,
-      tokens: {
-        accessToken,
-        refreshToken,
-      },
-      mustChangePassword: user.change_pw ? true : false, 
+      tokens,
+      mustChangePassword: user.change_pw ? true : false,
       userMenu: authContext.userMenu,
       accessibleForms: authContext.accessibleForms,
       roleAccessRecords: authContext.roleAccessRecords,
@@ -159,10 +212,7 @@ export class AuthService {
 
   async getCurrentUserContext(userId: string) {
     const user = await authRepository.findUserById(userId);
-
-    if (!user) {
-      throw new UnauthorizedError('Invalid session');
-    }
+    this.ensureUserCanUseSession(user, 'Invalid session');
 
     const [accessibleForms, roleAccessRecords] = await Promise.all([
       this.buildAccessibleForms(user.user_id),
@@ -183,10 +233,7 @@ export class AuthService {
 
   async changePassword(userId: string, input: ChangePasswordInput) {
     const user = await authRepository.findUserById(userId);
-
-    if (!user) {
-      throw new UnauthorizedError('Invalid session');
-    }
+    this.ensureUserCanUseSession(user, 'Invalid session');
 
     const mustChangePassword = Boolean(user.change_pw);
     if (!mustChangePassword && !input.currentPassword) {
@@ -266,7 +313,7 @@ export class AuthService {
       token_hash: tokenHash,
       expires_at: expiresAt,
       created_at: now,
-      updateby: 'SYSTEM',
+      updateby: SYSTEM_ACTOR,
     });
 
     try {
@@ -352,6 +399,13 @@ export class AuthService {
     return {
       success: true,
       message: 'Password reset successfully',
+    };
+  }
+
+  async logout(_refreshToken?: string | null) {
+    return {
+      status: 'success',
+      message: 'Successfully logged out',
     };
   }
 }

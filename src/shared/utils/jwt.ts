@@ -1,29 +1,86 @@
 import jwt from 'jsonwebtoken';
 import { UnauthorizedError } from '../errors/AppError.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-development-key';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m'; 
-
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'super-secret-refresh-key';
-const REFRESH_EXPIRES_IN = process.env.REFRESH_EXPIRES_IN || '7d';
+const DEFAULT_ACCESS_EXPIRES_IN = '15m';
+const DEFAULT_REFRESH_EXPIRES_IN = '7d';
 
 export interface TokenPayload {
   userId: string;
   roleId?: string;
+  iat?: number;
+  exp?: number;
+}
+
+function getRequiredEnv(name: 'JWT_SECRET' | 'JWT_REFRESH_SECRET'): string {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name} is required for authentication.`);
+  }
+
+  return value;
+}
+
+function getJwtSecret(): string {
+  return getRequiredEnv('JWT_SECRET');
+}
+
+function getRefreshSecret(): string {
+  return getRequiredEnv('JWT_REFRESH_SECRET');
+}
+
+function getAccessExpiresIn(): string {
+  return process.env.JWT_EXPIRES_IN?.trim() || DEFAULT_ACCESS_EXPIRES_IN;
+}
+
+function getRefreshExpiresIn(): string {
+  return process.env.REFRESH_EXPIRES_IN?.trim() || DEFAULT_REFRESH_EXPIRES_IN;
+}
+
+function parseDurationToMs(value: string): number {
+  const match = /^(\d+)(ms|s|m|h|d)$/i.exec(value.trim());
+  if (!match) {
+    throw new Error(`Invalid duration format "${value}". Use values like 15m, 8h, or 7d.`);
+  }
+
+  const amount = Number.parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+
+  const unitMultiplier: Record<string, number> = {
+    ms: 1,
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+
+  return amount * unitMultiplier[unit];
+}
+
+export function assertJwtConfig(): void {
+  getJwtSecret();
+  getRefreshSecret();
+  getAccessExpiresIn();
+  getRefreshExpiresIn();
+  getRefreshTokenMaxAgeMs();
+}
+
+export function getRefreshTokenMaxAgeMs(): number {
+  return parseDurationToMs(getRefreshExpiresIn());
 }
 
 /**
  * Generates an Access Token (Short Lived)
  */
 export const generateAccessToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, JWT_SECRET as jwt.Secret, { expiresIn: JWT_EXPIRES_IN as any });
+  return jwt.sign(payload, getJwtSecret() as jwt.Secret, { expiresIn: getAccessExpiresIn() as any });
 };
 
 /**
  * Generates a Refresh Token (Long Lived)
  */
 export const generateRefreshToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, REFRESH_SECRET as jwt.Secret, { expiresIn: REFRESH_EXPIRES_IN as any });
+  return jwt.sign(payload, getRefreshSecret() as jwt.Secret, { expiresIn: getRefreshExpiresIn() as any });
 };
 
 /**
@@ -31,7 +88,7 @@ export const generateRefreshToken = (payload: TokenPayload): string => {
  */
 export const verifyAccessToken = (token: string): TokenPayload => {
   try {
-    return jwt.verify(token, JWT_SECRET) as TokenPayload;
+    return jwt.verify(token, getJwtSecret()) as TokenPayload;
   } catch (error) {
     throw new UnauthorizedError('Invalid or expired access token');
   }
@@ -42,7 +99,7 @@ export const verifyAccessToken = (token: string): TokenPayload => {
  */
 export const verifyRefreshToken = (token: string): TokenPayload => {
   try {
-    return jwt.verify(token, REFRESH_SECRET) as TokenPayload;
+    return jwt.verify(token, getRefreshSecret()) as TokenPayload;
   } catch (error) {
     throw new UnauthorizedError('Invalid or expired refresh token');
   }

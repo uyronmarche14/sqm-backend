@@ -105,6 +105,11 @@ describe('AuthService login SQMP assignment access', () => {
     hashMock.hashPassword.mockResolvedValue('new-hash');
     jwtMock.generateAccessToken.mockReturnValue('access-token');
     jwtMock.generateRefreshToken.mockReturnValue('refresh-token');
+    jwtMock.verifyRefreshToken.mockReturnValue({
+      userId: 'user-1',
+      roleId: 'role-1',
+      iat: Math.floor(new Date('2026-03-12T00:00:00.000Z').getTime() / 1000),
+    });
     notificationMock.sendPasswordChanged.mockResolvedValue({
       delivered: true,
       transport: 'smtp',
@@ -513,5 +518,53 @@ describe('AuthService login SQMP assignment access', () => {
 
     expect(result.accessibleForms).toEqual(['5M1EJudgementSec-06-17']);
     expect(result.userMenu).toEqual(['5M1E']);
+  });
+
+  it('issues a rolling access and refresh token pair when a valid refresh token is presented', async () => {
+    jwtMock.generateAccessToken.mockReturnValueOnce('rotated-access-token');
+    jwtMock.generateRefreshToken.mockReturnValueOnce('rotated-refresh-token');
+
+    const service = new AuthService();
+    const result = await service.refreshTokens('refresh-token');
+
+    expect(result).toEqual({
+      accessToken: 'rotated-access-token',
+      refreshToken: 'rotated-refresh-token',
+    });
+    expect(authRepositoryMock.findUserById).toHaveBeenCalledWith('user-1');
+  });
+
+  it('rejects refresh when the token predates the latest password change', async () => {
+    authRepositoryMock.findUserById.mockResolvedValue({
+      user_id: 'user-1',
+      role_id: 'role-1',
+      role_name: 'ENGINEER',
+      full_name: 'Checker User',
+      email: 'checker@example.com',
+      site_id: 'site-1',
+      creation_date: '2026-03-12T00:00:00.000Z',
+      active_flag: true,
+      change_pw: false,
+      local_user: true,
+      login_flag: true,
+      last_update: '2026-03-13T00:00:00.000Z',
+      updateby: 'seed',
+      last_pasword_change: '2026-03-13T00:00:00.000Z',
+      password: 'hashed-password',
+    });
+    const service = new AuthService();
+
+    await expect(service.refreshTokens('refresh-token')).rejects.toThrow(
+      'Refresh token expired. Please sign in again.',
+    );
+  });
+
+  it('returns a successful logout response without requiring server-side session state', async () => {
+    const service = new AuthService();
+
+    await expect(service.logout('refresh-token')).resolves.toEqual({
+      status: 'success',
+      message: 'Successfully logged out',
+    });
   });
 });

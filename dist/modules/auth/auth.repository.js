@@ -35,9 +35,6 @@ export class AuthRepository {
     findCurrentUserRoleAccessRecords(userId) {
         return authUserRepository.findCurrentUserRoleAccessRecords(userId);
     }
-    async updateUserToken(_userId, _refreshToken) {
-        // Implement token saving logic if storing in DB for revoking later.
-    }
     findAssignedSqmpAccessibleForms(userId) {
         return sqmpAssignedAccessRepository.findAssignedSqmpAccessibleForms(userId);
     }
