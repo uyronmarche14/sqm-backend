@@ -82,8 +82,9 @@ export class PermissionService {
   private recordGrantsAction(permission: Record<string, unknown>, action: PermissionAction): boolean {
     switch (action) {
       case 'view':
+        return this.hasPermissionValue(permission.can_view);
       case 'viewlist':
-        return this.hasPermissionValue(permission.can_view) || this.hasPermissionValue(permission.can_viewlist);
+        return this.hasPermissionValue(permission.can_viewlist);
       case 'add':
         return this.hasPermissionValue(permission.can_add);
       case 'edit':
@@ -98,7 +99,7 @@ export class PermissionService {
       case 'release':
         return this.hasPermissionValue(permission.can_approve);
       case 'check':
-        return this.hasPermissionValue(permission.can_check) || this.hasPermissionValue(permission.can_approve);
+        return this.hasPermissionValue(permission.can_check);
       case 'print':
         return this.hasPermissionValue(permission.can_print);
       case 'export':
@@ -154,8 +155,11 @@ export class PermissionService {
     const actions = new Set<PermissionAction>();
     const has = (value: unknown) => this.hasPermissionValue(value);
 
-    if (has(permission.can_view) || has(permission.can_viewlist)) {
+    if (has(permission.can_view)) {
       actions.add('view');
+    }
+
+    if (has(permission.can_viewlist)) {
       actions.add('viewlist');
     }
 
@@ -176,7 +180,6 @@ export class PermissionService {
     if (has(permission.can_approve)) {
       actions.add('approve');
       actions.add('reject');
-      actions.add('check');
       actions.add('release');
     }
 
@@ -307,7 +310,7 @@ export class PermissionService {
       return true;
     }
 
-    return grantedActions.includes(action) || (action === 'viewlist' && grantedActions.includes('view'));
+    return grantedActions.includes(action);
   }
 
   private async hasRolePermission(userId: string, formId: string, action: PermissionAction): Promise<boolean> {
@@ -366,10 +369,6 @@ export class PermissionService {
         if (await this.hasRolePermission(userId, formCode, action)) {
           return true;
         }
-
-        if (action === 'viewlist' && await this.hasRolePermission(userId, formCode, 'view')) {
-          return true;
-        }
       }
     }
 
@@ -388,10 +387,6 @@ export class PermissionService {
 
       if (actions.includes(action)) {
         return true;
-      }
-
-      if (action === 'view' || action === 'viewlist') {
-        return actions.includes('view');
       }
 
       return false;

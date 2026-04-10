@@ -4,34 +4,13 @@ import { createModuleUpload, logUploads, handleUploadError } from '../../middlew
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess.js';
-import { permissionService } from '../../shared/services/permission.service.js';
-import { ForbiddenError, UnauthorizedError } from '../../shared/errors/AppError.js';
 
 const router = Router();
 const upload = createModuleUpload('sqpr', { attachmentType: 'sqpr-main' });
 
 // Protect all routes
 router.use(requireAuth);
-
-router.get('/', async (req, _res, next) => {
-  try {
-    const userId = (req as any).user?.userId || (req as any).user?.id;
-    if (!userId) {
-      throw new UnauthorizedError('Authentication required');
-    }
-
-    const canView = await permissionService.checkModulePermission(userId, 'SQPR', 'view');
-    const canViewList = await permissionService.checkModulePermission(userId, 'SQPR', 'viewlist');
-
-    if (!canView && !canViewList) {
-      throw new ForbiddenError('Access denied to SQPR module');
-    }
-
-    next();
-  } catch (error) {
-    next(error);
-  }
-}, sqprController.getAll);
+router.get('/', requireModuleAccess('SQPR', 'viewlist'), sqprController.getAll);
 router.get('/:id', requireModuleAccess('SQPR', 'view'), sqprController.getById);
 
 // Document Downloader

@@ -649,8 +649,70 @@ describe('PermissionService SQMP assigned-form fallback', () => {
       { formId: 'SQPR-03-02', assignmentRole: 'approver' },
     ]);
 
-    expect(coverage.baselineActions).toEqual(expect.arrayContaining(['view', 'viewlist', 'approve', 'reject', 'check']));
+    expect(coverage.baselineActions).toEqual(expect.arrayContaining(['view', 'viewlist', 'approve', 'reject']));
     expect(coverage.missingBaselineActions).toEqual([]);
     expect(coverage.reliesOnAssignment).toBe(false);
+  });
+
+  it('does not treat can_view as implicit viewlist access', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-view-only',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery([
+      { form_id: 'form-uuid-sqpr-draft', form_name: 'SQPR-03-01' },
+    ]);
+    const permissionQuery = createQuery([
+      {
+        form_id: 'form-uuid-sqpr-draft',
+        active_flag: 1,
+        can_view: 1,
+        can_viewlist: 0,
+      },
+    ]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+
+    await expect(service.checkModulePermission('viewer-1', 'SQPR', 'view')).resolves.toBe(true);
+    await expect(service.checkModulePermission('viewer-1', 'SQPR', 'viewlist')).resolves.toBe(false);
+  });
+
+  it('does not treat can_approve as implicit check access', async () => {
+    const userQuery = createQuery({
+      role_id: 'role-approver',
+      role_name: 'ENGINEER',
+    });
+    const formsQuery = createQuery([
+      { form_id: 'form-uuid-qmqa-approval', form_name: 'QMQA-05-03' },
+    ]);
+    const permissionQuery = createQuery([
+      {
+        form_id: 'form-uuid-qmqa-approval',
+        active_flag: 1,
+        can_view: 1,
+        can_viewlist: 1,
+        can_approve: 1,
+        can_check: 0,
+      },
+    ]);
+
+    dbMock.selectFrom.mockImplementation((table: string) => {
+      if (table === 'USERS as u') return userQuery;
+      if (table === 'FORMS') return formsQuery;
+      if (table === 'ROLE_ACCESS') return permissionQuery;
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    const service = new PermissionService();
+
+    await expect(service.checkPermission('approver-1', 'QMQA-05-03', 'approve')).resolves.toBe(true);
+    await expect(service.checkPermission('approver-1', 'QMQA-05-03', 'check')).resolves.toBe(false);
   });
 });

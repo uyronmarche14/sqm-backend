@@ -2,43 +2,12 @@ import express from 'express';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { requirePermission } from '../../shared/middleware/requirePermission.js';
 import { requireAnyPermission } from '../../shared/middleware/requireAnyPermission.js';
+import { requireLookupAccess } from './lookup-access.middleware.js';
 import * as ctrl from './master-data.controller.js';
 
 const router = express.Router();
 // All master data endpoints require authentication
 router.use(requireAuth);
-
-// Workflow-safe lookup endpoints
-router.get('/lookup/sites', ctrl.sitesCtrl.getAll);
-router.get('/lookup/suppliers', ctrl.suppliersCtrl.getAll);
-router.get('/lookup/products', ctrl.productsCtrl.getAll);
-router.get('/lookup/models', ctrl.modelsCtrl.getAll);
-router.get('/lookup/mfg-areas', ctrl.mfgAreasCtrl.getAll);
-router.get('/lookup/defect-categories', ctrl.defectCatsCtrl.getAll);
-router.get('/lookup/defects', ctrl.defectsCtrl.getAll);
-router.get('/lookup/defect-classes', ctrl.defectClassesCtrl.getAll);
-router.get('/lookup/dispositions', ctrl.dispositionsCtrl.getAll);
-router.get('/lookup/severity', ctrl.severityCtrl.getAll);
-router.get('/lookup/aql', ctrl.aqlCtrl.getAll);
-router.get('/lookup/inspection-categories', ctrl.inspCatsCtrl.getAll);
-router.get('/lookup/inspection-methods', ctrl.inspMethodsCtrl.getAll);
-router.get('/lookup/inspectors', ctrl.inspectorsCtrl.getAll);
-router.get('/lookup/mnr-types', ctrl.generalMasterCtrl.getAll);
-router.get('/lookup/general', ctrl.generalMasterCtrl.getAll);
-router.get('/lookup/parts', ctrl.partClassCtrl.getAll);
-router.get('/lookup/part-types', ctrl.partTypesCtrl.getAll);
-router.get('/lookup/part-data-categories', ctrl.partDataCatsCtrl.getAll);
-router.get('/lookup/part-dim-categories', ctrl.partDimCatsCtrl.getAll);
-router.get('/lookup/part-noise-categories', ctrl.partNoiseCatsCtrl.getAll);
-router.get('/lookup/parts-catalog', ctrl.partsCatalogCtrl.getAll);
-router.get('/lookup/supplier-incharges', ctrl.supplierInchargesCtrl.getAll);
-router.get('/lookup/supplier-information', ctrl.supplierInfoCtrl.getAll);
-router.get('/lookup/supplier-information/by-supplier/:supplierId', ctrl.getSupplierInfoBySupplier);
-router.get('/lookup/control-no-preview/sqmp', ctrl.getSqmpControlNoPreview);
-router.get('/lookup/control-no-preview/sfr', ctrl.getSfrControlNoPreview);
-router.get('/lookup/audit-categories', ctrl.auditCatsCtrl.getAll);
-router.get('/lookup/audit-types', ctrl.auditTypesCtrl.getAll);
-router.get('/lookup/five-m1e-categories', ctrl.fiveM1ECatsCtrl.getAll);
 
 const maintenanceAccess = (formIds: string[]) => ({
   list: requireAnyPermission(formIds, 'viewlist'),
@@ -93,6 +62,43 @@ const COARSE_MAINTENANCE = {
   edit: requirePermission('MAINTENANCE', 'edit'),
   delete: requirePermission('MAINTENANCE', 'delete'),
 };
+
+const workflowLookupAccess = (
+  maintenanceFormIds: string[],
+  modules: Parameters<typeof requireLookupAccess>[0]['modules'],
+) => requireLookupAccess({ maintenanceFormIds, modules });
+
+// Workflow-safe lookup endpoints
+router.get('/lookup/sites', workflowLookupAccess(['SITE-06-01', 'SITE-06-02'], ['MNR', 'SQM_PLAN', 'SQPR', 'QMQA', 'QMQA_MEDIA', 'OGI', 'NEWPARTS', '5M1E']), ctrl.sitesCtrl.getAll);
+router.get('/lookup/suppliers', workflowLookupAccess(['SUPPLIER-06-01', 'SUPPLIER-06-02'], ['MNR', 'SQM_PLAN', 'SQPR', 'QMQA', 'QMQA_MEDIA', 'OGI', 'NEWPARTS', '5M1E']), ctrl.suppliersCtrl.getAll);
+router.get('/lookup/products', workflowLookupAccess(['PRODUCT-06-01', 'PRODUCT-06-02'], ['MNR', '5M1E']), ctrl.productsCtrl.getAll);
+router.get('/lookup/models', workflowLookupAccess(['MODEL-06-01', 'MODEL-06-02'], ['MNR', 'SQM_PLAN', 'NEWPARTS', '5M1E']), ctrl.modelsCtrl.getAll);
+router.get('/lookup/mfg-areas', workflowLookupAccess(['MFGAREA-08-01', 'MFGAREA-08-02'], ['MNR']), ctrl.mfgAreasCtrl.getAll);
+router.get('/lookup/defect-categories', workflowLookupAccess(['DEFECTCATEGORY-07-01', 'DEFECTCATEGORY-07-02'], ['MNR']), ctrl.defectCatsCtrl.getAll);
+router.get('/lookup/defects', workflowLookupAccess(['DEFECT-07-01', 'DEFECT-07-02'], ['MNR', 'NEWPARTS']), ctrl.defectsCtrl.getAll);
+router.get('/lookup/defect-classes', workflowLookupAccess(['DEFECTCLASS-07-01', 'DEFECTCLASS-07-02'], ['NEWPARTS']), ctrl.defectClassesCtrl.getAll);
+router.get('/lookup/dispositions', workflowLookupAccess(['DISPOSITION-06-01', 'DISPOSITION-06-02'], ['NEWPARTS']), ctrl.dispositionsCtrl.getAll);
+router.get('/lookup/severity', workflowLookupAccess(['SEVERITY-09-01', 'SEVERITY-09-02'], ['NEWPARTS']), ctrl.severityCtrl.getAll);
+router.get('/lookup/aql', workflowLookupAccess(['AQL-06-01', 'AQL-06-02'], ['NEWPARTS']), ctrl.aqlCtrl.getAll);
+router.get('/lookup/inspection-categories', workflowLookupAccess(['INSPECTIONCATEGORY-09-01', 'INSPECTIONCATEGORY-09-02'], ['NEWPARTS']), ctrl.inspCatsCtrl.getAll);
+router.get('/lookup/inspection-methods', workflowLookupAccess(['INSPECTIONMETHOD-09-01', 'INSPECTIONMETHOD-09-02'], ['NEWPARTS']), ctrl.inspMethodsCtrl.getAll);
+router.get('/lookup/inspectors', workflowLookupAccess(['INSPECTOR-08-01', 'INSPECTOR-08-02'], ['NEWPARTS']), ctrl.inspectorsCtrl.getAll);
+router.get('/lookup/mnr-types', workflowLookupAccess(['MNRTYPE-02-01', 'MNRTYPE-02-02'], ['MNR']), ctrl.generalMasterCtrl.getAll);
+router.get('/lookup/general', workflowLookupAccess(['MNRTYPE-02-01', 'MNRTYPE-02-02'], ['MNR']), ctrl.generalMasterCtrl.getAll);
+router.get('/lookup/parts', workflowLookupAccess(['PART-06-01', 'PART-06-02'], ['NEWPARTS']), ctrl.partClassCtrl.getAll);
+router.get('/lookup/part-types', workflowLookupAccess(['PARTTYPE-06-01', 'PARTTYPE-06-02'], ['NEWPARTS', '5M1E']), ctrl.partTypesCtrl.getAll);
+router.get('/lookup/part-data-categories', workflowLookupAccess(['PARTDATACATEGORY-08-01', 'PARTDATACATEGORY-08-02'], ['NEWPARTS']), ctrl.partDataCatsCtrl.getAll);
+router.get('/lookup/part-dim-categories', workflowLookupAccess(['PARTDIMENSIONCATEGORY-08-01', 'PARTDIMENSIONCATEGORY-08-02'], ['NEWPARTS']), ctrl.partDimCatsCtrl.getAll);
+router.get('/lookup/part-noise-categories', workflowLookupAccess(['PARTNOISECATEGORY-08-01', 'PARTNOISECATEGORY-08-02'], ['NEWPARTS']), ctrl.partNoiseCatsCtrl.getAll);
+router.get('/lookup/parts-catalog', workflowLookupAccess(['PART-06-01', 'PART-06-02'], ['MNR', 'NEWPARTS', 'OGI']), ctrl.partsCatalogCtrl.getAll);
+router.get('/lookup/supplier-incharges', workflowLookupAccess(['SUPPLIERINCHARGE-08-01', 'SUPPLIERINCHARGE-08-02'], ['MNR', 'SQM_PLAN', 'SQPR', 'QMQA', 'QMQA_MEDIA']), ctrl.supplierInchargesCtrl.getAll);
+router.get('/lookup/supplier-information', workflowLookupAccess(['SUPPLIERINFORMATION-02-01', 'SUPPLIERINFORMATION-02-02', 'SUPPLIERINFORMATION-02-03', 'SUPPLIERINFORMATION-02-04'], []), ctrl.supplierInfoCtrl.getAll);
+router.get('/lookup/supplier-information/by-supplier/:supplierId', workflowLookupAccess(['SUPPLIERINFORMATION-02-01', 'SUPPLIERINFORMATION-02-02', 'SUPPLIERINFORMATION-02-03', 'SUPPLIERINFORMATION-02-04'], []), ctrl.getSupplierInfoBySupplier);
+router.get('/lookup/control-no-preview/sqmp', workflowLookupAccess(['FORMS-06-01', 'FORMS-06-02'], ['SQM_PLAN']), ctrl.getSqmpControlNoPreview);
+router.get('/lookup/control-no-preview/sfr', workflowLookupAccess(['FORMS-06-01', 'FORMS-06-02'], ['SQPR']), ctrl.getSfrControlNoPreview);
+router.get('/lookup/audit-categories', workflowLookupAccess(['AUDITCATEGORY-06-01', 'AUDITCATEGORY-06-02'], ['QMQA', 'QMQA_MEDIA']), ctrl.auditCatsCtrl.getAll);
+router.get('/lookup/audit-types', workflowLookupAccess(['AUDITTYPE-06-01', 'AUDITTYPE-06-02'], ['QMQA', 'QMQA_MEDIA']), ctrl.auditTypesCtrl.getAll);
+router.get('/lookup/five-m1e-categories', workflowLookupAccess(['PARTCLASSCATEGORY-07-01', 'PARTCLASSCATEGORY-07-02'], ['5M1E']), ctrl.fiveM1ECatsCtrl.getAll);
 
 // ============================================================================
 // Core Lookups
