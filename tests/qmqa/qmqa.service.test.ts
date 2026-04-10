@@ -29,6 +29,7 @@ const permissionServiceMock = vi.hoisted(() => ({
 
 const attachmentServiceMock = vi.hoisted(() => ({
   downloadAttachment: vi.fn(),
+  syncAttachments: vi.fn(),
 }));
 
 vi.mock('../../src/modules/qmqa/qmqa.repository.js', () => ({
@@ -69,6 +70,13 @@ describe('QmqaService workflow metadata hydration', () => {
       filePath: '/tmp/test.pdf',
       fileName: 'test.pdf',
       mimeType: 'application/pdf',
+    });
+    attachmentServiceMock.syncAttachments.mockResolvedValue({
+      kept: [],
+      created: [],
+      updated: [],
+      removed: [],
+      cleanupQueue: [],
     });
   });
 

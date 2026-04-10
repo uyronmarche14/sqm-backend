@@ -267,7 +267,7 @@ describe('MnrWorkflowService', () => {
     expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, {
       userId: 'supplier-attn-1',
       supplierId: undefined,
-    });
+    }, []);
     expect(result.data).toEqual(expect.objectContaining({
       id: 'mnr-1',
       status: 'IS',
@@ -288,7 +288,7 @@ describe('MnrWorkflowService', () => {
     expect(saveResponseContentMock).toHaveBeenCalledWith('mnr-1', { d1: 'team' }, {
       userId: 'supplier-attn-1',
       supplierId: undefined,
-    });
+    }, []);
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: 'IR',
       updateby: 'supplier-attn-1',
@@ -317,7 +317,7 @@ describe('MnrWorkflowService', () => {
       cycle2ApproverId: 'approver-2',
     }, {
       userId: 'issuer-1',
-    });
+    }, []);
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: 'RW',
       updateby: 'issuer-1',

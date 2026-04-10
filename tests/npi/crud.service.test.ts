@@ -13,6 +13,18 @@ const attachmentServiceMock = vi.hoisted(() => ({
   downloadAttachment: vi.fn(),
 }));
 
+const assignmentValidationMock = vi.hoisted(() => ({
+  validateChecker: vi.fn(),
+  validateApprover: vi.fn(),
+}));
+
+const npiLegacyParityServiceMock = vi.hoisted(() => ({
+  prepareForCreate: vi.fn(),
+  prepareForUpdate: vi.fn(),
+  evaluateDetailedRecord: vi.fn(),
+  resolveFormState: vi.fn(),
+}));
+
 vi.mock('../../src/shared/services/control-number.service.js', () => ({
   controlNumberService: controlNumberServiceMock,
 }));
@@ -23,6 +35,15 @@ vi.mock('../../src/shared/services/permission.service.js', () => ({
 
 vi.mock('../../src/shared/services/attachment.service.js', () => ({
   attachmentService: attachmentServiceMock,
+}));
+
+vi.mock('../../src/shared/utils/assignment-validation.utils.js', () => ({
+  validateChecker: assignmentValidationMock.validateChecker,
+  validateApprover: assignmentValidationMock.validateApprover,
+}));
+
+vi.mock('../../src/modules/npi/services/NpiLegacyParityService.js', () => ({
+  npiLegacyParityService: npiLegacyParityServiceMock,
 }));
 
 import { NpiCrudService } from '../../src/modules/npi/services/NpiCrudService.js';
@@ -89,6 +110,76 @@ describe('NpiCrudService legacy child-table parity', () => {
       filePath: '/tmp/npi.txt',
       fileName: 'npi.txt',
       mimeType: 'text/plain',
+    });
+    assignmentValidationMock.validateChecker.mockResolvedValue(undefined);
+    assignmentValidationMock.validateApprover.mockResolvedValue(undefined);
+    npiLegacyParityServiceMock.prepareForCreate.mockImplementation(async (payload: any) => ({
+      visual_categories: payload.visual_categories ?? [],
+      data_categories: payload.data_categories ?? [],
+      dimension_categories: payload.dimension_categories ?? [],
+      noise_categories: payload.noise_categories ?? [],
+      material_certificates: payload.material_certificates ?? [],
+      sectionJudgments: {
+        visual: 'Accept',
+        data: 'Accept',
+        dimension: 'Accept',
+        noise: 'Accept',
+        material: 'Accept',
+      },
+      overallJudgment: 'Accept',
+      submitBlockers: [],
+      verificationMode: 'DATA',
+      dataCategoryReadOnly: false,
+      requiresOgiRefNo: false,
+      replaceFlags: {
+        data: payload.data_categories !== undefined,
+        dimension: payload.dimension_categories !== undefined,
+        noise: payload.noise_categories !== undefined,
+        material: payload.material_certificates !== undefined,
+      },
+    }));
+    npiLegacyParityServiceMock.prepareForUpdate.mockImplementation(async (payload: any) => ({
+      visual_categories: payload.visual_categories ?? [],
+      data_categories: payload.data_categories ?? [],
+      dimension_categories: payload.dimension_categories ?? [],
+      noise_categories: payload.noise_categories ?? [],
+      material_certificates: payload.material_certificates ?? [],
+      sectionJudgments: {
+        visual: 'Accept',
+        data: 'Accept',
+        dimension: 'Accept',
+        noise: 'Accept',
+        material: 'Accept',
+      },
+      overallJudgment: 'Accept',
+      submitBlockers: [],
+      verificationMode: 'DATA',
+      dataCategoryReadOnly: false,
+      requiresOgiRefNo: false,
+      replaceFlags: {
+        data: payload.data_categories !== undefined,
+        dimension: payload.dimension_categories !== undefined,
+        noise: payload.noise_categories !== undefined,
+        material: payload.material_certificates !== undefined,
+      },
+    }));
+    npiLegacyParityServiceMock.evaluateDetailedRecord.mockResolvedValue({
+      aqlMinorDefect: null,
+      aqlMajorDefect: null,
+      sampleSize: 0,
+      visualJudgment: 'Accept',
+      sectionJudgments: {
+        visual: 'Accept',
+        data: 'Accept',
+        dimension: 'Accept',
+        noise: 'Accept',
+        material: 'Accept',
+      },
+      overallJudgment: 'Accept',
+      submitBlockers: [],
+      verificationMode: 'DATA',
+      dataCategoryReadOnly: false,
+      requiresOgiRefNo: false,
     });
   });
 

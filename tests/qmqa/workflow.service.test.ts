@@ -313,7 +313,7 @@ describe('QmqaWorkflowService', () => {
       verification_remarks: 'assigned',
       cycle2_checker_id: 'checker-2',
       cycle2_approver_id: 'approver-2',
-    });
+    }, []);
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
       request_status: '16',
       updateby: 'issuer-1',
@@ -373,7 +373,7 @@ describe('QmqaWorkflowService', () => {
       updateby: 'approver-2',
     }));
     expect(tx.set).toHaveBeenCalledWith(expect.objectContaining({
-      request_status: '1',
+      request_status: '19',
       updateby: 'approver-2',
     }));
     expect(approved.data).toEqual(expect.objectContaining({

@@ -13,8 +13,10 @@ vi.mock('../../npi.repository');
 
 // Mock admin check
 const mockIsAdminUser = vi.fn().mockResolvedValue(false);
+const mockIsAdminRole = vi.fn().mockReturnValue(false);
 vi.mock('../../../../shared/utils/admin.utils', () => ({
   isAdminUser: (...args: any[]) => mockIsAdminUser(...args),
+  isAdminRole: (...args: any[]) => mockIsAdminRole(...args),
 }));
 
 // Mock role permission check
@@ -87,6 +89,7 @@ describe('NpiWorkflowService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsAdminUser.mockResolvedValue(false);
+    mockIsAdminRole.mockReturnValue(false);
     mockCheckRolePermission.mockResolvedValue(false);
     lastUpdateSet = null;
 
@@ -430,6 +433,7 @@ describe('NpiWorkflowService', () => {
     });
 
     it('should return actions for admin role', () => {
+      mockIsAdminRole.mockReturnValue(true);
       const actions = service.getAvailableActions('SU', 'admin', 'ADMIN', { checker_id: 'admin' });
       expect(actions.length).toBeGreaterThan(0);
     });
