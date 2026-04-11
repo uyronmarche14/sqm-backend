@@ -95,11 +95,25 @@ export class FiveM1ERepository extends BaseRepository<'TBL_5M1E_Application'> {
     return fiveM1eCheckItemsRepository.findCheckItems(controlNo);
   }
 
-  insertCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
+  insertCheckItems(controlNo: string, items: Array<{
+    check_item?: string;
+    judgement?: string;
+    remarks?: string;
+    attribute_1?: string;
+    attribute_2?: string;
+    attachments?: Array<{ file_name?: string; attribute1?: string; attribute2?: string }>;
+  }>) {
     return fiveM1eCheckItemsRepository.insertCheckItems(controlNo, items);
   }
 
-  replaceCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
+  replaceCheckItems(controlNo: string, items: Array<{
+    check_item?: string;
+    judgement?: string;
+    remarks?: string;
+    attribute_1?: string;
+    attribute_2?: string;
+    attachments?: Array<{ file_name?: string; attribute1?: string; attribute2?: string }>;
+  }>) {
     return fiveM1eCheckItemsRepository.replaceCheckItems(controlNo, items);
   }
 

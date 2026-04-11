@@ -3,7 +3,10 @@ import { mainSqmpService } from './main.service.js';
 import { SqmpCreateSchema, SqmpUpdateSchema, SqmpIdParamSchema, SqmpActionSchema, SqmpControlNoPreviewSchema } from './main.schema.js';
 import { successResponse } from '../../../shared/utils/api-response.js';
 import { sqmpWorkflowService } from '../workflow/workflow.service.js';
-import { resolveWorkflowListScope } from '../../../shared/utils/workflow-access.js';
+import {
+  resolveWorkflowListScope,
+  resolveWorkflowListSurface,
+} from '../../../shared/utils/workflow-access.js';
 
 export class MainSqmpController {
   async getAll(req: Request, res: Response, next: NextFunction) {
@@ -15,6 +18,7 @@ export class MainSqmpController {
         user?.userId,
         user?.roleId,
         resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }),
+        resolveWorkflowListSurface({ surface: req.query.surface }),
       );
       res.json(successResponse(records));
     } catch (error) {
@@ -27,7 +31,12 @@ export class MainSqmpController {
     try {
       const { id } = SqmpIdParamSchema.parse({ params: req.params }).params;
       const user = (req as any).user;
-      const record = await mainSqmpService.getRecordById(id, user?.userId, user?.roleId);
+      const record = await mainSqmpService.getRecordById(
+        id,
+        user?.userId,
+        user?.roleId,
+        resolveWorkflowListSurface({ surface: req.query.surface }),
+      );
       return res.json(successResponse(record));
     } catch (error) {
       console.error('[SQMP-MAIN] GET BY ID error:', error);
@@ -219,6 +228,7 @@ export class MainSqmpController {
         attachmentId as string,
         user?.userId || user?.id,
         user?.roleId,
+        resolveWorkflowListSurface({ surface: req.query.surface }),
       );
       
       res.setHeader('Content-Type', mimeType);

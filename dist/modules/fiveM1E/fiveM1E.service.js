@@ -85,6 +85,11 @@ function toRequiredLegacyString(value, fallback = '') {
     }
     return String(value);
 }
+function inferLegacyAttachmentFileName(value, fallback = 'attachment') {
+    const raw = String(value || '').split('?')[0] || '';
+    const normalized = raw.split(/[\\/]/).filter(Boolean);
+    return normalized[normalized.length - 1] || fallback;
+}
 const FIVE_M1E_IGNORED_WRITE_FIELDS = [
     'control_no',
     'id',
@@ -456,6 +461,68 @@ export class FiveM1EService {
             pathValueResolver: ({ uploadedFile, existing }) => uploadedFile ? null : (existing?.storagePath ?? null),
         });
     }
+    resolveCheckItemUploadedFile(attachment, files) {
+        const uploadId = attachment.client_upload_id || attachment.clientUploadId;
+        const requestedField = attachment.file_field ||
+            attachment.fileField ||
+            (uploadId ? `file:5m1e-check-item:${uploadId}` : null);
+        if (requestedField) {
+            const matchedByField = files.find((file) => file.fieldname === requestedField);
+            if (matchedByField) {
+                return matchedByField;
+            }
+        }
+        const expectedOriginalName = attachment.file_name || attachment.fileName;
+        if (!expectedOriginalName) {
+            return undefined;
+        }
+        return files.find((file) => file.originalname === expectedOriginalName);
+    }
+    normalizeCheckItemsForPersistence(checkItems, files) {
+        if (!Array.isArray(checkItems)) {
+            return checkItems;
+        }
+        return checkItems.map((item) => {
+            const sourceAttachments = Array.isArray(item.attachments) && item.attachments.length > 0
+                ? item.attachments
+                : (item.attribute_2
+                    ? [{
+                            file_name: inferLegacyAttachmentFileName(item.attribute_2, item.check_item || 'attachment'),
+                            attribute1: item.attribute_2,
+                        }]
+                    : []);
+            const attachments = sourceAttachments
+                .map((attachment) => {
+                const uploadedFile = this.resolveCheckItemUploadedFile(attachment, files);
+                const persistedPath = uploadedFile?.path ||
+                    attachment.attribute1 ||
+                    attachment.attribute_1 ||
+                    attachment.download_url ||
+                    null;
+                const fileName = attachment.file_name ||
+                    uploadedFile?.originalname ||
+                    inferLegacyAttachmentFileName(persistedPath, item.check_item || 'attachment');
+                if (!fileName) {
+                    return null;
+                }
+                return {
+                    id: attachment.id,
+                    file_name: fileName,
+                    attribute1: persistedPath,
+                    attribute2: attachment.attribute2 || attachment.attribute_2 || null,
+                };
+            })
+                .filter((attachment) => Boolean(attachment));
+            return {
+                ...item,
+                attachments,
+                attribute_2: attachments[0]?.attribute1 ||
+                    attachments[0]?.file_name ||
+                    item.attribute_2 ||
+                    null,
+            };
+        });
+    }
     async hasReadableRolePermission(userId, formId) {
         return ((await this.permissions.checkRolePermission(userId, formId, 'viewlist')) ||
             (await this.permissions.checkRolePermission(userId, formId, 'view')));
@@ -700,18 +767,7 @@ export class FiveM1EService {
             await this.repository.replaceActionItems(cn, normalized.action_items);
         }
         if (normalized.check_items && normalized.check_items.length > 0) {
-            if (files && files.length > 0) {
-                normalized.check_items.forEach((item) => {
-                    if (item.attribute_2 && typeof item.attribute_2 === 'string') {
-                        const uploadedFile = files.find(f => f.originalname === item.attribute_2);
-                        if (uploadedFile) {
-                            console.log(`[5M1E Service] Processing check_item attachment: ${item.attribute_2} -> ${uploadedFile.filename}`);
-                            item.attribute_2 = uploadedFile.path;
-                        }
-                    }
-                });
-            }
-            await this.repository.replaceCheckItems(cn, normalized.check_items);
+            await this.repository.replaceCheckItems(cn, this.normalizeCheckItemsForPersistence(normalized.check_items, files) || []);
         }
         if (normalized.status_remarks && normalized.status_remarks.length > 0) {
             await this.repository.replaceStatusRemarks(cn, normalized.status_remarks);
@@ -925,11 +981,28 @@ export class FiveM1EService {
                 attribute_01: ai.Attribute01, attribute_02: ai.Attribute02, attribute_03: ai.Attribute03,
                 attribute_04: ai.Attribute04, attribute_05: ai.Attribute05,
             })),
-            check_items: checkItems.map((ci) => ({
-                id: ci.ID, check_item: ci.CheckItem, judgement: ci.Judgement,
-                remarks: ci.Remarks, attribute_1: ci.Attribute1, attribute_2: ci.Attribute2,
-                attribute_3: ci.Attribute3, attribute_4: ci.Attribute4, attribute_5: ci.Attribute5,
-            })),
+            check_items: checkItems.map((ci) => {
+                const attachments = Array.isArray(ci.attachments) ? ci.attachments : [];
+                const firstAttachment = attachments[0];
+                return {
+                    id: ci.ID,
+                    check_item: ci.CheckItem,
+                    judgement: ci.Judgement,
+                    remarks: ci.Remarks,
+                    attribute_1: ci.Attribute1,
+                    attribute_2: firstAttachment?.attribute1 || firstAttachment?.FileName || ci.Attribute2,
+                    attribute_3: ci.Attribute3,
+                    attribute_4: ci.Attribute4,
+                    attribute_5: ci.Attribute5,
+                    attachments: attachments.map((attachment) => ({
+                        id: String(attachment.ID || ''),
+                        file_name: attachment.FileName,
+                        attribute1: attachment.attribute1 || attachment.Attribute1 || null,
+                        attribute2: attachment.attribute2 || attachment.Attribute2 || null,
+                        download_url: attachment.attribute1 || attachment.Attribute1 || null,
+                    })),
+                };
+            }),
             status_remarks: statusRemarks.map((sr) => ({
                 id: sr.ID, remarks: sr.Remarks, remark_by: sr.RemarkBy, status: sr.Status,
                 create_date: sr.CreateDate,
@@ -1080,18 +1153,7 @@ export class FiveM1EService {
             await this.repository.replaceActionItems(cn, normalized.action_items);
         }
         if (normalized.check_items) {
-            if (files && files.length > 0) {
-                normalized.check_items.forEach((item) => {
-                    if (item.attribute_2 && typeof item.attribute_2 === 'string') {
-                        const uploadedFile = files.find(f => f.originalname === item.attribute_2);
-                        if (uploadedFile) {
-                            console.log(`[5M1E Service] Processing check_item attachment: ${item.attribute_2} -> ${uploadedFile.filename}`);
-                            item.attribute_2 = uploadedFile.path;
-                        }
-                    }
-                });
-            }
-            await this.repository.replaceCheckItems(cn, normalized.check_items);
+            await this.repository.replaceCheckItems(cn, this.normalizeCheckItemsForPersistence(normalized.check_items, files) || []);
         }
         if (normalized.status_remarks) {
             await this.repository.replaceStatusRemarks(cn, normalized.status_remarks);

@@ -2,11 +2,47 @@ import { db } from '../../../shared/infrastructure/db.js';
 
 export class FiveM1eCheckItemsRepository {
   async findCheckItems(controlNo: string) {
-    return await db.selectFrom('TBL_5M1E_CheckItems').selectAll().where('ControlNo', '=', controlNo).execute();
+    const items = await db
+      .selectFrom('TBL_5M1E_CheckItems')
+      .selectAll()
+      .where('ControlNo', '=', controlNo)
+      .execute();
+
+    if (items.length === 0) {
+      return [];
+    }
+
+    const attachments = await db
+      .selectFrom('TBL_5M1E_CI_Attachment')
+      .selectAll()
+      .where('ChkItemID', 'in', items.map((item) => Number(item.ID || 0)).filter(Boolean))
+      .execute();
+
+    const attachmentsByItemId = new Map<number, any[]>();
+    attachments.forEach((attachment: any) => {
+      const itemId = Number(attachment.ChkItemID || 0);
+      if (!attachmentsByItemId.has(itemId)) {
+        attachmentsByItemId.set(itemId, []);
+      }
+      attachmentsByItemId.get(itemId)!.push(attachment);
+    });
+
+    return items.map((item: any) => ({
+      ...item,
+      attachments: attachmentsByItemId.get(Number(item.ID || 0)) || [],
+    }));
   }
 
-  async insertCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
+  async insertCheckItems(controlNo: string, items: Array<{
+    check_item?: string;
+    judgement?: string;
+    remarks?: string;
+    attribute_1?: string;
+    attribute_2?: string;
+    attachments?: Array<{ file_name?: string; attribute1?: string; attribute2?: string }>;
+  }>) {
     const now = new Date();
+    const insertedItems: Array<{ id: number }> = [];
     for (const item of items) {
       const nextIdResult = await db.selectFrom('TBL_5M1E_CheckItems').select(db.fn.max('ID').as('maxId')).executeTakeFirst();
       const nextId = (Number(nextIdResult?.maxId) || 0) + 1;
@@ -21,7 +57,10 @@ export class FiveM1eCheckItemsRepository {
         Attribute2: item.attribute_2 || null,
         CreateDate: now,
       } as any).execute();
+      insertedItems.push({ id: nextId });
     }
+
+    return insertedItems;
   }
 
   async deleteCheckItemAttachmentsByControlNo(controlNo: string) {
@@ -54,10 +93,26 @@ export class FiveM1eCheckItemsRepository {
     }
   }
 
-  async replaceCheckItems(controlNo: string, items: Array<{ check_item?: string; judgement?: string; remarks?: string; attribute_1?: string; attribute_2?: string }>) {
+  async replaceCheckItems(controlNo: string, items: Array<{
+    check_item?: string;
+    judgement?: string;
+    remarks?: string;
+    attribute_1?: string;
+    attribute_2?: string;
+    attachments?: Array<{ file_name?: string; attribute1?: string; attribute2?: string }>;
+  }>) {
     await this.deleteCheckItemAttachmentsByControlNo(controlNo);
     await db.deleteFrom('TBL_5M1E_CheckItems').where('ControlNo', '=', controlNo).execute();
-    await this.insertCheckItems(controlNo, items);
+    const insertedItems = await this.insertCheckItems(controlNo, items);
+
+    for (const [index, inserted] of insertedItems.entries()) {
+      const attachments = items[index]?.attachments || [];
+      if (attachments.length > 0) {
+        await this.insertCheckItemAttachments(inserted.id, attachments);
+      }
+    }
+
+    return insertedItems;
   }
 }
 

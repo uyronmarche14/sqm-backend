@@ -1,5 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getModuleFormCodes, getSubFormFormCodes } from '@sqm/permissions-contract';
+import {
+  getModuleFormCodes,
+  getSubFormFormCodes,
+  getWorkflowSurfaceFormCodes,
+} from '@sqm/permissions-contract';
 import { sqmpRepository } from '../sqmp.repository.js';
 import { userRepository } from '../../users/user.repository.js';
 import { SQMPCreationInput, SQMPUpdateInput } from './main.schema.js';
@@ -14,8 +18,9 @@ import {
 } from '../../../shared/utils/attachment-remarks.js';
 import {
   assertWorkflowRecordAccess,
-  filterWorkflowRecordsByScope,
+  filterWorkflowRecords,
   type WorkflowListScope,
+  type WorkflowListSurface,
 } from '../../../shared/utils/workflow-access.js';
 import { permissionService } from '../../../shared/services/permission.service.js';
 import {
@@ -98,6 +103,7 @@ const SQMP_STATUS_FORM_FALLBACKS: Record<string, string[]> = {
 };
 
 const SQMP_QUEUE_FORM_CODES = getModuleFormCodes('SQM_PLAN').filter((formId) => formId.startsWith('SQMP-09-'));
+const SQMP_REFERENCE_SURFACES = ['achievement', 'search', 'report'] as const;
 const SQMP_HISTORY_STAGE_CODES = new Set<string>([
   SQMP_STAGE_CODE.CLOSED,
   SQMP_STAGE_CODE.CANCELLED,
@@ -159,6 +165,26 @@ export class MainSqmpService {
     return this.resolveRecordFormCodes(record, latestResponse).some((formId) => roleViewListForms.has(formId));
   }
 
+  private hasSurfaceViewListAccess(surface: string, roleViewListForms: Set<string>) {
+    const surfaceFormCodes = getWorkflowSurfaceFormCodes('SQM_PLAN', surface);
+    return surfaceFormCodes.some((formId) => roleViewListForms.has(formId));
+  }
+
+  private isReferenceSurfaceEligibleRecord(record: any, latestResponse: any) {
+    const metadata = this.buildWorkflowMetadata(record, latestResponse);
+    return Boolean(metadata.workflowStageCode) && metadata.workflowStageCode !== SQMP_STAGE_CODE.DRAFT;
+  }
+
+  private hasReferenceViewListAccessForRecord(record: any, latestResponse: any, roleViewListForms: Set<string>) {
+    if (!this.isReferenceSurfaceEligibleRecord(record, latestResponse)) {
+      return false;
+    }
+
+    return SQMP_REFERENCE_SURFACES.some((surface) =>
+      this.hasSurfaceViewListAccess(surface, roleViewListForms),
+    );
+  }
+
   private hasSupplierAccess(record: any, userId?: string, supplierIds: string[] = []) {
     if (!record || !userId) {
       return false;
@@ -214,11 +240,16 @@ export class MainSqmpService {
     if (this.isSupplierRole(roleName)) {
       return this.hasSupplierAccess(record, userId, supplierIds) && (
         (Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0) ||
-        SQMP_HISTORY_STAGE_CODES.has(metadata.workflowStageCode)
+        SQMP_HISTORY_STAGE_CODES.has(metadata.workflowStageCode) ||
+        this.hasReferenceViewListAccessForRecord(record, latestResponse, roleViewListForms)
       );
     }
 
     if (Array.isArray(metadata.availableActions) && metadata.availableActions.length > 0) {
+      return true;
+    }
+
+    if (this.hasReferenceViewListAccessForRecord(record, latestResponse, roleViewListForms)) {
       return true;
     }
 
@@ -229,6 +260,71 @@ export class MainSqmpService {
     return (
       this.hasRoleViewListAccessForRecord(record, latestResponse, roleViewListForms) ||
       this.isMineRecord(record, latestResponse, userId, roleName, supplierIds)
+    );
+  }
+
+  private isSurfaceVisible(
+    record: any,
+    latestResponse: any,
+    surface: WorkflowListSurface,
+    userId?: string,
+    roleName?: string,
+    supplierIds: string[] = [],
+    roleViewListForms: Set<string> = new Set(),
+  ) {
+    if (!SQMP_REFERENCE_SURFACES.includes(surface as (typeof SQMP_REFERENCE_SURFACES)[number])) {
+      return this.canReadRecord(record, latestResponse, userId, roleName, supplierIds, roleViewListForms);
+    }
+
+    if (!this.isReferenceSurfaceEligibleRecord(record, latestResponse)) {
+      return false;
+    }
+
+    if (this.isGlobalRole(roleName)) {
+      return true;
+    }
+
+    if (!this.hasSurfaceViewListAccess(surface, roleViewListForms)) {
+      return false;
+    }
+
+    if (this.isSupplierRole(roleName)) {
+      return this.hasSupplierAccess(record, userId, supplierIds);
+    }
+
+    return true;
+  }
+
+  private canAccessRecordForSurface(
+    record: any,
+    latestResponse: any,
+    userId?: string,
+    roleName?: string,
+    supplierIds: string[] = [],
+    roleViewListForms: Set<string> = new Set(),
+    userSiteId?: string | null,
+    surface?: WorkflowListSurface,
+  ) {
+    if (surface) {
+      return this.isSurfaceVisible(
+        record,
+        latestResponse,
+        surface,
+        userId,
+        roleName,
+        supplierIds,
+        roleViewListForms,
+      );
+    }
+
+    return this.canReadRecord(
+      record,
+      latestResponse,
+      userId,
+      roleName,
+      supplierIds,
+      roleViewListForms,
+      userSiteId,
     );
   }
 
@@ -502,7 +598,13 @@ export class MainSqmpService {
     return supplierUser?.user_id || normalizedAttentionId;
   }
 
-  async getAllRecords(status?: string, userId?: string, roleId?: string, scope: WorkflowListScope = 'history') {
+  async getAllRecords(
+    status?: string,
+    userId?: string,
+    roleId?: string,
+    scope: WorkflowListScope = 'history',
+    surface?: WorkflowListSurface,
+  ) {
     const roleName = await this.getRoleName(roleId);
     const userObj = userId ? await userRepository.findById(userId) : null;
     const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
@@ -518,8 +620,20 @@ export class MainSqmpService {
     );
 
     const visibleRecords = this.isGlobalRole(roleName)
-      ? records
-      : filterWorkflowRecordsByScope(records, scope, {
+      ? (surface
+          ? records.filter((record: any) =>
+              this.isSurfaceVisible(
+                record,
+                latestResponseBySqmpId.get(record.sqmp_id),
+                surface,
+                userId,
+                roleName,
+                supplierIds,
+                roleViewListForms,
+              ),
+            )
+          : records)
+      : filterWorkflowRecords(records, { scope, surface }, {
           isAssigned: (record) => {
             const latestResponse = latestResponseBySqmpId.get((record as any).sqmp_id);
             const metadata = this.buildWorkflowMetadata(
@@ -544,6 +658,16 @@ export class MainSqmpService {
               roleViewListForms,
               userObj?.site_id || null,
             ),
+          isSurfaceVisible: (record, requestedSurface) =>
+            this.isSurfaceVisible(
+              record,
+              latestResponseBySqmpId.get((record as any).sqmp_id),
+              requestedSurface,
+              userId,
+              roleName,
+              supplierIds,
+              roleViewListForms,
+            ),
         });
 
     return visibleRecords.map((r: any) => {
@@ -567,7 +691,7 @@ export class MainSqmpService {
     });
   }
 
-  async getRecordById(id: string, userId?: string, roleId?: string) {
+  async getRecordById(id: string, userId?: string, roleId?: string, surface?: WorkflowListSurface) {
     const roleName = await this.getRoleName(roleId);
     const userObj = userId ? await userRepository.findById(userId) : null;
     const supplierIds = userId && roleName.toUpperCase().includes('SUPPLIER')
@@ -580,7 +704,7 @@ export class MainSqmpService {
     const { record, mainDocuments, appendixDocuments, ccList, responses, statusRemarks } = data;
     const latestResponse = responses?.[responses.length - 1];
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(
+      allowed: this.canAccessRecordForSurface(
         record,
         latestResponse,
         userId,
@@ -588,6 +712,7 @@ export class MainSqmpService {
         supplierIds,
         roleViewListForms,
         userObj?.site_id || null,
+        surface,
       ),
       action: 'view',
       moduleName: 'SQM Plan',
@@ -1012,7 +1137,12 @@ export class MainSqmpService {
     });
   }
 
-  async downloadMainAttachment(attachmentId: string, userId?: string, roleId?: string) {
+  async downloadMainAttachment(
+    attachmentId: string,
+    userId?: string,
+    roleId?: string,
+    surface?: WorkflowListSurface,
+  ) {
     const owner = await sqmpRepository.findMainAttachmentOwner(attachmentId);
     if (!owner) {
       throw new NotFoundError('Attachment not found');
@@ -1031,7 +1161,7 @@ export class MainSqmpService {
 
     const latestResponse = data.responses?.[data.responses.length - 1];
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(
+      allowed: this.canAccessRecordForSurface(
         data.record,
         latestResponse,
         userId,
@@ -1039,6 +1169,7 @@ export class MainSqmpService {
         supplierIds,
         roleViewListForms,
         userObj?.site_id || null,
+        surface,
       ),
       action: 'view',
       moduleName: 'SQM Plan',
@@ -1047,7 +1178,12 @@ export class MainSqmpService {
     return attachmentService.downloadAttachment(owner.moduleType, attachmentId);
   }
 
-  async downloadResponseAttachment(attachmentId: string, userId?: string, roleId?: string) {
+  async downloadResponseAttachment(
+    attachmentId: string,
+    userId?: string,
+    roleId?: string,
+    surface?: WorkflowListSurface,
+  ) {
     const owner = await sqmpRepository.findResponseAttachmentOwner(attachmentId);
     if (!owner) {
       throw new NotFoundError('Attachment not found');
@@ -1066,7 +1202,7 @@ export class MainSqmpService {
 
     const latestResponse = data.responses?.[data.responses.length - 1];
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(
+      allowed: this.canAccessRecordForSurface(
         data.record,
         latestResponse,
         userId,
@@ -1074,6 +1210,7 @@ export class MainSqmpService {
         supplierIds,
         roleViewListForms,
         userObj?.site_id || null,
+        surface,
       ),
       action: 'view',
       moduleName: 'SQM Plan',

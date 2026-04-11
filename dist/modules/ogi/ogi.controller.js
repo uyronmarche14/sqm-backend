@@ -2,7 +2,7 @@ import { ogiService } from './ogi.service.js';
 import { OgiCreateSchema, OgiUpdateSchema, OgiIdParamSchema, OgiActionSchema, OgiAttachmentParamSchema } from './ogi.schema.js';
 import { successResponse } from '../../shared/utils/api-response.js';
 import { assertNoWorkflowMutationFields } from '../../shared/utils/reject-workflow-mutation-fields.js';
-import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
+import { resolveWorkflowListScope, resolveWorkflowListSurface, } from '../../shared/utils/workflow-access.js';
 export class OgiController {
     constructor() {
         this.getAll = this.getAll.bind(this);
@@ -22,7 +22,7 @@ export class OgiController {
     }
     async getAll(req, res, next) {
         try {
-            const records = await ogiService.getAllRecords(this.getActor(req), resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }));
+            const records = await ogiService.getAllRecords(this.getActor(req), resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }), resolveWorkflowListSurface({ surface: req.query.surface }));
             return res.json(successResponse(records));
         }
         catch (error) {

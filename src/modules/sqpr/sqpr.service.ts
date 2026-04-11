@@ -1,5 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getSubFormFormCodes } from '@sqm/permissions-contract';
+import {
+  getSubFormFormCodes,
+  getWorkflowSurfaceFormCodes,
+} from '@sqm/permissions-contract';
 import { sqprRepository } from './sqpr.repository.js';
 import { SQPRCreationInput, SQPRUpdateInput } from './sqpr.schema.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
@@ -13,8 +16,9 @@ import {
 import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
 import {
   assertWorkflowRecordAccess,
-  filterWorkflowRecordsByScope,
+  filterWorkflowRecords,
   type WorkflowListScope,
+  type WorkflowListSurface,
 } from '../../shared/utils/workflow-access.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
@@ -61,6 +65,7 @@ function resolveSqprQueueFormUniverse() {
 
 const SQPR_QUEUE_FORM_CODES = resolveSqprQueueFormUniverse();
 const SQPR_REFERENCE_FORM_CODE = 'SQPR-03-04';
+const SQPR_REFERENCE_SURFACES = ['tracking', 'search', 'report', 'reports', 'achievement'] as const;
 
 export class SqprService {
   private isAdminActor(actor?: SqprWorkflowActorContext) {
@@ -76,7 +81,16 @@ export class SqprService {
   }
 
   private isReferenceVisibleStage(stage: string) {
-    return stage === 'ACCEPT';
+    return stage === 'ISSUER' || stage === 'ACCEPT';
+  }
+
+  private hasSurfaceViewListAccess(surface: string, roleViewListForms: Set<string>) {
+    const surfaceFormCodes = getWorkflowSurfaceFormCodes('SQPR', surface);
+    if (surfaceFormCodes.length === 0) {
+      return roleViewListForms.has(SQPR_REFERENCE_FORM_CODE);
+    }
+
+    return surfaceFormCodes.some((formId) => roleViewListForms.has(formId));
   }
 
   private async resolveRoleViewListFormCodes(userId?: string | null) {
@@ -104,6 +118,27 @@ export class SqprService {
     }
 
     return this.isReferenceVisibleStage(this.getWorkflowStage(record));
+  }
+
+  private isSurfaceVisible(
+    record: Record<string, any>,
+    actor: SqprWorkflowActorContext = {},
+    roleViewListForms: Set<string> = new Set(),
+    surface?: WorkflowListSurface,
+  ) {
+    if (!surface || !SQPR_REFERENCE_SURFACES.includes(surface as (typeof SQPR_REFERENCE_SURFACES)[number])) {
+      return this.canReadRecord(record, actor, roleViewListForms);
+    }
+
+    if (!this.isReferenceVisibleStage(this.getWorkflowStage(record))) {
+      return false;
+    }
+
+    if (this.isAdminActor(actor)) {
+      return true;
+    }
+
+    return this.hasSurfaceViewListAccess(surface, roleViewListForms);
   }
 
   private isAssignedRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
@@ -202,7 +237,7 @@ export class SqprService {
   }
 
   async getAllRecords(
-    filters: { status?: string | string[]; scope?: WorkflowListScope } = {},
+    filters: { status?: string | string[]; scope?: WorkflowListScope; surface?: WorkflowListSurface } = {},
     actor: SqprWorkflowActorContext = {},
   ) {
     const records = await sqprRepository.findAllDetailed();
@@ -210,11 +245,17 @@ export class SqprService {
       ? new Set<string>()
       : await this.resolveRoleViewListFormCodes(actor.userId);
     const visibleRecords = this.isAdminActor(actor)
-      ? records
-      : filterWorkflowRecordsByScope(records, filters.scope || 'history', {
+      ? (filters.surface
+          ? records.filter((record: any) =>
+              this.isSurfaceVisible(record, actor, roleViewListForms, filters.surface),
+            )
+          : records)
+      : filterWorkflowRecords(records, { scope: filters.scope || 'history', surface: filters.surface }, {
           isAssigned: (record) => this.isAssignedRecord(record, actor),
           isMine: (record) => this.isMineRecord(record, actor),
           isHistoryVisible: (record) => this.canReadRecord(record, actor, roleViewListForms),
+          isSurfaceVisible: (record, surface) =>
+            this.isSurfaceVisible(record, actor, roleViewListForms, surface),
         });
 
     return visibleRecords

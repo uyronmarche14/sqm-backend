@@ -392,4 +392,106 @@ describe('MainSqmpService attention resolution', () => {
     await expect(service.downloadMainAttachment('att-1', 'viewer-1', 'role-viewlist')).rejects.toThrow(/permission to view/i);
     expect(attachmentServiceMock.downloadAttachment).not.toHaveBeenCalled();
   });
+
+  it('allows detail access from a reference surface when the user only has reference viewList access', async () => {
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
+      action === 'viewlist' && formId === 'SQMP-09-13'
+    ));
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqmp_id: 'sqmp-2',
+        control_no: 'SQMP-2',
+        request_status: '11',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+      mainDocuments: [],
+      appendixDocuments: [],
+      ccList: [],
+      responses: [],
+      statusRemarks: [],
+    });
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
+
+    const service = new MainSqmpService();
+    const record = await service.getRecordById('sqmp-2', 'viewer-1', 'role-viewlist', 'search');
+
+    expect(record).toEqual(expect.objectContaining({
+      sqmp_id: 'sqmp-2',
+      control_no: 'SQMP-2',
+    }));
+  });
+
+  it('allows attachment downloads from a reference surface without broadening core read access', async () => {
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
+      action === 'viewlist' && formId === 'SQMP-09-14'
+    ));
+    repositoryMock.findMainAttachmentOwner.mockResolvedValue({
+      sqmp_id: 'sqmp-3',
+      moduleType: 'sqmp-document',
+    });
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqmp_id: 'sqmp-3',
+        control_no: 'SQMP-3',
+        request_status: '1',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+      mainDocuments: [],
+      appendixDocuments: [],
+      ccList: [],
+      responses: [
+        {
+          response_id: 'response-1',
+          request_status: '24',
+        },
+      ],
+      statusRemarks: [],
+    });
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
+
+    const service = new MainSqmpService();
+    await service.downloadMainAttachment('att-2', 'viewer-1', 'role-viewlist', 'report');
+
+    expect(attachmentServiceMock.downloadAttachment).toHaveBeenCalledWith('sqmp-document', 'att-2');
+  });
+
+  it('allows response attachment downloads from a reference surface when the record is surface-visible', async () => {
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string, action: string) => (
+      action === 'viewlist' && formId === 'SQMP-09-14'
+    ));
+    repositoryMock.findResponseAttachmentOwner.mockResolvedValue({
+      sqmp_id: 'sqmp-4',
+      moduleType: 'sqmp-response-document',
+    });
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqmp_id: 'sqmp-4',
+        control_no: 'SQMP-4',
+        request_status: '1',
+        site_id: 'site-b',
+        supplier_id: 'supplier-b',
+      },
+      mainDocuments: [],
+      appendixDocuments: [],
+      ccList: [],
+      responses: [
+        {
+          response_id: 'response-4',
+          request_status: '24',
+        },
+      ],
+      statusRemarks: [],
+    });
+    userRepositoryMock.findRoleById.mockResolvedValue({ role_name: 'ENGINEER' });
+    userRepositoryMock.findById.mockResolvedValue({ site_id: 'site-a' });
+
+    const service = new MainSqmpService();
+    await service.downloadResponseAttachment('resp-att-1', 'viewer-1', 'role-viewlist', 'report');
+
+    expect(attachmentServiceMock.downloadAttachment).toHaveBeenCalledWith('sqmp-response-document', 'resp-att-1');
+  });
 });

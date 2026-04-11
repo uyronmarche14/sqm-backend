@@ -4,7 +4,10 @@ import { SqprCreateSchema, SqprUpdateSchema, SqprIdParamSchema, SqprActionSchema
 import { sqprWorkflowService } from './workflow/sqpr-workflow.service.js';
 import { successResponse } from '../../shared/utils/api-response.js';
 import { assertNoWorkflowMutationFields } from '../../shared/utils/reject-workflow-mutation-fields.js';
-import { resolveWorkflowListScope } from '../../shared/utils/workflow-access.js';
+import {
+  resolveWorkflowListScope,
+  resolveWorkflowListSurface,
+} from '../../shared/utils/workflow-access.js';
 
 export class SqprController {
   constructor() {
@@ -48,6 +51,7 @@ export class SqprController {
             scope: req.query.scope,
             assignedToMe: req.query.assignedToMe,
           }),
+          surface: resolveWorkflowListSurface({ surface: req.query.surface }),
         },
         { userId: this.getUserId(req), roleName: this.getRoleName(req) },
       );

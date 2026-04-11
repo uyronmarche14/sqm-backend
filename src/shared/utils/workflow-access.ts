@@ -1,16 +1,19 @@
 import { ForbiddenError } from '../errors/AppError.js';
 
 export type WorkflowListScope = 'assigned' | 'history' | 'mine';
+export type WorkflowListSurface = string;
 
 interface WorkflowListScopeInput {
   scope?: unknown;
   assignedToMe?: unknown;
+  surface?: unknown;
 }
 
 interface WorkflowScopePredicates<TRecord> {
   isAssigned: (record: TRecord) => boolean;
   isMine?: (record: TRecord) => boolean;
   isHistoryVisible?: (record: TRecord) => boolean;
+  isSurfaceVisible?: (record: TRecord, surface: WorkflowListSurface) => boolean;
 }
 
 function toBoolean(value: unknown): boolean {
@@ -46,6 +49,13 @@ export function resolveWorkflowListScope(
   return fallback;
 }
 
+export function resolveWorkflowListSurface(
+  input: Pick<WorkflowListScopeInput, 'surface'>,
+): WorkflowListSurface | undefined {
+  const surface = String(input.surface || '').trim().toLowerCase();
+  return surface || undefined;
+}
+
 export function filterWorkflowRecordsByScope<TRecord>(
   records: TRecord[],
   scope: WorkflowListScope,
@@ -60,6 +70,21 @@ export function filterWorkflowRecordsByScope<TRecord>(
     default:
       return records.filter((record) => predicates.isHistoryVisible?.(record) ?? true);
   }
+}
+
+export function filterWorkflowRecords<TRecord>(
+  records: TRecord[],
+  filters: {
+    scope: WorkflowListScope;
+    surface?: WorkflowListSurface;
+  },
+  predicates: WorkflowScopePredicates<TRecord>,
+): TRecord[] {
+  if (filters.surface) {
+    return records.filter((record) => predicates.isSurfaceVisible?.(record, filters.surface!) ?? false);
+  }
+
+  return filterWorkflowRecordsByScope(records, filters.scope, predicates);
 }
 
 export function assertWorkflowRecordAccess(options: {

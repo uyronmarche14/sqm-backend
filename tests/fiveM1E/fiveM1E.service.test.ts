@@ -184,6 +184,62 @@ describe('FiveM1EService', () => {
     );
   });
 
+  it('persists check-item child attachments through the CI attachment payload', async () => {
+    repositoryMock.createWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-ATTACH',
+    });
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
+    await service.createApplication(
+      {
+        title: 'Draft 5M1E',
+        vendor_id: 'UNKNOWN',
+        item_id: 'item-1',
+        check_items: [
+          {
+            check_item: 'Audit result',
+            judgement: 'PASS',
+            attribute_1: 'EVALUATION',
+            attachments: [
+              {
+                file_name: 'evidence.pdf',
+                client_upload_id: 'upload-1',
+                file_field: 'file:5m1e-check-item:upload-1',
+              },
+            ],
+          },
+        ],
+      } as any,
+      'creator-1',
+      [
+        {
+          fieldname: 'file:5m1e-check-item:upload-1',
+          originalname: 'evidence.pdf',
+          path: '/uploads/5m1e/evidence.pdf',
+          filename: 'evidence.pdf',
+        },
+      ],
+    );
+
+    expect(repositoryMock.replaceCheckItems).toHaveBeenCalledWith(
+      '5M-ATTACH',
+      [
+        expect.objectContaining({
+          check_item: 'Audit result',
+          attribute_1: 'EVALUATION',
+          attribute_2: '/uploads/5m1e/evidence.pdf',
+          attachments: [
+            expect.objectContaining({
+              file_name: 'evidence.pdf',
+              attribute1: '/uploads/5m1e/evidence.pdf',
+            }),
+          ],
+        }),
+      ],
+    );
+  });
+
   it('rejects procurement assignee mutation on create before persistence', async () => {
     const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
 
@@ -265,6 +321,49 @@ describe('FiveM1EService', () => {
         workflowStage: FIVE_M1E_WORKFLOW_STAGE.RELEASED,
       }),
     );
+  });
+
+  it('hydrates nested check-item attachments on detail reads while keeping legacy fallback fields populated', async () => {
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      approval_status: 'DRAFT',
+    });
+    repositoryMock.findCheckItems.mockResolvedValue([
+      {
+        ID: 11,
+        CheckItem: 'Audit result',
+        Judgement: 'PASS',
+        Remarks: 'ok',
+        Attribute1: 'EVALUATION',
+        Attribute2: '/legacy/evidence.pdf',
+        attachments: [
+          {
+            ID: 91,
+            FileName: 'evidence.pdf',
+            attribute1: '/uploads/5m1e/evidence.pdf',
+            attribute2: 'uploaded evidence',
+          },
+        ],
+      },
+    ]);
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
+    const record = await service.getApplication('5M-001', { userId: 'creator-1', roleName: 'USER' });
+
+    expect(record.check_items).toEqual([
+      expect.objectContaining({
+        check_item: 'Audit result',
+        attribute_2: '/uploads/5m1e/evidence.pdf',
+        attachments: [
+          expect.objectContaining({
+            file_name: 'evidence.pdf',
+            attribute1: '/uploads/5m1e/evidence.pdf',
+          }),
+        ],
+      }),
+    ]);
   });
 
   it('returns shared for-approval queue records to role-assigned users on assigned scope', async () => {

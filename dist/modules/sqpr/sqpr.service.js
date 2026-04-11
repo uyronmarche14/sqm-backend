@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getSubFormFormCodes } from '@sqm/permissions-contract';
+import { getSubFormFormCodes, getWorkflowSurfaceFormCodes, } from '@sqm/permissions-contract';
 import { sqprRepository } from './sqpr.repository.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 import { buildSqprWorkflowMetadata, getSqprCompatibilityRequestStatus, getSqprCompatibilityStatus, matchesSqprStatusFilter, } from './workflow/sqpr-workflow.utils.js';
 import { SQPR_LEGACY_STAGE_CODE } from './workflow/sqpr-workflow.constants.js';
-import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { assertWorkflowRecordAccess, filterWorkflowRecords, } from '../../shared/utils/workflow-access.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
@@ -44,6 +44,7 @@ function resolveSqprQueueFormUniverse() {
 }
 const SQPR_QUEUE_FORM_CODES = resolveSqprQueueFormUniverse();
 const SQPR_REFERENCE_FORM_CODE = 'SQPR-03-04';
+const SQPR_REFERENCE_SURFACES = ['tracking', 'search', 'report', 'reports', 'achievement'];
 export class SqprService {
     isAdminActor(actor) {
         return isAdminRole(actor?.roleName);
@@ -55,7 +56,14 @@ export class SqprService {
         return stage === 'DRAFT' || stage === 'REJECT_CHECKER' || stage === 'REJECT_APPROVER';
     }
     isReferenceVisibleStage(stage) {
-        return stage === 'ACCEPT';
+        return stage === 'ISSUER' || stage === 'ACCEPT';
+    }
+    hasSurfaceViewListAccess(surface, roleViewListForms) {
+        const surfaceFormCodes = getWorkflowSurfaceFormCodes('SQPR', surface);
+        if (surfaceFormCodes.length === 0) {
+            return roleViewListForms.has(SQPR_REFERENCE_FORM_CODE);
+        }
+        return surfaceFormCodes.some((formId) => roleViewListForms.has(formId));
     }
     async resolveRoleViewListFormCodes(userId) {
         if (!userId) {
@@ -74,6 +82,18 @@ export class SqprService {
             return false;
         }
         return this.isReferenceVisibleStage(this.getWorkflowStage(record));
+    }
+    isSurfaceVisible(record, actor = {}, roleViewListForms = new Set(), surface) {
+        if (!surface || !SQPR_REFERENCE_SURFACES.includes(surface)) {
+            return this.canReadRecord(record, actor, roleViewListForms);
+        }
+        if (!this.isReferenceVisibleStage(this.getWorkflowStage(record))) {
+            return false;
+        }
+        if (this.isAdminActor(actor)) {
+            return true;
+        }
+        return this.hasSurfaceViewListAccess(surface, roleViewListForms);
     }
     isAssignedRecord(record, actor = {}) {
         if (!actor.userId) {
@@ -152,11 +172,14 @@ export class SqprService {
             ? new Set()
             : await this.resolveRoleViewListFormCodes(actor.userId);
         const visibleRecords = this.isAdminActor(actor)
-            ? records
-            : filterWorkflowRecordsByScope(records, filters.scope || 'history', {
+            ? (filters.surface
+                ? records.filter((record) => this.isSurfaceVisible(record, actor, roleViewListForms, filters.surface))
+                : records)
+            : filterWorkflowRecords(records, { scope: filters.scope || 'history', surface: filters.surface }, {
                 isAssigned: (record) => this.isAssignedRecord(record, actor),
                 isMine: (record) => this.isMineRecord(record, actor),
                 isHistoryVisible: (record) => this.canReadRecord(record, actor, roleViewListForms),
+                isSurfaceVisible: (record, surface) => this.isSurfaceVisible(record, actor, roleViewListForms, surface),
             });
         return visibleRecords
             .filter((record) => matchesSqprStatusFilter(record, filters.status))

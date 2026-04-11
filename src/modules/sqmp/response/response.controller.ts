@@ -3,6 +3,7 @@ import { sqmpWorkflowService } from '../workflow/workflow.service.js';
 import { SqmpResponseUpsertSchema, SqmpResponseActionSchema, SqmpResponseAttachmentParamSchema } from './response.schema.js';
 import { successResponse } from '../../../shared/utils/api-response.js';
 import { mainSqmpService } from '../main/main.service.js';
+import { resolveWorkflowListSurface } from '../../../shared/utils/workflow-access.js';
 
 export class SqmpResponseController {
   constructor() {
@@ -215,6 +216,7 @@ export class SqmpResponseController {
         attachmentId as string,
         userId,
         roleId,
+        resolveWorkflowListSurface({ surface: req.query.surface }),
       );
       
       res.setHeader('Content-Type', mimeType);

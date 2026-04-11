@@ -1,9 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getSubFormFormCodes } from '@sqm/permissions-contract';
+import { getSubFormFormCodes, getWorkflowSurfaceFormCodes, } from '@sqm/permissions-contract';
 import { ogiRepository } from './ogi.repository.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/AppError.js';
 import { mapStatusFromDB } from '../../shared/utils/status-mapper.js';
-import { assertWorkflowRecordAccess, filterWorkflowRecordsByScope, } from '../../shared/utils/workflow-access.js';
+import { assertWorkflowRecordAccess, filterWorkflowRecords, } from '../../shared/utils/workflow-access.js';
 import { controlNumberService } from '../../shared/services/control-number.service.js';
 import { attachmentService } from '../../shared/services/attachment.service.js';
 import { permissionService } from '../../shared/services/permission.service.js';
@@ -33,6 +33,7 @@ function resolveOgiQueueFormUniverse() {
 }
 const OGI_QUEUE_FORM_CODES = resolveOgiQueueFormUniverse();
 const OGI_REFERENCE_FORM_CODE = 'OGI-01-04';
+const OGI_REFERENCE_SURFACES = ['search'];
 function mapOgiStatusFromDB(code) {
     const normalized = String(code || OGI_DB_STATUS.DRAFT).toUpperCase();
     if (normalized === 'SB' || normalized === 'SU') {
@@ -171,6 +172,25 @@ export class OgiService {
         }
         return mapOgiStatusFromDB(record.request_status ?? record.status) === 'SUBMITTED';
     }
+    hasSurfaceViewListAccess(surface, roleViewListForms) {
+        const surfaceFormCodes = getWorkflowSurfaceFormCodes('OGI', surface);
+        if (surfaceFormCodes.length === 0) {
+            return roleViewListForms.has(OGI_REFERENCE_FORM_CODE);
+        }
+        return surfaceFormCodes.some((formId) => roleViewListForms.has(formId));
+    }
+    isSurfaceVisible(record, actor, roleViewListForms = new Set(), surface) {
+        if (!surface || !OGI_REFERENCE_SURFACES.includes(surface)) {
+            return this.canReadRecord(record, actor, roleViewListForms);
+        }
+        if (mapOgiStatusFromDB(record.request_status ?? record.status) !== 'SUBMITTED') {
+            return false;
+        }
+        if (this.isAdminActor(actor)) {
+            return true;
+        }
+        return this.hasSurfaceViewListAccess(surface, roleViewListForms);
+    }
     isAssignedRecord(record, actor) {
         if (!actor?.userId || this.isAdminActor(actor)) {
             return false;
@@ -237,7 +257,7 @@ export class OgiService {
     async generateSequence(siteId) {
         return controlNumberService.buildOgiDraft({ siteId });
     }
-    async getAllRecords(actor, scope = 'history') {
+    async getAllRecords(actor, scope = 'history', surface) {
         const records = await this.repository.findAllDetailed();
         if (records.length === 0)
             return [];
@@ -248,11 +268,14 @@ export class OgiService {
             ? new Set()
             : await this.resolveRoleViewListFormCodes(actor?.userId);
         const visibleRecords = this.isAdminActor(actor)
-            ? records
-            : filterWorkflowRecordsByScope(records, scope, {
+            ? (surface
+                ? records.filter((record) => this.isSurfaceVisible(record, actor, roleViewListForms, surface))
+                : records)
+            : filterWorkflowRecords(records, { scope, surface }, {
                 isAssigned: (record) => this.isAssignedRecord(record, actor),
                 isMine: (record) => this.isMineRecord(record, actor),
                 isHistoryVisible: (record) => this.canReadRecord(record, actor, roleViewListForms),
+                isSurfaceVisible: (record, requestedSurface) => this.isSurfaceVisible(record, actor, roleViewListForms, requestedSurface),
             });
         return visibleRecords.map((r) => {
             const rLots = allLots.filter((l) => l.ogi_id === r.ogi_id).map((l) => ({

@@ -62,6 +62,9 @@ const ActionItemSchema = z.object({
     attribute3: z.string().optional(),
     attribute4: z.string().optional(),
     attribute5: z.string().optional(),
+    client_upload_id: z.string().optional(),
+    file_field: z.string().optional(),
+    download_url: z.string().optional(),
   })).optional(),
 });
 
