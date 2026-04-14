@@ -1,4 +1,5 @@
 import {
+  FIVE_M1E_APPROVAL_SEQ,
   FIVE_M1E_WORKFLOW_ACTION,
   FIVE_M1E_WORKFLOW_STAGE,
   FIVE_M1E_WORKFLOW_STAGE_CODE,
@@ -109,21 +110,21 @@ export function isCipClassC(record: RecordLike) {
 }
 
 export function getPostSqeApprovalSeq(record: RecordLike) {
-  if (isDesignRequired(record)) return 10;
-  if (isEnviRequired(record)) return 12;
-  if (isCipClassC(record)) return 7;
-  return 13;
+  if (isDesignRequired(record)) return FIVE_M1E_APPROVAL_SEQ.DESIGN_APPROVER;
+  if (isEnviRequired(record)) return FIVE_M1E_APPROVAL_SEQ.ENVI_APPROVER;
+  if (isCipClassC(record)) return FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER;
+  return FIVE_M1E_APPROVAL_SEQ.QA_CHECKER;
 }
 
 export function getPostDesignApprovalSeq(record: RecordLike) {
-  if (isEnviRequired(record)) return 12;
-  if (isCipClassC(record)) return 7;
-  return 13;
+  if (isEnviRequired(record)) return FIVE_M1E_APPROVAL_SEQ.ENVI_APPROVER;
+  if (isCipClassC(record)) return FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER;
+  return FIVE_M1E_APPROVAL_SEQ.QA_CHECKER;
 }
 
 export function getPostEnviApprovalSeq(record: RecordLike) {
-  if (isCipClassC(record)) return 7;
-  return 13;
+  if (isCipClassC(record)) return FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER;
+  return FIVE_M1E_APPROVAL_SEQ.QA_CHECKER;
 }
 
 export function normalizeFiveM1EWorkflowStage(recordOrStatus: RecordLike | string | undefined) {
@@ -146,35 +147,49 @@ export function normalizeFiveM1EWorkflowStage(recordOrStatus: RecordLike | strin
     case 'APPROVED W/ CONDITION':
       return FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION;
     case 'APPROVED':
-      return approvalSeq === 15 ? FIVE_M1E_WORKFLOW_STAGE.RELEASED : FIVE_M1E_WORKFLOW_STAGE.APPROVED;
+      return approvalSeq === FIVE_M1E_APPROVAL_SEQ.RELEASED
+        ? FIVE_M1E_WORKFLOW_STAGE.RELEASED
+        : FIVE_M1E_WORKFLOW_STAGE.APPROVED;
     case 'FOR RELEASE':
-      return approvalSeq === 8 ? FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE : FIVE_M1E_WORKFLOW_STAGE.UNKNOWN;
+      return approvalSeq === FIVE_M1E_APPROVAL_SEQ.FOR_RELEASE
+        ? FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE
+        : FIVE_M1E_WORKFLOW_STAGE.UNKNOWN;
     case 'RELEASE':
     case 'RELEASED':
       return FIVE_M1E_WORKFLOW_STAGE.RELEASED;
     case 'SUBMITTED':
-      if (approvalSeq === undefined || approvalSeq === 0 || approvalSeq === 1) {
+      if (
+        approvalSeq === undefined ||
+        approvalSeq === FIVE_M1E_APPROVAL_SEQ.SUBMITTED_INITIAL ||
+        approvalSeq === FIVE_M1E_APPROVAL_SEQ.SUBMITTED_LEGACY
+      ) {
         return FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER;
       }
       return FIVE_M1E_WORKFLOW_STAGE.UNKNOWN;
     case 'CHECKED':
-      if (approvalSeq === 2) return FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER;
-      if (approvalSeq === 6) return FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER;
-      if (approvalSeq === 7) return FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.MPD_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.SQE_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER;
       return FIVE_M1E_WORKFLOW_STAGE.UNKNOWN;
     case 'FOR APPROVAL':
     case 'FAPPROVED':
-      if (approvalSeq === 2) return FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER;
-      if (approvalSeq === 3 || approvalSeq === 4 || approvalSeq === 500) return FIVE_M1E_WORKFLOW_STAGE.REVIEWER;
-      if (approvalSeq === 501) return FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC;
-      if (approvalSeq === 5) return FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER;
-      if (approvalSeq === 6) return FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER;
-      if (approvalSeq === 7) return FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER;
-      if (approvalSeq === 8) return FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE;
-      if (approvalSeq === 10) return FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER;
-      if (approvalSeq === 12) return FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER;
-      if (approvalSeq === 13) return FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER;
-      if (approvalSeq === 16) return FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.MPD_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER;
+      if (
+        approvalSeq === FIVE_M1E_APPROVAL_SEQ.REVIEWER ||
+        approvalSeq === FIVE_M1E_APPROVAL_SEQ.REVIEWER_ALT ||
+        approvalSeq === FIVE_M1E_APPROVAL_SEQ.REVIEWER_LEGACY
+      ) {
+        return FIVE_M1E_WORKFLOW_STAGE.REVIEWER;
+      }
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.EVALUATION_IC) return FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.SQE_CHECKER) return FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.SQE_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.FOR_RELEASE) return FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.DESIGN_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.ENVI_APPROVER) return FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.QA_CHECKER) return FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER;
+      if (approvalSeq === FIVE_M1E_APPROVAL_SEQ.SUPPLIER_UPDATE) return FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE;
       return FIVE_M1E_WORKFLOW_STAGE.UNKNOWN;
     case 'SUPPLIER UPDATE':
       return FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE;

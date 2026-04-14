@@ -483,7 +483,8 @@ export class FiveM1EService {
             return checkItems;
         }
         return checkItems.map((item) => {
-            const sourceAttachments = Array.isArray(item.attachments) && item.attachments.length > 0
+            const hasNestedAttachments = Array.isArray(item.attachments) && item.attachments.length > 0;
+            const sourceAttachments = hasNestedAttachments
                 ? item.attachments
                 : (item.attribute_2
                     ? [{
@@ -516,10 +517,7 @@ export class FiveM1EService {
             return {
                 ...item,
                 attachments,
-                attribute_2: attachments[0]?.attribute1 ||
-                    attachments[0]?.file_name ||
-                    item.attribute_2 ||
-                    null,
+                attribute_2: hasNestedAttachments ? null : (item.attribute_2 || null),
             };
         });
     }

@@ -587,7 +587,8 @@ export class FiveM1EService {
     }
 
     return checkItems.map((item) => {
-      const sourceAttachments = Array.isArray(item.attachments) && item.attachments.length > 0
+      const hasNestedAttachments = Array.isArray(item.attachments) && item.attachments.length > 0;
+      const sourceAttachments = hasNestedAttachments
         ? item.attachments
         : (item.attribute_2
             ? [{
@@ -621,7 +622,12 @@ export class FiveM1EService {
             attribute2: attachment.attribute2 || attachment.attribute_2 || null,
           };
         })
-        .filter((attachment): attachment is {
+        .filter((attachment: {
+          id: any;
+          file_name: any;
+          attribute1: any;
+          attribute2: any;
+        } | null): attachment is {
           id: any;
           file_name: any;
           attribute1: any;
@@ -631,11 +637,7 @@ export class FiveM1EService {
       return {
         ...item,
         attachments,
-        attribute_2:
-          attachments[0]?.attribute1 ||
-          attachments[0]?.file_name ||
-          item.attribute_2 ||
-          null,
+        attribute_2: hasNestedAttachments ? null : (item.attribute_2 || null),
       };
     });
   }
