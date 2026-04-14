@@ -228,11 +228,54 @@ describe('FiveM1EService', () => {
         expect.objectContaining({
           check_item: 'Audit result',
           attribute_1: 'EVALUATION',
-          attribute_2: '/uploads/5m1e/evidence.pdf',
+          attribute_2: null,
           attachments: [
             expect.objectContaining({
               file_name: 'evidence.pdf',
               attribute1: '/uploads/5m1e/evidence.pdf',
+            }),
+          ],
+        }),
+      ],
+    );
+  });
+
+  it('preserves legacy attribute_2 fallback only when nested child attachments are absent', async () => {
+    repositoryMock.createWithApproval.mockResolvedValue({
+      ID: 1,
+      ControlNo: '5M-LEGACY',
+    });
+
+    const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
+    await service.createApplication(
+      {
+        title: 'Legacy 5M1E',
+        vendor_id: 'UNKNOWN',
+        item_id: 'item-1',
+        check_items: [
+          {
+            check_item: 'Legacy evidence',
+            judgement: 'PASS',
+            attribute_1: 'EVALUATION',
+            attribute_2: '/legacy/evidence.pdf',
+          },
+        ],
+      } as any,
+      'creator-1',
+      [],
+    );
+
+    expect(repositoryMock.replaceCheckItems).toHaveBeenCalledWith(
+      '5M-LEGACY',
+      [
+        expect.objectContaining({
+          check_item: 'Legacy evidence',
+          attribute_1: 'EVALUATION',
+          attribute_2: '/legacy/evidence.pdf',
+          attachments: [
+            expect.objectContaining({
+              file_name: 'evidence.pdf',
+              attribute1: '/legacy/evidence.pdf',
             }),
           ],
         }),

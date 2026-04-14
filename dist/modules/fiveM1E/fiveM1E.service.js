@@ -514,10 +514,11 @@ export class FiveM1EService {
                 };
             })
                 .filter((attachment) => Boolean(attachment));
+            const legacyAttachmentPath = hasNestedAttachments ? null : (item.attribute_2 || null);
             return {
                 ...item,
                 attachments,
-                attribute_2: hasNestedAttachments ? null : (item.attribute_2 || null),
+                attribute_2: legacyAttachmentPath,
             };
         });
     }

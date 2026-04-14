@@ -634,8 +634,7 @@ export class FiveM1EService {
           attribute2: any;
         } => Boolean(attachment));
 
-      const legacyAttachmentPath =
-        hasNestedAttachments ? (attachments[0]?.attribute1 || null) : (item.attribute_2 || null);
+      const legacyAttachmentPath = hasNestedAttachments ? null : (item.attribute_2 || null);
 
       return {
         ...item,
