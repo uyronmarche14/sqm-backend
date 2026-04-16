@@ -52,10 +52,11 @@ export class SqprController {
     async getById(req, res, next) {
         try {
             const { id } = SqprIdParamSchema.parse({ params: req.params }).params;
+            const surface = resolveWorkflowListSurface({ surface: req.query.surface });
             const record = await sqprService.getRecordById(id, {
                 userId: this.getUserId(req),
                 roleName: this.getRoleName(req),
-            });
+            }, surface);
             res.json(successResponse(record));
         }
         catch (error) {
@@ -225,10 +226,11 @@ export class SqprController {
     async downloadAttachment(req, res, next) {
         try {
             const { attachmentId } = SqprAttachmentParamSchema.parse({ params: req.params }).params;
+            const surface = resolveWorkflowListSurface({ surface: req.query.surface });
             const { filePath, fileName, mimeType } = await sqprService.downloadAttachment(attachmentId, {
                 userId: this.getUserId(req),
                 roleName: this.getRoleName(req),
-            });
+            }, surface);
             console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
             res.setHeader('Content-Type', mimeType);
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

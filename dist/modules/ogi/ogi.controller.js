@@ -33,7 +33,8 @@ export class OgiController {
     async getById(req, res, next) {
         try {
             const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
-            const record = await ogiService.getRecordById(id, this.getActor(req));
+            const surface = resolveWorkflowListSurface({ surface: req.query.surface });
+            const record = await ogiService.getRecordById(id, this.getActor(req), surface);
             return res.json(successResponse(record));
         }
         catch (error) {
@@ -88,7 +89,8 @@ export class OgiController {
     async downloadAttachment(req, res, next) {
         try {
             const { attachmentId } = OgiAttachmentParamSchema.parse({ params: req.params }).params;
-            const { filePath, fileName, mimeType } = await ogiService.downloadAttachment(attachmentId, this.getActor(req));
+            const surface = resolveWorkflowListSurface({ surface: req.query.surface });
+            const { filePath, fileName, mimeType } = await ogiService.downloadAttachment(attachmentId, this.getActor(req), surface);
             console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);
             res.setHeader('Content-Type', mimeType);
             res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

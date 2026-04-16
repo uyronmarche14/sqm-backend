@@ -44,7 +44,8 @@ export class OgiController {
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = OgiIdParamSchema.parse({ params: req.params }).params;
-      const record = await ogiService.getRecordById(id, this.getActor(req));
+      const surface = resolveWorkflowListSurface({ surface: req.query.surface });
+      const record = await ogiService.getRecordById(id, this.getActor(req), surface);
       return res.json(successResponse(record));
     } catch (error) {
       console.error('[OGI] GET BY ID error:', error);
@@ -100,9 +101,11 @@ export class OgiController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = OgiAttachmentParamSchema.parse({ params: req.params }).params;
+      const surface = resolveWorkflowListSurface({ surface: req.query.surface });
       const { filePath, fileName, mimeType } = await ogiService.downloadAttachment(
         attachmentId as string,
         this.getActor(req),
+        surface,
       );
       
       console.info(`[Backend] Sending attachment ${attachmentId} to frontend`);

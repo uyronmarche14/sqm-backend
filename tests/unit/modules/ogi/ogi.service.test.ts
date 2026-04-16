@@ -205,6 +205,88 @@ describe('OgiService legacy workflow alignment', () => {
     });
   });
 
+  it('allows detail reads through explicit reference surfaces even when base read access is denied', async () => {
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'OGI-001',
+        request_status: 'SB',
+      },
+      lots: [],
+      attachments: [],
+    });
+
+    const service = new OgiService() as any;
+    service.resolveRoleViewListFormCodes = vi.fn().mockResolvedValue(new Set());
+    service.canReadRecord = vi.fn(() => false);
+    service.isSurfaceVisible = vi.fn(() => true);
+
+    await expect(
+      service.getRecordById('ogi-1', { userId: 'viewer-1', roleName: 'USER' }, 'search'),
+    ).resolves.toEqual(expect.objectContaining({
+      ogi_id: 'ogi-1',
+    }));
+    expect(service.isSurfaceVisible).toHaveBeenCalledWith(
+      expect.objectContaining({ ogi_id: 'ogi-1' }),
+      { userId: 'viewer-1', roleName: 'USER' },
+      new Set(),
+      'search',
+    );
+  });
+
+  it('keeps detail reads blocked without surface when base read access is denied', async () => {
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'OGI-001',
+        request_status: 'SB',
+      },
+      lots: [],
+      attachments: [],
+    });
+
+    const service = new OgiService() as any;
+    service.resolveRoleViewListFormCodes = vi.fn().mockResolvedValue(new Set());
+    service.canReadRecord = vi.fn(() => false);
+    service.isSurfaceVisible = vi.fn(() => true);
+
+    await expect(service.getRecordById('ogi-1', { userId: 'viewer-1', roleName: 'USER' })).rejects.toMatchObject({
+      message: 'You do not have permission to view this OGI record.',
+    });
+    expect(service.isSurfaceVisible).not.toHaveBeenCalled();
+  });
+
+  it('allows attachment downloads through explicit reference surfaces even when base read access is denied', async () => {
+    ogiRepositoryMock.findAttachmentOwner.mockResolvedValue({ ogi_id: 'ogi-1' });
+    ogiRepositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        ogi_id: 'ogi-1',
+        control_no: 'OGI-001',
+        request_status: 'SB',
+      },
+      lots: [],
+      attachments: [],
+    });
+
+    const service = new OgiService() as any;
+    service.resolveRoleViewListFormCodes = vi.fn().mockResolvedValue(new Set());
+    service.canReadRecord = vi.fn(() => false);
+    service.isSurfaceVisible = vi.fn(() => true);
+
+    const result = await service.downloadAttachment('att-1', { userId: 'viewer-1', roleName: 'USER' }, 'search');
+
+    expect(result).toEqual(expect.objectContaining({
+      filePath: '/tmp/ogi.txt',
+      fileName: 'ogi.txt',
+    }));
+    expect(service.isSurfaceVisible).toHaveBeenCalledWith(
+      expect.objectContaining({ ogi_id: 'ogi-1' }),
+      { userId: 'viewer-1', roleName: 'USER' },
+      new Set(),
+      'search',
+    );
+  });
+
   it('writes SB when submitting a draft OGI record', async () => {
     let updatedValues: Record<string, unknown> | undefined;
 

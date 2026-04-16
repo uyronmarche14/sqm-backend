@@ -200,6 +200,88 @@ describe('SqprService workflow metadata hydration', () => {
     });
   });
 
+  it('allows detail reads through explicit reference surfaces even when base read access is denied', async () => {
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-2',
+        control_no: 'SQPR-2026-02-SITE',
+        request_status: '3',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService() as any;
+    service.resolveRoleViewListFormCodes = vi.fn().mockResolvedValue(new Set());
+    service.canReadRecord = vi.fn(() => false);
+    service.isSurfaceVisible = vi.fn(() => true);
+
+    await expect(
+      service.getRecordById('sqpr-2', { userId: 'viewer-1', roleName: 'USER' }, 'search'),
+    ).resolves.toEqual(expect.objectContaining({
+      sqpr_id: 'sqpr-2',
+    }));
+    expect(service.isSurfaceVisible).toHaveBeenCalledWith(
+      expect.objectContaining({ sqpr_id: 'sqpr-2' }),
+      { userId: 'viewer-1', roleName: 'USER' },
+      new Set(),
+      'search',
+    );
+  });
+
+  it('keeps detail reads blocked without surface when base read access is denied', async () => {
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-2',
+        control_no: 'SQPR-2026-02-SITE',
+        request_status: '3',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService() as any;
+    service.resolveRoleViewListFormCodes = vi.fn().mockResolvedValue(new Set());
+    service.canReadRecord = vi.fn(() => false);
+    service.isSurfaceVisible = vi.fn(() => true);
+
+    await expect(service.getRecordById('sqpr-2', { userId: 'viewer-1', roleName: 'USER' })).rejects.toMatchObject({
+      message: 'You do not have permission to view this SQPR record.',
+    });
+    expect(service.isSurfaceVisible).not.toHaveBeenCalled();
+  });
+
+  it('allows attachment downloads through explicit reference surfaces even when base read access is denied', async () => {
+    repositoryMock.findAttachmentOwner.mockResolvedValue({ sqpr_id: 'sqpr-2' });
+    repositoryMock.findByIdDetailed.mockResolvedValue({
+      record: {
+        sqpr_id: 'sqpr-2',
+        control_no: 'SQPR-2026-02-SITE',
+        request_status: '3',
+      },
+      attachments: [],
+      ccList: [],
+    });
+
+    const service = new SqprService() as any;
+    service.resolveRoleViewListFormCodes = vi.fn().mockResolvedValue(new Set());
+    service.canReadRecord = vi.fn(() => false);
+    service.isSurfaceVisible = vi.fn(() => true);
+
+    const result = await service.downloadAttachment('att-1', { userId: 'viewer-1', roleName: 'USER' }, 'achievement');
+
+    expect(result).toEqual(expect.objectContaining({
+      filePath: '/tmp/sqpr.txt',
+      fileName: 'sqpr.txt',
+    }));
+    expect(service.isSurfaceVisible).toHaveBeenCalledWith(
+      expect.objectContaining({ sqpr_id: 'sqpr-2' }),
+      { userId: 'viewer-1', roleName: 'USER' },
+      new Set(),
+      'achievement',
+    );
+  });
+
   it('creates draft records with legacy DRF control numbers and numeric storage stages', async () => {
     const inserted: Record<string, any>[] = [];
     repositoryMock.findSiteCode.mockResolvedValue({

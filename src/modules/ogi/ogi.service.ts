@@ -300,6 +300,19 @@ export class OgiService {
     return this.hasReferenceViewListAccess(record, roleViewListForms);
   }
 
+  private canReadRecordForSurface(
+    record: Record<string, any>,
+    actor?: { userId?: string; roleName?: string | null },
+    roleViewListForms: Set<string> = new Set(),
+    surface?: WorkflowListSurface,
+  ) {
+    if (surface) {
+      return this.isSurfaceVisible(record, actor, roleViewListForms, surface);
+    }
+
+    return this.canReadRecord(record, actor, roleViewListForms);
+  }
+
   private canMutateRecord(record: Record<string, any>, actor?: { userId?: string; roleName?: string | null }) {
     if (this.isAdminActor(actor)) {
       return true;
@@ -408,14 +421,18 @@ export class OgiService {
     });
   }
 
-  async getRecordById(id: string, actor?: { userId?: string; roleName?: string | null }) {
+  async getRecordById(
+    id: string,
+    actor?: { userId?: string; roleName?: string | null },
+    surface?: WorkflowListSurface,
+  ) {
     const data = await this.repository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('OGI Record not found');
     const roleViewListForms = this.isAdminActor(actor)
       ? new Set<string>()
       : await this.resolveRoleViewListFormCodes(actor?.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(data.record, actor, roleViewListForms),
+      allowed: this.canReadRecordForSurface(data.record, actor, roleViewListForms, surface),
       action: 'view',
       moduleName: 'OGI',
     });
@@ -692,7 +709,11 @@ export class OgiService {
     });
   }
 
-  async downloadAttachment(attachmentId: string, actor?: { userId?: string; roleName?: string | null }) {
+  async downloadAttachment(
+    attachmentId: string,
+    actor?: { userId?: string; roleName?: string | null },
+    surface?: WorkflowListSurface,
+  ) {
     const owner = await this.repository.findAttachmentOwner(attachmentId);
     if (!owner?.ogi_id) {
       throw new NotFoundError('Attachment not found');
@@ -707,7 +728,7 @@ export class OgiService {
       ? new Set<string>()
       : await this.resolveRoleViewListFormCodes(actor?.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(existing.record, actor, roleViewListForms),
+      allowed: this.canReadRecordForSurface(existing.record, actor, roleViewListForms, surface),
       action: 'download',
       moduleName: 'OGI',
     });

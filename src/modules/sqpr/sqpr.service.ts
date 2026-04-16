@@ -178,6 +178,19 @@ export class SqprService {
     return this.hasReferenceViewListAccessForRecord(record, roleViewListForms);
   }
 
+  private canReadRecordForSurface(
+    record: Record<string, any>,
+    actor: SqprWorkflowActorContext = {},
+    roleViewListForms: Set<string> = new Set(),
+    surface?: WorkflowListSurface,
+  ) {
+    if (surface) {
+      return this.isSurfaceVisible(record, actor, roleViewListForms, surface);
+    }
+
+    return this.canReadRecord(record, actor, roleViewListForms);
+  }
+
   private canMutateMainRecord(record: Record<string, any>, actor: SqprWorkflowActorContext = {}) {
     if (this.isAdminActor(actor)) {
       return true;
@@ -263,14 +276,18 @@ export class SqprService {
       .map((record: any) => this.decorateRecord(record, actor, roleViewListForms));
   }
 
-  async getRecordById(id: string, actor: SqprWorkflowActorContext = {}) {
+  async getRecordById(
+    id: string,
+    actor: SqprWorkflowActorContext = {},
+    surface?: WorkflowListSurface,
+  ) {
     const data = await sqprRepository.findByIdDetailed(id);
     if (!data) throw new NotFoundError('SQPR Record not found');
     const roleViewListForms = this.isAdminActor(actor)
       ? new Set<string>()
       : await this.resolveRoleViewListFormCodes(actor.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(data.record, actor, roleViewListForms),
+      allowed: this.canReadRecordForSurface(data.record, actor, roleViewListForms, surface),
       action: 'view',
       moduleName: 'SQPR',
     });
@@ -605,7 +622,11 @@ export class SqprService {
     return attachment;
   }
 
-  async downloadAttachment(attachmentId: string, actor: SqprWorkflowActorContext = {}) {
+  async downloadAttachment(
+    attachmentId: string,
+    actor: SqprWorkflowActorContext = {},
+    surface?: WorkflowListSurface,
+  ) {
     const owner = await sqprRepository.findAttachmentOwner(attachmentId);
     if (!owner?.sqpr_id) {
       throw new NotFoundError('Attachment not found');
@@ -620,7 +641,7 @@ export class SqprService {
       ? new Set<string>()
       : await this.resolveRoleViewListFormCodes(actor.userId);
     assertWorkflowRecordAccess({
-      allowed: this.canReadRecord(existing.record, actor, roleViewListForms),
+      allowed: this.canReadRecordForSurface(existing.record, actor, roleViewListForms, surface),
       action: 'download',
       moduleName: 'SQPR',
     });
