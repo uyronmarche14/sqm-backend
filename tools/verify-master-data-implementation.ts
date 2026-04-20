@@ -4,7 +4,7 @@
  * This script verifies that all master data endpoints are properly implemented
  * with full CRUD functionality (Create, Read, Update, Delete).
  * 
- * Run with: npx ts-node src/db/seeds/verify_master_data_implementation.ts
+ * Run with: npx ts-node tools/verify-master-data-implementation.ts
  */
 
 const BASE_URL = process.env.API_URL || 'http://localhost:3000/api';

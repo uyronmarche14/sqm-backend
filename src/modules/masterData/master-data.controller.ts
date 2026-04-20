@@ -75,18 +75,6 @@ export const mapRoleAccessPayloadToDb = (id: string, p: any, userId: string) => 
   updateby: userId,
 });
 
-const withFormRegistrySync = <T extends (req: Request, res: Response, next: NextFunction) => Promise<unknown>>(
-  handler: T,
-): T =>
-  (async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      await formRegistrySyncService.sync();
-      await handler(req, res, next);
-    } catch (error) {
-      next(error);
-    }
-  }) as T;
-
 function assertRegistryBackedFormWriteAllowed(formName: string | null | undefined, payload: any) {
   const registryEntry = resolvePageRegistryEntry(formName);
   if (!registryEntry) {
@@ -255,7 +243,7 @@ const baseFormsCtrl = createController({
 
 export const formsCtrl = {
   ...baseFormsCtrl,
-  getAll: withFormRegistrySync(baseFormsCtrl.getAll),
+  getAll: baseFormsCtrl.getAll,
   create: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payload = schemas.FormSchema.parse(req.body);
@@ -310,9 +298,9 @@ const baseRoleAccessCtrl = createController({
 
 export const roleAccessCtrl = {
   ...baseRoleAccessCtrl,
-  getAll: withFormRegistrySync(baseRoleAccessCtrl.getAll),
-  create: withFormRegistrySync(baseRoleAccessCtrl.create),
-  update: withFormRegistrySync(baseRoleAccessCtrl.update),
+  getAll: baseRoleAccessCtrl.getAll,
+  create: baseRoleAccessCtrl.create,
+  update: baseRoleAccessCtrl.update,
 };
 
 // ============================================================================

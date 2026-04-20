@@ -69,15 +69,6 @@ export const mapRoleAccessPayloadToDb = (id, p, userId) => ({
     active_flag: b(p.isActive),
     updateby: userId,
 });
-const withFormRegistrySync = (handler) => (async (req, res, next) => {
-    try {
-        await formRegistrySyncService.sync();
-        await handler(req, res, next);
-    }
-    catch (error) {
-        next(error);
-    }
-});
 function assertRegistryBackedFormWriteAllowed(formName, payload) {
     const registryEntry = resolvePageRegistryEntry(formName);
     if (!registryEntry) {
@@ -210,7 +201,7 @@ const baseFormsCtrl = createController({
 });
 export const formsCtrl = {
     ...baseFormsCtrl,
-    getAll: withFormRegistrySync(baseFormsCtrl.getAll),
+    getAll: baseFormsCtrl.getAll,
     create: async (req, res, next) => {
         try {
             const payload = schemas.FormSchema.parse(req.body);
@@ -261,9 +252,9 @@ const baseRoleAccessCtrl = createController({
 });
 export const roleAccessCtrl = {
     ...baseRoleAccessCtrl,
-    getAll: withFormRegistrySync(baseRoleAccessCtrl.getAll),
-    create: withFormRegistrySync(baseRoleAccessCtrl.create),
-    update: withFormRegistrySync(baseRoleAccessCtrl.update),
+    getAll: baseRoleAccessCtrl.getAll,
+    create: baseRoleAccessCtrl.create,
+    update: baseRoleAccessCtrl.update,
 };
 // ============================================================================
 // Suppliers Ex

@@ -13,6 +13,10 @@
     "test:coverage": "TMPDIR=${TMPDIR:-/tmp} vitest run --coverage",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
+    "db:bootstrap:empty": "tsx src/db/bootstrap-empty.ts",
+    "db:migrate:safe": "tsx src/db/migrate-safe.ts",
+    "db:seed:reference": "tsx src/db/seeds/reference.seed.ts",
+    "db:seed:admin": "tsx src/db/seeds/admin.seed.ts",
     "migrate": "tsx src/db/migrate.ts",
     "init:db": "tsx src/db/init.ts",
     "init:db:local": "tsx --env-file=.env.local src/db/init.ts"

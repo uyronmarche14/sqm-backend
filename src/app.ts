@@ -34,7 +34,7 @@ function parseAllowedOrigins(): string[] {
     .filter(Boolean);
   const fallbackOrigins = [
     process.env.FRONTEND_BASE_URL,
-    process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:5173',
+    process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:5000',
   ]
     .filter((origin): origin is string => Boolean(origin?.trim()))
     .map((origin) => origin.replace(/\/+$/, ''));
