@@ -17,6 +17,8 @@ const authRepositoryMock = vi.hoisted(() => ({
   findAssignedQmqaAccessibleForms: vi.fn(),
   findAssignedQmqaMediaAccessibleForms: vi.fn(),
   findAssignedSqprAccessibleForms: vi.fn(),
+  findAssignedSupplierQualityAccessibleForms: vi.fn(),
+  findAssignedSpcTrendAccessibleForms: vi.fn(),
   findAssignedFiveM1EAccessibleForms: vi.fn(),
 }));
 
@@ -100,6 +102,8 @@ describe('AuthService login SQMP assignment access', () => {
     authRepositoryMock.findAssignedQmqaAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedQmqaMediaAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedSqprAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedSupplierQualityAccessibleForms.mockResolvedValue([]);
+    authRepositoryMock.findAssignedSpcTrendAccessibleForms.mockResolvedValue([]);
     authRepositoryMock.findAssignedFiveM1EAccessibleForms.mockResolvedValue([]);
     hashMock.verifyPassword.mockResolvedValue(true);
     hashMock.hashPassword.mockResolvedValue('new-hash');

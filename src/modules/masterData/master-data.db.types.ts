@@ -37,6 +37,7 @@ export interface SuppliersUserTable {
 export interface MfgSitesTable {
   site_id: string;
   site_name: string;
+  site_code: string | null;
 }
 
 // --- Parts ---

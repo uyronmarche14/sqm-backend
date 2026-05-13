@@ -7,6 +7,8 @@ import { ogiAssignedAccessRepository } from './repositories/assigned-access/ogi-
 import { qmqaAssignedAccessRepository } from './repositories/assigned-access/qmqa-access.repository.js';
 import { sqmpAssignedAccessRepository } from './repositories/assigned-access/sqmp-access.repository.js';
 import { sqprAssignedAccessRepository } from './repositories/assigned-access/sqpr-access.repository.js';
+import { supplierQualityAssignedAccessRepository } from './repositories/assigned-access/supplier-quality-access.repository.js';
+import { spcTrendAssignedAccessRepository } from './repositories/assigned-access/spc-trend-access.repository.js';
 
 export class AuthRepository {
   findByEmail(email: string) {
@@ -82,6 +84,14 @@ export class AuthRepository {
 
   findAssignedFiveM1EAccessibleForms(userId: string) {
     return fiveM1eAssignedAccessRepository.findAssignedFiveM1EAccessibleForms(userId);
+  }
+
+  findAssignedSupplierQualityAccessibleForms(userId: string) {
+    return supplierQualityAssignedAccessRepository.findAssignedSupplierQualityAccessibleForms(userId);
+  }
+
+  findAssignedSpcTrendAccessibleForms(userId: string) {
+    return spcTrendAssignedAccessRepository.findAssignedSpcTrendAccessibleForms(userId);
   }
 }
 

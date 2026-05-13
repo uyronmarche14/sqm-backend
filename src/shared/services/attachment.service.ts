@@ -579,6 +579,36 @@ export class AttachmentService {
       subFolder: 'attachments'
     });
 
+    this.configs.set('supplier-quality', {
+      tableName: 'SQPR_LAR',
+      idColumn: 'file_id',
+      fileNameColumn: 'file_name',
+      extensionColumn: 'file_extension',
+      uploadPath: './uploads/supplier-quality'
+    });
+    this.configs.set('supplier-quality-main', {
+      tableName: 'SQPR_LAR',
+      idColumn: 'file_id',
+      fileNameColumn: 'file_name',
+      extensionColumn: 'file_extension',
+      uploadPath: './uploads/supplier-quality'
+    });
+
+    this.configs.set('spc-trend', {
+      tableName: 'SPC_ATTACHMENT',
+      idColumn: 'spc_attachment_id',
+      fileNameColumn: 'file_name',
+      extensionColumn: 'file_extension',
+      uploadPath: './uploads/spc-trend'
+    });
+    this.configs.set('spc-trend-main', {
+      tableName: 'SPC_ATTACHMENT',
+      idColumn: 'spc_attachment_id',
+      fileNameColumn: 'file_name',
+      extensionColumn: 'file_extension',
+      uploadPath: './uploads/spc-trend'
+    });
+
     this.configs.set('ogi', {
       tableName: 'OGI_ATTACHMENT',
       idColumn: 'ogi_attachment_id',

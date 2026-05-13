@@ -55,6 +55,8 @@ export type WorkflowPermissionModule =
   | 'QMQA'
   | 'QMQA_MEDIA'
   | 'SQPR'
+  | 'SUPPLIER_QUALITY'
+  | 'SPC_TREND'
   | '5M1E';
 
 const PERMISSION_ACTION_SET: ReadonlySet<PermissionAction> = new Set([

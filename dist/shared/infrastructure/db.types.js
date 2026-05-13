@@ -12,4 +12,5 @@ export * from '../../modules/ogi/ogi.db.types.js';
 export * from '../../modules/qmqa/qmqa.db.types.js';
 export * from '../../modules/sqmp/sqmp.db.types.js';
 export * from '../../modules/sqpr/sqpr.db.types.js';
+export * from '../../modules/spcTrend/spc-trend.db.types.js';
 export * from '../../modules/training/training.db.types.js';

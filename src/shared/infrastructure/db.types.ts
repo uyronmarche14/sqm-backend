@@ -13,6 +13,7 @@ export * from '../../modules/ogi/ogi.db.types.js';
 export * from '../../modules/qmqa/qmqa.db.types.js';
 export * from '../../modules/sqmp/sqmp.db.types.js';
 export * from '../../modules/sqpr/sqpr.db.types.js';
+export * from '../../modules/spcTrend/spc-trend.db.types.js';
 export * from '../../modules/training/training.db.types.js';
 
 // --- Import table interfaces for Database mapping ---
@@ -63,6 +64,13 @@ import type {
   SqeTrainingAttendeesTable,
   SqeTrainingScheduleTable,
 } from '../../modules/training/training.db.types.js';
+import type {
+  SpcAttachmentTable,
+  SpcLotTable,
+  SpcTable,
+  SpcWorkflowTable,
+  SupplierSpcRecipientTable,
+} from '../../modules/spcTrend/spc-trend.db.types.js';
 
 // ============================================================================
 // Database Interface (The "Type-Type" Engine)
@@ -190,4 +198,11 @@ export interface Database {
   // Training Module
   SQE_TRAINING_SCHEDULE: SqeTrainingScheduleTable;
   SQE_TRAINING_ATTENDEES: SqeTrainingAttendeesTable;
+
+  // SPC Trend Module
+  SPC: SpcTable;
+  SPC_ATTACHMENT: SpcAttachmentTable;
+  SPC_LOTS: SpcLotTable;
+  SUPPLIERSPCRECIPIENT: SupplierSpcRecipientTable;
+  SPC_WORKFLOW: SpcWorkflowTable;
 }

@@ -382,6 +382,14 @@ export class ControlNumberService {
     return this.buildDatedSiteSequence('OGI', 'OGI', input, trxOrDb);
   }
 
+  async buildSpcDraft(input: DatedSiteSequenceInput, trxOrDb?: DBLike) {
+    return this.buildDatedSiteSequence('SPC', 'DRF', input, trxOrDb);
+  }
+
+  async finalizeSpc(input: DatedSiteSequenceInput, trxOrDb?: DBLike) {
+    return this.buildDatedSiteSequence('SPC', 'SPC', input, trxOrDb);
+  }
+
   async buildQmqaAuditPlan(input: QmqaAuditPlanInput, trxOrDb?: DBLike) {
     const auditPlanDate = input.auditPlanDate ?? input.date;
     const siteCode = await this.resolveSiteCode(
@@ -423,6 +431,14 @@ export class ControlNumberService {
     }
 
     return normalizedControlNo;
+  }
+
+  buildSupplierQualityDraft(input: SqprDraftInput) {
+    return this.buildSqprDraft({ ...input, prefix: 'DRF' });
+  }
+
+  finalizeSupplierQuality(controlNo: string) {
+    return this.finalizeSqpr(controlNo, 'LAR');
   }
 
   buildFiveM1ETemporary(now = new Date()) {

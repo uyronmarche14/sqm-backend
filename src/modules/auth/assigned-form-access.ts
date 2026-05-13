@@ -8,6 +8,8 @@ const ASSIGNED_WORKFLOW_FORM_FETCHERS = {
   QMQA: (userId: string) => authRepository.findAssignedQmqaAccessibleForms(userId),
   QMQA_MEDIA: (userId: string) => authRepository.findAssignedQmqaMediaAccessibleForms(userId),
   SQPR: (userId: string) => authRepository.findAssignedSqprAccessibleForms(userId),
+  SUPPLIER_QUALITY: (userId: string) => authRepository.findAssignedSupplierQualityAccessibleForms(userId),
+  SPC_TREND: (userId: string) => authRepository.findAssignedSpcTrendAccessibleForms(userId),
   '5M1E': (userId: string) => authRepository.findAssignedFiveM1EAccessibleForms(userId),
 } as const;
 
