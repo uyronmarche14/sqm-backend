@@ -21,6 +21,8 @@ import authRoutes from './modules/auth/auth.routes.js';
 import fiveM1ERoutes from './modules/fiveM1E/fiveM1E.routes.js';
 import userRoutes from './modules/users/user.routes.js';
 import masterDataRoutes from './modules/masterData/master-data.routes.js';
+import supplierInformationRoutes from './modules/supplierInformation/supplier-information.routes.js';
+import trainingRoutes from './modules/training/training.routes.js';
 
 // Rate Limiting
 import { globalLimiter } from './shared/middleware/rate-limiter.js';
@@ -109,6 +111,8 @@ app.use('/api/5m1e', fiveM1ERoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/master', masterDataRoutes);
+app.use('/api/supplier-information', supplierInformationRoutes);
+app.use('/api/training', trainingRoutes);
 app.use('/api/mnr', mnrRoutes);
 app.use('/api/sqpr', sqprRoutes);
 app.use('/api/sqmp', sqmpRoutes);

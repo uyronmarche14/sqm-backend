@@ -92,8 +92,8 @@ export async function runAdminSeed(invocation = 'db:seed:admin') {
 
   await upsertByMatch({
     table: 'USERS',
-    matchOn: ['email'],
-    preserveOnUpdate: ['user_id', 'creation_date'],
+    matchOn: ['user_id'],
+    preserveOnUpdate: ['creation_date'],
     row: {
       user_id: 'USER-SYSTEM-ADMIN',
       full_name: adminFullName,

@@ -13,6 +13,7 @@ export * from '../../modules/ogi/ogi.db.types.js';
 export * from '../../modules/qmqa/qmqa.db.types.js';
 export * from '../../modules/sqmp/sqmp.db.types.js';
 export * from '../../modules/sqpr/sqpr.db.types.js';
+export * from '../../modules/training/training.db.types.js';
 
 // --- Import table interfaces for Database mapping ---
 import type {
@@ -58,6 +59,10 @@ import type {
   SqprDetailTable, SqprLarTable, SqprLarCcTable, SqprLarDetailTable,
   SqprQualityRiskTable
 } from '../../modules/sqpr/sqpr.db.types.js';
+import type {
+  SqeTrainingAttendeesTable,
+  SqeTrainingScheduleTable,
+} from '../../modules/training/training.db.types.js';
 
 // ============================================================================
 // Database Interface (The "Type-Type" Engine)
@@ -181,4 +186,8 @@ export interface Database {
   QMQA_RESPONSE_VERIFICATION: QmqaResponseVerificationTable;
   QMQA_NC: QmqaNcTable;
   QMQA_SCORE: QmqaScoreTable;
+
+  // Training Module
+  SQE_TRAINING_SCHEDULE: SqeTrainingScheduleTable;
+  SQE_TRAINING_ATTENDEES: SqeTrainingAttendeesTable;
 }
