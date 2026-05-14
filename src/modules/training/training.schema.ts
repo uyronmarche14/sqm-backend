@@ -4,6 +4,37 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const ISO_TIME_PATTERN = /^\d{2}:\d{2}$/;
 
+function isValidIsoDate(value: string) {
+  const [yearText, monthText, dayText] = value.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isValidIsoMonth(value: string) {
+  const [yearText, monthText] = value.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  return Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12;
+}
+
+function isValidIsoTime(value: string) {
+  const [hoursText, minutesText] = value.split(':');
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  return Number.isInteger(hours) && Number.isInteger(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+}
+
 function trimString(value: unknown) {
   return typeof value === 'string' ? value.trim() : value;
 }
@@ -30,19 +61,19 @@ const requiredString = (label: string) =>
 const optionalDateString = () =>
   z.preprocess(
     emptyStringToUndefined,
-    z.string().regex(ISO_DATE_PATTERN, 'Expected YYYY-MM-DD date format').optional(),
+    z.string().regex(ISO_DATE_PATTERN, 'Expected YYYY-MM-DD date format').refine(isValidIsoDate, 'Invalid calendar date').optional(),
   );
 
 const optionalMonthString = () =>
   z.preprocess(
     emptyStringToUndefined,
-    z.string().regex(ISO_MONTH_PATTERN, 'Expected YYYY-MM month format').optional(),
+    z.string().regex(ISO_MONTH_PATTERN, 'Expected YYYY-MM month format').refine(isValidIsoMonth, 'Invalid month value').optional(),
   );
 
 const optionalTimeString = () =>
   z.preprocess(
     emptyStringToUndefined,
-    z.string().regex(ISO_TIME_PATTERN, 'Expected HH:MM time format').optional(),
+    z.string().regex(ISO_TIME_PATTERN, 'Expected HH:MM time format').refine(isValidIsoTime, 'Invalid time value').optional(),
   );
 
 const trainingStatusSchema = z.enum([
@@ -75,7 +106,7 @@ export const TrainingIdParamSchema = z.object({
 });
 
 export const TrainingAttendeeInputSchema = z.object({
-  id: requiredString('Attendee ID'),
+  id: optionalString(),
   employeeId: optionalString(),
   employeeNo: requiredString('Employee number'),
   fullName: requiredString('Full name'),
@@ -99,7 +130,10 @@ export const TrainingRecordInputSchema = z.object({
   trainingProgramId: optionalString(),
   trainingProgramName: optionalString(),
   trainingLevel: optionalString(),
-  trainingDate: z.preprocess(trimString, z.string().regex(ISO_DATE_PATTERN, 'Expected YYYY-MM-DD date format')),
+  trainingDate: z.preprocess(
+    trimString,
+    z.string().regex(ISO_DATE_PATTERN, 'Expected YYYY-MM-DD date format').refine(isValidIsoDate, 'Invalid calendar date'),
+  ),
   startDate: optionalDateString(),
   endDate: optionalDateString(),
   startTime: optionalTimeString(),
@@ -114,10 +148,6 @@ export const TrainingRecordInputSchema = z.object({
   status: trainingStatusSchema.default('PLANNED'),
   remarks: optionalString(),
   attendees: z.array(TrainingAttendeeInputSchema).default([]),
-  attendeeCount: z.coerce.number().int().min(0).default(0),
-  attendedCount: z.coerce.number().int().min(0).default(0),
-  completedCount: z.coerce.number().int().min(0).default(0),
-  achievementRate: z.coerce.number().min(0).default(0),
 }).superRefine((record, ctx) => {
   if (record.startDate && record.endDate && record.startDate > record.endDate) {
     ctx.addIssue({

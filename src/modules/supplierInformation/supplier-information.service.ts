@@ -74,6 +74,21 @@ function buildAttachmentUrl(attachmentId: string) {
   return attachmentId ? `/api/supplier-information/attachments/${attachmentId}` : undefined;
 }
 
+function sanitizePathToken(value: string) {
+  return value
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9._-]/g, '');
+}
+
+function sanitizeDownloadName(fileName: string) {
+  return sanitizePathToken(path.basename(fileName));
+}
+
+function normalizeAttachmentExtension(extension: string) {
+  const sanitized = sanitizePathToken(extension.replace(/^\./, ''));
+  return sanitized ? `.${sanitized}` : '';
+}
+
 export function mapSupplierInformationRecord(row: SupplierInformationRow): SupplierInformationRecord {
   const attachmentId = normalizeString(row.attachment_id);
   const attachmentName = normalizeString(row.attachment_name);
@@ -112,9 +127,13 @@ function getAttachmentDirectories() {
 
 async function findAttachmentPath(fileName: string) {
   const directories = getAttachmentDirectories();
+  const safeFileName = sanitizeDownloadName(fileName);
+  if (!safeFileName) {
+    return null;
+  }
 
   for (const directory of directories) {
-    const candidate = path.join(directory, fileName);
+    const candidate = path.join(directory, safeFileName);
     try {
       await fs.access(candidate);
       return candidate;
@@ -158,14 +177,17 @@ export class SupplierInformationService {
 
   async downloadAttachment(attachmentId: string): Promise<SupplierInformationAttachmentDownload> {
     const row = await supplierInformationRepository.findByAttachmentId(attachmentId);
-    if (!row) {
+    if (!row || !toBooleanFlag(row.active_flag)) {
       throw new NotFoundError('Supplier information attachment not found');
     }
 
-    const fileName = normalizeString(row.attachment_id)
-      ? `${normalizeString(row.attachment_id)}${normalizeString(row.attachment_extension)}`
-      : normalizeString(row.attachment_name);
-    const originalName = normalizeString(row.attachment_name) || fileName;
+    const attachmentIdBase = sanitizePathToken(normalizeString(row.attachment_id));
+    const attachmentExtension = normalizeAttachmentExtension(normalizeString(row.attachment_extension));
+    const attachmentName = sanitizeDownloadName(normalizeString(row.attachment_name));
+    const fileName = attachmentIdBase
+      ? `${attachmentIdBase}${attachmentExtension}`
+      : attachmentName;
+    const originalName = attachmentName || fileName;
 
     if (!fileName) {
       throw new NotFoundError('Supplier information attachment file name is missing');

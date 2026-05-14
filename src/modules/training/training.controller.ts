@@ -28,7 +28,7 @@ class TrainingController {
   async calendar(req: Request, res: Response, next: NextFunction) {
     try {
       const { query } = TrainingListQuerySchema.parse({ query: req.query });
-      const records = await trainingService.list(req.user?.userId, query);
+      const records = await trainingService.calendar(req.user?.userId, query);
       return res.json(successResponse(records));
     } catch (error) {
       return next(error);
@@ -89,8 +89,8 @@ class TrainingController {
   async achievement(req: Request, res: Response, next: NextFunction) {
     try {
       const { query } = TrainingAchievementQuerySchema.parse({ query: req.query });
-      const records = await trainingService.achievement(req.user?.userId, query);
-      return res.json(successResponse(records));
+      const response = await trainingService.achievement(req.user?.userId, query);
+      return res.json(successResponse(response));
     } catch (error) {
       return next(error);
     }

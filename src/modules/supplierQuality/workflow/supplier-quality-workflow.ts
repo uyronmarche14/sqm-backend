@@ -66,29 +66,49 @@ export function normalizeSupplierQualityWorkflowStage(
   const raw = String(value ?? '').trim().toUpperCase();
 
   switch (raw) {
+    case 'CHECKER':
     case '':
     case '2':
     case 'DR':
     case 'DRFT':
     case 'DRAFT':
+      if (raw === 'CHECKER') {
+        return 'CHECKER';
+      }
       return 'DRAFT';
+    case 'APPROVER':
     case '3':
     case 'SU':
     case 'SUBM':
     case 'SUBMITTED':
     case 'AC':
     case 'AWAITING_CHECKED':
+      if (raw === 'APPROVER') {
+        return 'APPROVER';
+      }
       return 'CHECKER';
+    case 'REJECT_CHECKER':
     case '4':
     case 'CK':
     case 'CHECKED':
     case 'AA':
     case 'AAPPROVAL':
     case 'AWAITING_APPROVAL':
+      if (raw === 'REJECT_CHECKER') {
+        return 'REJECT_CHECKER';
+      }
       return 'APPROVER';
+    case 'REJECT_APPROVER':
     case '5':
+      if (raw === 'REJECT_APPROVER') {
+        return 'REJECT_APPROVER';
+      }
       return 'REJECT_CHECKER';
+    case 'ISSUER':
     case '6':
+      if (raw === 'ISSUER') {
+        return 'ISSUER';
+      }
       return 'REJECT_APPROVER';
     case '10':
     case 'AP':
