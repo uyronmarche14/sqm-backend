@@ -15,6 +15,7 @@ export * from '../../modules/sqmp/sqmp.db.types.js';
 export * from '../../modules/sqpr/sqpr.db.types.js';
 export * from '../../modules/spcTrend/spc-trend.db.types.js';
 export * from '../../modules/training/training.db.types.js';
+export * from '../../modules/ssi/ssi.db.types.js';
 
 // --- Import table interfaces for Database mapping ---
 import type {
@@ -64,6 +65,12 @@ import type {
   SqeTrainingAttendeesTable,
   SqeTrainingScheduleTable,
 } from '../../modules/training/training.db.types.js';
+import type {
+  SsiPlanTable,
+  SsiRecordTable,
+  SsiResponseTable,
+  SsiWorkflowEventTable,
+} from '../../modules/ssi/ssi.db.types.js';
 import type {
   SpcAttachmentTable,
   SpcLotTable,
@@ -205,4 +212,10 @@ export interface Database {
   SPC_LOTS: SpcLotTable;
   SUPPLIERSPCRECIPIENT: SupplierSpcRecipientTable;
   SPC_WORKFLOW: SpcWorkflowTable;
+
+  // SSI Module
+  SSI_PLAN: SsiPlanTable;
+  SSI_RECORD: SsiRecordTable;
+  SSI_RESPONSE: SsiResponseTable;
+  SSI_WORKFLOW_EVENT: SsiWorkflowEventTable;
 }

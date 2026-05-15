@@ -390,6 +390,18 @@ export class ControlNumberService {
     return this.buildDatedSiteSequence('SPC', 'SPC', input, trxOrDb);
   }
 
+  async buildSsiPlan(input: DatedSiteSequenceInput, trxOrDb?: DBLike) {
+    return this.buildDatedSiteSequence('SSI_PLAN', 'PLN', input, trxOrDb);
+  }
+
+  async buildSsiDraft(input: DatedSiteSequenceInput, trxOrDb?: DBLike) {
+    return this.buildDatedSiteSequence('SSI_RECORD', 'DRF', input, trxOrDb);
+  }
+
+  async finalizeSsi(input: DatedSiteSequenceInput, trxOrDb?: DBLike) {
+    return this.buildDatedSiteSequence('SSI_RECORD', 'SSI', input, trxOrDb);
+  }
+
   async buildQmqaAuditPlan(input: QmqaAuditPlanInput, trxOrDb?: DBLike) {
     const auditPlanDate = input.auditPlanDate ?? input.date;
     const siteCode = await this.resolveSiteCode(

@@ -25,6 +25,7 @@ import supplierInformationRoutes from './modules/supplierInformation/supplier-in
 import supplierQualityRoutes from './modules/supplierQuality/supplier-quality.routes.js';
 import spcTrendRoutes from './modules/spcTrend/spc-trend.routes.js';
 import trainingRoutes from './modules/training/training.routes.js';
+import ssiRoutes from './modules/ssi/ssi.routes.js';
 
 // Rate Limiting
 import { globalLimiter } from './shared/middleware/rate-limiter.js';
@@ -117,6 +118,7 @@ app.use('/api/supplier-information', supplierInformationRoutes);
 app.use('/api/supplier-quality', supplierQualityRoutes);
 app.use('/api/spc-trend', spcTrendRoutes);
 app.use('/api/training', trainingRoutes);
+app.use('/api/ssi', ssiRoutes);
 app.use('/api/mnr', mnrRoutes);
 app.use('/api/sqpr', sqprRoutes);
 app.use('/api/sqmp', sqmpRoutes);
