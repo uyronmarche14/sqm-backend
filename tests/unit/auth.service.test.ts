@@ -524,6 +524,22 @@ describe('AuthService login SQMP assignment access', () => {
     expect(result.userMenu).toEqual(['5M1E']);
   });
 
+  it('keeps login working when one assigned-workflow module lookup fails', async () => {
+    authRepositoryMock.findAssignedSpcTrendAccessibleForms.mockRejectedValueOnce(
+      new Error("Invalid object name 'SPC_WORKFLOW'."),
+    );
+    authRepositoryMock.findAssignedQmqaMediaAccessibleForms.mockResolvedValue(['QMQA-05-09']);
+
+    const service = new AuthService();
+    const result = await service.login({
+      email: 'checker@example.com',
+      password: 'secret',
+    });
+
+    expect(result.accessibleForms).toEqual(['QMQA-05-09']);
+    expect(result.userMenu).toEqual(['QMQA']);
+  });
+
   it('issues a rolling access and refresh token pair when a valid refresh token is presented', async () => {
     jwtMock.generateAccessToken.mockReturnValueOnce('rotated-access-token');
     jwtMock.generateRefreshToken.mockReturnValueOnce('rotated-refresh-token');

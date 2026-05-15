@@ -1,7 +1,7 @@
 import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import { ssiRepository } from '../ssi.repository.js';
 import { computeSsiAvailableActions } from '../workflow/ssi-workflow.js';
-import type { SsiActorContext, SsiRecord } from '../types/ssi.types.js';
+import type { SsiActorContext, SsiRecord, SsiSchedule } from '../types/ssi.types.js';
 
 export class SsiAccessService {
   async resolveActorContext(userId?: string | null, roleId?: string | null): Promise<SsiActorContext> {
@@ -46,6 +46,29 @@ export class SsiAccessService {
     }
 
     return computeSsiAvailableActions(record, actor).length > 0;
+  }
+
+  canReadPlan(plan: SsiSchedule, actor: SsiActorContext) {
+    if (this.isAdmin(actor)) {
+      return true;
+    }
+
+    if (!actor.userId) {
+      return false;
+    }
+
+    return Boolean(
+      plan.sqePicId === actor.userId ||
+        actor.supplierIds.includes(plan.supplierId),
+    );
+  }
+
+  filterReadablePlans(plans: SsiSchedule[], actor: SsiActorContext) {
+    if (this.isAdmin(actor)) {
+      return plans;
+    }
+
+    return plans.filter((plan) => this.canReadPlan(plan, actor));
   }
 
   filterReadableRecords(records: SsiRecord[], actor: SsiActorContext, scope: 'assigned' | 'history' | 'mine' = 'history') {

@@ -57,9 +57,15 @@ class SsiController {
     return ssiAccessService.resolveActorContext(req.user?.userId, req.user?.roleId);
   }
 
-  async listPlans(_req: Request, res: Response, next: NextFunction) {
+  async listPlans(req: Request, res: Response, next: NextFunction) {
     try {
-      const plans = await ssiPlanService.list();
+      const actor = await this.getActor(req);
+      const rawStatus = typeof req.query.status === 'string' ? req.query.status : '';
+      const statuses = rawStatus
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const plans = await ssiPlanService.list(actor, statuses.length > 0 ? statuses : undefined);
       return res.json(successResponse(plans));
     } catch (error) {
       return next(error);
@@ -68,8 +74,9 @@ class SsiController {
 
   async getPlanById(req: Request, res: Response, next: NextFunction) {
     try {
+      const actor = await this.getActor(req);
       const { id } = SsiIdParamSchema.parse({ params: req.params }).params;
-      const plan = await ssiPlanService.getById(id);
+      const plan = await ssiPlanService.getById(id, actor);
       return res.json(successResponse(plan));
     } catch (error) {
       return next(error);

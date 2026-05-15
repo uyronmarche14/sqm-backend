@@ -1,25 +1,33 @@
 import { v4 as uuidv4 } from 'uuid';
-import { BadRequestError, NotFoundError } from '../../../shared/errors/AppError.js';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { ssiRepository } from '../ssi.repository.js';
 import { buildEmptyRecord, buildSsiScheduleFromRow, getDefaultAuditType } from '../shared/ssi-shared.js';
+import { ssiAccessService } from '../shared/ssi-access.service.js';
 import type { SsiActorContext, SsiCategoryFamily, SsiSchedule } from '../types/ssi.types.js';
 import { ssiRecordCommandService } from '../records/ssi-record-command.service.js';
 
 type SchedulePayload = Partial<SsiSchedule>;
 
 export class SsiPlanService {
-  async list() {
-    const rows = await ssiRepository.findAllPlans();
-    return rows.map((row) => buildSsiScheduleFromRow(row as Record<string, unknown>));
+  async list(actor: SsiActorContext, statuses?: string[]) {
+    const rows = await ssiRepository.findAllPlans(statuses);
+    const plans = rows.map((row) => buildSsiScheduleFromRow(row as Record<string, unknown>));
+    return ssiAccessService.filterReadablePlans(plans, actor);
   }
 
-  async getById(id: string) {
+  async getById(id: string, actor?: SsiActorContext) {
     const row = await ssiRepository.findPlanById(id);
     if (!row) {
       throw new NotFoundError('SSI plan not found');
     }
-    return buildSsiScheduleFromRow(row as Record<string, unknown>);
+
+    const plan = buildSsiScheduleFromRow(row as Record<string, unknown>);
+    if (actor && !ssiAccessService.canReadPlan(plan, actor)) {
+      throw new ForbiddenError('You do not have access to this SSI plan');
+    }
+
+    return plan;
   }
 
   async create(actor: SsiActorContext, payload: SchedulePayload) {
@@ -59,7 +67,7 @@ export class SsiPlanService {
       });
     });
 
-    return this.getById(id);
+    return this.getById(id, actor);
   }
 
   async update(id: string, actor: SsiActorContext, payload: SchedulePayload) {
@@ -86,7 +94,7 @@ export class SsiPlanService {
       });
     });
 
-    return this.getById(id);
+    return this.getById(id, actor);
   }
 
   async cancel(id: string, actor: SsiActorContext, payload?: { remarks?: string }) {
@@ -104,7 +112,7 @@ export class SsiPlanService {
       });
     });
 
-    return this.getById(id);
+    return this.getById(id, actor);
   }
 
   async delete(id: string) {
@@ -122,7 +130,7 @@ export class SsiPlanService {
   }
 
   async createRecordFromPlan(id: string, actor: SsiActorContext, payload?: Record<string, unknown>) {
-    const plan = await this.getById(id);
+    const plan = await this.getById(id, actor);
     const baseRecord = buildEmptyRecord();
     return ssiRecordCommandService.create(
       actor,

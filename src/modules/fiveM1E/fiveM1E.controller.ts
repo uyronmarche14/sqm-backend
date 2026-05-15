@@ -49,10 +49,14 @@ export class FiveM1EController {
   async getAllApplications(req: Request, res: Response, next: NextFunction) {
     try {
       const status = req.query.status as string | undefined;
+      const picId = req.query.picId as string | undefined;
+      const siteId = req.query.siteId as string | undefined;
+      const supplierId = req.query.supplierId as string | undefined;
       const records = await fiveM1EService.getAllApplications(
         status,
         this.getActor(req),
         resolveWorkflowListScope({ scope: req.query.scope, assignedToMe: req.query.assignedToMe }),
+        { picId, siteId, supplierId },
       );
       
       res.status(200).json(successResponse(records));

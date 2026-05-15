@@ -58,12 +58,12 @@ describe('SsiPlanService', () => {
 
     await ssiPlanService.createRecordFromPlan(
       'plan-1',
-      { userId: 'user-1', roleId: 'role-1', roleName: 'SQE', supplierIds: [] },
+      { userId: 'sqe-1', roleId: 'role-1', roleName: 'SQE', supplierIds: [] },
       { remarks: 'Override remark' },
     );
 
     expect(createRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-1' }),
+      expect.objectContaining({ userId: 'sqe-1' }),
       expect.objectContaining({
         scheduleId: 'plan-1',
         controlNo: 'PLN-SSI-001',

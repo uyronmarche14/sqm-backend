@@ -790,7 +790,7 @@ export class FiveM1EService {
     /**
      * Retrieves all 5M1E Applications
      */
-    async getAllApplications(status, actor, scope = 'history') {
+    async getAllApplications(status, actor, scope = 'history', filters = {}) {
         const records = await this.repository.findAllWithApproval(status);
         const isAdmin = this.isAdminActor(actor);
         const requestedStatuses = new Set(String(status || '')
@@ -876,7 +876,31 @@ export class FiveM1EService {
                     entry.isMine ||
                     entry.hasWorkflowAccess,
             });
-        return visibleRecords.map((entry) => entry.data);
+        return visibleRecords
+            .map((entry) => entry.data)
+            .filter((record) => {
+            if (filters.picId) {
+                const createdBy = String(record.created_by || record.CreatedBy || '');
+                const pic = String(record.pic || record.pic_id || record.PIC || '');
+                if (createdBy !== filters.picId && pic !== filters.picId) {
+                    return false;
+                }
+            }
+            if (filters.siteId) {
+                const siteId = String(record.site_id || record.SiteID || '');
+                if (siteId !== filters.siteId) {
+                    return false;
+                }
+            }
+            if (filters.supplierId) {
+                const supplierId = String(record.supplier_id || record.SupplierID || '');
+                const vendorId = String(record.vendor_id || record.VendorID || '');
+                if (supplierId !== filters.supplierId && vendorId !== filters.supplierId) {
+                    return false;
+                }
+            }
+            return true;
+        });
     }
     /**
      * Retrieves a 5M1E Application with its full Approval + Child Tables
