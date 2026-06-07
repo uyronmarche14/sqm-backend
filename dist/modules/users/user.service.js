@@ -21,7 +21,14 @@ export class UserService {
         const formId = filters?.formId;
         const assignmentRole = filters?.assignmentRole;
         if (!formId || !assignmentRole) {
-            return users;
+            return users.map((user) => ({
+                user_id: user.user_id,
+                full_name: user.full_name,
+                role_id: user.role_id,
+                site_id: user.site_id,
+                active_flag: user.active_flag,
+                role_name: user.role_name,
+            }));
         }
         const qualificationByRoleId = new Map();
         const filteredUsers = await Promise.all(users.map(async (user) => {

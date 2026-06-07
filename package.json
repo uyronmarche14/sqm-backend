@@ -16,7 +16,7 @@
     "db:bootstrap:empty": "tsx src/db/bootstrap-empty.ts",
     "db:migrate:safe": "tsx src/db/migrate-safe.ts",
     "db:seed:reference": "tsx src/db/seeds/reference.seed.ts",
-    "db:seed:admin": "tsx src/db/seeds/admin.seed.ts",
+    "db:seed:admin": "tsx --env-file=.env.local src/db/seeds/admin.seed.ts",
     "migrate": "tsx src/db/migrate.ts",
     "init:db": "tsx src/db/init.ts",
     "init:db:local": "tsx --env-file=.env.local src/db/init.ts"
@@ -36,7 +36,7 @@
     "helmet": "^8.1.0",
     "ioredis": "^5.9.3",
     "jsonwebtoken": "^9.0.3",
-    "kysely": "^0.28.11",
+    "kysely": "^0.29.2",
     "mssql": "^12.2.0",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.13",
