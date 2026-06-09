@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import { requestLogger } from './shared/middleware/request-logger.js';
 import { assertJwtConfig } from './shared/utils/jwt.js';
 
-dotenv.config();
+dotenv.config({ quiet: process.env.NODE_ENV === 'test' });
 assertJwtConfig();
 
 // Middlewares

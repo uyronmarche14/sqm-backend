@@ -127,9 +127,11 @@ export class MnrCommandService {
       await validateApprover(approval.approver, MNR_MAIN_APPROVAL_FORM_ID);
     }
 
-    console.log('[MNR CREATE] Received payload → defects:', JSON.stringify(payload.defects, null, 2));
-    console.log('[MNR CREATE] Received payload → disposition:', JSON.stringify(disp, null, 2));
-    console.log('[MNR CREATE] Received payload → disposition_data:', JSON.stringify((payload as any).disposition_data, null, 2));
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[MNR CREATE] Received payload → defects:', JSON.stringify(payload.defects, null, 2));
+      console.log('[MNR CREATE] Received payload → disposition:', JSON.stringify(disp, null, 2));
+      console.log('[MNR CREATE] Received payload → disposition_data:', JSON.stringify((payload as any).disposition_data, null, 2));
+    }
 
     const { mapStatusToDB } = await import('../../../shared/utils/status-mapper.js');
     const dbStatus = mapStatusToDB('DRAFT');

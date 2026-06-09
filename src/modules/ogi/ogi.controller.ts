@@ -61,7 +61,9 @@ export class OgiController {
       const files = (req as any).files || [];
       
       const result = await ogiService.createRecord(payload, userId, files);
-      console.info(`[Backend] Receiving OGI Create form data`, { payload, files: files.length });
+      if (process.env.NODE_ENV !== 'production') {
+        console.info(`[Backend] Receiving OGI Create form data`, { payload, files: files.length });
+      }
       return res.status(201).json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] CREATE error:', error);
@@ -79,7 +81,9 @@ export class OgiController {
       const files = (req as any).files || [];
 
       const result = await ogiService.updateRecord(id, payload, actor, files);
-      console.info(`[Backend] Receiving OGI Update form data for ${id}`, { payload, files: files.length });
+      if (process.env.NODE_ENV !== 'production') {
+        console.info(`[Backend] Receiving OGI Update form data for ${id}`, { payload, files: files.length });
+      }
       return res.json(successResponse(result.data || result, result.message));
     } catch (error) {
       console.error('[OGI] UPDATE error:', error);

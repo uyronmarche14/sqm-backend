@@ -78,8 +78,10 @@ export class SqprController {
                 body.approval = JSON.parse(body.approval);
             }
             assertNoWorkflowMutationFields(body, 'SQPR');
-            // Log received data (BEFORE flattening)
-            console.info(`[Backend] Receiving SQPR Create form data by user ${this.getUserId(req)}`, { body });
+            // Log received data (BEFORE flattening) - dev only
+            if (process.env.NODE_ENV !== 'production') {
+                console.info(`[Backend] Receiving SQPR Create form data by user ${this.getUserId(req)}`, { body });
+            }
             const payload = SqprCreateSchema.parse({ body }).body;
             const userId = this.getUserId(req);
             const files = req.files || [];
@@ -127,7 +129,9 @@ export class SqprController {
             const userId = this.getUserId(req);
             const files = req.files || [];
             const result = await sqprService.updateRecord(id, payload, { userId, roleName: this.getRoleName(req) }, files);
-            console.info(`[Backend] Receiving SQPR Update form data for ${id}`, { body });
+            if (process.env.NODE_ENV !== 'production') {
+                console.info(`[Backend] Receiving SQPR Update form data for ${id}`, { body });
+            }
             res.json(successResponse(result.data || result, result.message));
         }
         catch (error) {

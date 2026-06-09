@@ -4,7 +4,7 @@ import * as Tedious from 'tedious';
 import dotenv from 'dotenv';
 import { Database } from './db.types.js';
 
-dotenv.config();
+dotenv.config({ quiet: process.env.NODE_ENV === 'test' });
 
 const dialect = new MssqlDialect({
   tarn: {
@@ -41,13 +41,15 @@ export const db = new Kysely<Database>({
   dialect,
   log(event) {
     if (event.level === 'query') {
-      const sqlStr = event.query.sql.toLowerCase();
-      if (
-        sqlStr.startsWith('insert') ||
-        sqlStr.startsWith('update') ||
-        sqlStr.startsWith('delete')
-      ) {
-        console.info(`[Backend] Saving data to database:`, event.query.sql);
+      if (process.env.NODE_ENV !== 'production') {
+        const sqlStr = event.query.sql.toLowerCase();
+        if (
+          sqlStr.startsWith('insert') ||
+          sqlStr.startsWith('update') ||
+          sqlStr.startsWith('delete')
+        ) {
+          console.info(`[Backend] Saving data to database:`, event.query.sql);
+        }
       }
     } else if (event.level === 'error') {
       console.error('[Backend] Database error:', event.error);

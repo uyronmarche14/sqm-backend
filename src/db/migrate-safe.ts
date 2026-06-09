@@ -2,67 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { sql } from 'kysely';
-
 import { db } from '../shared/infrastructure/db.js';
 import { getMigrationAllowedForNonLocalTarget, isLocalDatabaseTarget, logDb } from './lib/db-safety.js';
+import {
+  ensureMigrationsTable,
+  getSafeMigrationFiles,
+  isMigrationApplied,
+  recordMigration,
+  executeMigration,
+} from './lib/migration-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
-const SAFE_MIGRATION_FILES = [
-  path.join(__dirname, 'migrations', 'migration_add_password_reset_tokens.sql'),
-  path.join(__dirname, 'migrations', 'migration_add_5m1e_cc_table.sql'),
-  path.join(__dirname, 'migrations', 'migration_add_eval_columns.sql'),
-  path.join(__dirname, 'migrations', 'migration_add_npi_corrected_lot_verification.sql'),
-  path.join(__dirname, 'legacy', 'migration_add_mnr_8d_fields.sql'),
-];
-
-async function ensureMigrationsTable() {
-  await sql`
-    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'TBL_SQM_Migrations')
-    BEGIN
-      CREATE TABLE TBL_SQM_Migrations (
-        ID INT IDENTITY(1,1) PRIMARY KEY,
-        MigrationName NVARCHAR(255) NOT NULL UNIQUE,
-        AppliedAt DATETIME2 DEFAULT GETDATE()
-      )
-    END
-  `.execute(db);
-}
-
-async function isMigrationApplied(name: string) {
-  const result = await sql<{ cnt: number }>`
-    SELECT COUNT(*) as cnt FROM TBL_SQM_Migrations WHERE MigrationName = ${name}
-  `.execute(db);
-
-  return (result.rows[0]?.cnt ?? 0) > 0;
-}
-
-async function recordMigration(name: string) {
-  await sql`
-    INSERT INTO TBL_SQM_Migrations (MigrationName) VALUES (${name})
-  `.execute(db);
-}
-
-function splitSqlBatches(contents: string) {
-  return contents
-    .split(/^\s*GO\s*$/gim)
-    .map((batch) => batch.trim())
-    .filter((batch) => {
-      const withoutComments = batch.replace(/--.*$/gm, '').trim();
-      return withoutComments.length > 0;
-    });
-}
-
-async function executeMigration(filePath: string) {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const batches = splitSqlBatches(content);
-
-  for (const batch of batches) {
-    await sql.raw(batch).execute(db);
-  }
-}
+const SAFE_MIGRATION_FILES = getSafeMigrationFiles();
 
 export async function runSafeMigrations(invocation = 'db:migrate:safe') {
   if (!isLocalDatabaseTarget() && !getMigrationAllowedForNonLocalTarget()) {
@@ -75,6 +27,7 @@ export async function runSafeMigrations(invocation = 'db:migrate:safe') {
 
   let applied = 0;
   let skipped = 0;
+  const toApply: string[] = [];
 
   for (const filePath of SAFE_MIGRATION_FILES) {
     if (!fs.existsSync(filePath)) {
@@ -83,11 +36,23 @@ export async function runSafeMigrations(invocation = 'db:migrate:safe') {
 
     const name = path.basename(filePath);
     if (await isMigrationApplied(name)) {
-      logDb(`${invocation}: skipping ${name} (already applied).`);
       skipped += 1;
       continue;
     }
 
+    toApply.push(filePath);
+  }
+
+  if (toApply.length === 0) {
+    logDb(`${invocation}: all ${SAFE_MIGRATION_FILES.length} migrations already applied (${skipped} skipped).`);
+    return;
+  }
+
+  logDb(`${invocation}: ${toApply.length} migration(s) to apply, ${skipped} already applied.`);
+  logDb(`${invocation}: ensure a database backup exists before proceeding. To rollback, create .down.sql files and run db:rollback.`);
+
+  for (const filePath of toApply) {
+    const name = path.basename(filePath);
     logDb(`${invocation}: applying ${name}...`);
     await executeMigration(filePath);
     await recordMigration(name);

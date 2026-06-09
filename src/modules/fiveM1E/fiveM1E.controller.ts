@@ -33,7 +33,9 @@ export class FiveM1EController {
       const actor = this.getActor(req);
       const files = (req as any).files || [];
       
-      console.info(`[Backend] Receiving 5M1E Create form data from user ${actor.userId}`, { files: files.length, body: req.body });
+      if (process.env.NODE_ENV !== 'production') {
+        console.info(`[Backend] Receiving 5M1E Create form data from user ${actor.userId}`, { files: files.length, body: req.body });
+      }
 
       const result = await fiveM1EService.createApplication(req.body, actor, files);
       
@@ -89,7 +91,9 @@ export class FiveM1EController {
       const files = (req as any).files || [];
       const actor = this.getActor(req);
       
-      console.info(`[Backend] Receiving 5M1E Update form data for ${id} by user ${actor.userId}`, { files: files.length, body: req.body });
+      if (process.env.NODE_ENV !== 'production') {
+        console.info(`[Backend] Receiving 5M1E Update form data for ${id} by user ${actor.userId}`, { files: files.length, body: req.body });
+      }
 
       const result = await fiveM1EService.updateApplication(id, req.body, files, actor);
       

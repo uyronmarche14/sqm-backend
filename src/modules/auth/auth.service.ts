@@ -86,23 +86,31 @@ export class AuthService {
   }
 
   private buildAuthContextResponse(user: any, accessibleForms: string[], roleAccessRecords: any[]) {
-    console.log('🏗️ [Auth] Building auth context for accessible forms:', accessibleForms);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🏗️ [Auth] Building auth context for accessible forms:', accessibleForms);
+    }
     const userMenuSet = new Set<string>();
 
     for (const formCode of accessibleForms) {
       const mapping = getLegacyFormMapping(formCode);
       if (!mapping) {
-        console.warn('⚠️ [Auth] No mapping found for form code:', formCode);
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('⚠️ [Auth] No mapping found for form code:', formCode);
+        }
         continue;
       }
 
       const menuLabel = getModulePermissionManifest(mapping.module).menuLabel;
-      console.log('✅ [Auth] Form code:', formCode, '→ Module:', mapping.module, '→ Menu Label:', menuLabel);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('✅ [Auth] Form code:', formCode, '→ Module:', mapping.module, '→ Menu Label:', menuLabel);
+      }
       userMenuSet.add(menuLabel);
     }
 
     const userMenu = Array.from(userMenuSet);
-    console.log('📋 [Auth] Final userMenu:', userMenu);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('📋 [Auth] Final userMenu:', userMenu);
+    }
 
     const normalizedRoleName = user.role_name?.toLowerCase() || '';
     const isAdmin = normalizedRoleName.includes('admin') ? 1 : 0;
@@ -260,18 +268,20 @@ export class AuthService {
         email: user.email || '',
       });
 
-      console.log(
-        '[auth] password-changed email notification processed',
-        JSON.stringify({
-          userId: user.user_id,
-          email: user.email,
-          eventKey: 'auth.password.changed',
-          delivered: result.delivered,
-          skipped: result.skipped ?? false,
-          transport: result.transport,
-          referenceId: result.referenceId ?? null,
-        }),
-      );
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          '[auth] password-changed email notification processed',
+          JSON.stringify({
+            userId: user.user_id,
+            email: user.email,
+            eventKey: 'auth.password.changed',
+            delivered: result.delivered,
+            skipped: result.skipped ?? false,
+            transport: result.transport,
+            referenceId: result.referenceId ?? null,
+          }),
+        );
+      }
     } catch (error) {
       console.error(
         '[auth] failed to send password-changed email notification',
@@ -324,18 +334,20 @@ export class AuthService {
         expiresInMinutes: 30,
       });
 
-      console.log(
-        '[auth] password-reset-request email notification processed',
-        JSON.stringify({
-          userId: user.user_id,
-          email: user.email,
-          eventKey: 'auth.password.reset.requested',
-          delivered: result.delivered,
-          skipped: result.skipped ?? false,
-          transport: result.transport,
-          referenceId: result.referenceId ?? null,
-        }),
-      );
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          '[auth] password-reset-request email notification processed',
+          JSON.stringify({
+            userId: user.user_id,
+            email: user.email,
+            eventKey: 'auth.password.reset.requested',
+            delivered: result.delivered,
+            skipped: result.skipped ?? false,
+            transport: result.transport,
+            referenceId: result.referenceId ?? null,
+          }),
+        );
+      }
     } catch (error) {
       console.error(
         '[auth] failed to send password-reset-request email notification',
@@ -372,18 +384,20 @@ export class AuthService {
         email: resetRecord.email || '',
       });
 
-      console.log(
-        '[auth] password-reset completion email notification processed',
-        JSON.stringify({
-          userId: resetRecord.user_id,
-          email: resetRecord.email,
-          eventKey: 'auth.password.changed',
-          delivered: result.delivered,
-          skipped: result.skipped ?? false,
-          transport: result.transport,
-          referenceId: result.referenceId ?? null,
-        }),
-      );
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          '[auth] password-reset completion email notification processed',
+          JSON.stringify({
+            userId: resetRecord.user_id,
+            email: resetRecord.email,
+            eventKey: 'auth.password.changed',
+            delivered: result.delivered,
+            skipped: result.skipped ?? false,
+            transport: result.transport,
+            referenceId: result.referenceId ?? null,
+          }),
+        );
+      }
     } catch (error) {
       console.error(
         '[auth] failed to send password-reset completion email notification',

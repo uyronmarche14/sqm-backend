@@ -38,6 +38,10 @@ export interface MfgSitesTable {
   site_id: string;
   site_name: string;
   site_code: string | null;
+  site_desc: string | null;
+  active_flag: boolean | number | null;
+  last_update: Date | string | null;
+  updateby: string | null;
 }
 
 // --- Parts ---
@@ -216,6 +220,9 @@ export interface InspectionMethodsTable extends GenericMasterDataTable {
   inspectionmethod_id: string;
   inspectionmethod_name: string;
   inspectionmethod_desc: string | null;
+  default_value: number | null;
+  default_temp: number | null;
+  default_hum: number | null;
 }
 
 export interface InspectorsTable extends GenericMasterDataTable {

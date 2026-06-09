@@ -50,7 +50,7 @@ export async function runAdminSeed(invocation = 'db:seed:admin') {
     return;
   }
 
-  await ensureTables(['MFG_SITES', 'ROLES', 'USERS']);
+  await ensureTables(['MFG_SITES', 'ROLES', 'USERS', 'FORMS', 'ROLE_ACCESS']);
 
   const adminEmail = resolveAdminEmail();
   const adminPassword = resolveAdminPassword();

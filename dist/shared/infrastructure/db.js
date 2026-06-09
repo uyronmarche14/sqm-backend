@@ -2,7 +2,7 @@ import { Kysely, MssqlDialect, sql } from 'kysely';
 import * as Tarn from 'tarn';
 import * as Tedious from 'tedious';
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ quiet: process.env.NODE_ENV === 'test' });
 const dialect = new MssqlDialect({
     tarn: {
         ...Tarn,
@@ -36,11 +36,13 @@ export const db = new Kysely({
     dialect,
     log(event) {
         if (event.level === 'query') {
-            const sqlStr = event.query.sql.toLowerCase();
-            if (sqlStr.startsWith('insert') ||
-                sqlStr.startsWith('update') ||
-                sqlStr.startsWith('delete')) {
-                console.info(`[Backend] Saving data to database:`, event.query.sql);
+            if (process.env.NODE_ENV !== 'production') {
+                const sqlStr = event.query.sql.toLowerCase();
+                if (sqlStr.startsWith('insert') ||
+                    sqlStr.startsWith('update') ||
+                    sqlStr.startsWith('delete')) {
+                    console.info(`[Backend] Saving data to database:`, event.query.sql);
+                }
             }
         }
         else if (event.level === 'error') {

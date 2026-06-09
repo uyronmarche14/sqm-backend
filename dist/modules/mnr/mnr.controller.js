@@ -75,7 +75,9 @@ export class MnrController {
             const userId = req.user?.userId || req.user?.id || 'SYSTEM';
             const files = req.files || [];
             const result = await mnrService.createRecord(payload, userId, files);
-            console.info(`[Backend] Receiving MNR Create form data by user ${userId}`, { payload, files: files.length });
+            if (process.env.NODE_ENV !== 'production') {
+                console.info(`[Backend] Receiving MNR Create form data by user ${userId}`, { payload, files: files.length });
+            }
             res.status(201).json(result);
         }
         catch (error) {
@@ -93,7 +95,9 @@ export class MnrController {
             const actor = this.getActor(req);
             const files = req.files || [];
             const result = await mnrService.updateRecord(id, payload, actor, files);
-            console.info(`[Backend] Receiving MNR Update form data for ${id}`, { payload, files: files.length });
+            if (process.env.NODE_ENV !== 'production') {
+                console.info(`[Backend] Receiving MNR Update form data for ${id}`, { payload, files: files.length });
+            }
             res.json(result);
         }
         catch (error) {

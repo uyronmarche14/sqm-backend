@@ -644,7 +644,9 @@ export class FiveM1EService {
      * Creates a new 5M1E Application and its initial Approval state
      */
     async createApplication(data, actorOrUserId, files = []) {
-        console.log('[5M1E Service] Create Application Payload:', JSON.stringify(data, null, 2));
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[5M1E Service] Create Application Payload:', JSON.stringify(data, null, 2));
+        }
         console.log(`[5M1E Service] Attached files count: ${files.length}`);
         const actor = typeof actorOrUserId === 'string'
             ? { userId: actorOrUserId }
@@ -1057,7 +1059,9 @@ export class FiveM1EService {
      * Updates an Application intelligently picking valid fields
      */
     async updateApplication(controlNo, data, files = [], actor = {}) {
-        console.log('[5M1E Service] Update Application Payload:', JSON.stringify(data, null, 2));
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[5M1E Service] Update Application Payload:', JSON.stringify(data, null, 2));
+        }
         console.log(`[5M1E Service] Attached files count: ${files.length}`);
         const existing = await this.repository.findWithApproval(controlNo);
         if (!existing) {

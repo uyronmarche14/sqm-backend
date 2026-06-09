@@ -835,7 +835,9 @@ export class FiveM1EService {
     actorOrUserId: WorkflowActor | string,
     files: any[] = [],
   ) {
-    console.log('[5M1E Service] Create Application Payload:', JSON.stringify(data, null, 2));
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[5M1E Service] Create Application Payload:', JSON.stringify(data, null, 2));
+    }
     console.log(`[5M1E Service] Attached files count: ${files.length}`);
 
     const actor = typeof actorOrUserId === 'string'
@@ -1307,7 +1309,9 @@ export class FiveM1EService {
     files: any[] = [],
     actor: WorkflowActor = {},
   ) {
-    console.log('[5M1E Service] Update Application Payload:', JSON.stringify(data, null, 2));
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[5M1E Service] Update Application Payload:', JSON.stringify(data, null, 2));
+    }
     console.log(`[5M1E Service] Attached files count: ${files.length}`);
     
     const existing = await this.repository.findWithApproval(controlNo);

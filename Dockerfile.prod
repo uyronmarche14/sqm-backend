@@ -3,17 +3,21 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy shared package first
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace config and shared packages
+COPY pnpm-workspace.yaml pnpm-lock.yaml .npmrc* ./
 COPY packages/permissions-contract ./packages/permissions-contract
 
 # Install dependencies
-COPY sqm-backend/package*.json ./sqm-backend/
+COPY sqm-backend/package.json ./sqm-backend/
 WORKDIR /app/sqm-backend
-RUN npm ci --ignore-scripts
+RUN pnpm install --frozen-lockfile --prod
 
 # Copy source and build
 COPY sqm-backend/. ./
-RUN npm run build
+RUN pnpm run build
 
 # ---- Production Stage ----
 FROM node:20-alpine AS production

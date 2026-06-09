@@ -2,14 +2,19 @@ FROM node:20
 
 WORKDIR /app
 
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace config and shared packages
+COPY pnpm-workspace.yaml pnpm-lock.yaml .npmrc* ./
 COPY packages/permissions-contract ./packages/permissions-contract
-COPY sqm-backend/package*.json ./sqm-backend/
+COPY sqm-backend/package.json ./sqm-backend/
 
 WORKDIR /app/sqm-backend
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 COPY sqm-backend/. ./
 
 EXPOSE 3001
 
-CMD ["npm", "run", "dev"]
+CMD ["pnpm", "run", "dev"]

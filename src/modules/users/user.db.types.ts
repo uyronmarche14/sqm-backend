@@ -25,6 +25,10 @@ export interface UsersTable {
 export interface RolesTable {
   role_id: string;
   role_name: string;
+  role_desc: string | null;
+  active_flag: boolean | number | null;
+  last_update: Date | string | null;
+  updateby: string | null;
 }
 
 export interface PasswordResetTokensTable {
