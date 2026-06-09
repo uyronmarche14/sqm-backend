@@ -355,6 +355,22 @@ export interface RegistrationsTable extends GenericMasterDataTable {
   confirmation_date: Date | string | null;
 }
 
+export interface CustomerTable extends GenericMasterDataTable {
+  customer_id: string;
+  customer_name: string;
+  customer_desc: string | null;
+}
+
+export interface NewsTable extends GenericMasterDataTable {
+  news_id: string;
+  news_name: string;
+  news_desc: string | null;
+  file_id: string;
+  file_name: string;
+  file_extension: string;
+  sequence: number;
+}
+
 // Helper types
 export type Supplier = Selectable<SuppliersTable>;
 export type NewSupplier = Insertable<SuppliersTable>;

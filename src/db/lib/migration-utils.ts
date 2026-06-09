@@ -15,6 +15,8 @@ export const SAFE_MIGRATION_FILES = [
   path.join(__dirname, '..', 'migrations', 'migration_add_eval_columns.sql'),
   path.join(__dirname, '..', 'migrations', 'migration_add_npi_corrected_lot_verification.sql'),
   path.join(__dirname, '..', 'legacy', 'migration_add_mnr_8d_fields.sql'),
+  path.join(__dirname, '..', 'migrations', 'migration_add_spc_workflow.sql'),
+  path.join(__dirname, '..', 'migrations', 'migration_add_sqpr_supplier_attention.sql'),
 ];
 
 export function getSafeMigrationFiles() {

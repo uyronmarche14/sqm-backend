@@ -34,7 +34,8 @@ import type {
   AqlLevelTable, AqlLevelClassTable, MaterialCertsTable,
   FormsTable, RoleAccessTable, SupplierInformationTable, AuditCategoryTable,
   AuditTypeTable, CriteriasTable, PartClassCategoriesTable, RegistrationsTable,
-  FAQItemTable, CertificationsTable, GroupsTable, TrainingProgramsTable, MessageInfoTable
+  FAQItemTable, CertificationsTable, GroupsTable, TrainingProgramsTable, MessageInfoTable,
+  CustomerTable, NewsTable
 } from '../../modules/masterData/master-data.db.types.js';
 import type {
   MnrLotsTable, MnrDetailsTable, MnrResponseTable, MnrVerificationTable,
@@ -142,6 +143,8 @@ export interface Database {
   GROUPS: GroupsTable;
   TRAINING_PROGRAMS: TrainingProgramsTable;
   MESSAGE_INFO: MessageInfoTable;
+  CUSTOMER: CustomerTable;
+  NEWS: NewsTable;
 
   // MNR Module
   MNR_LOTS: MnrLotsTable;

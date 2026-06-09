@@ -106,6 +106,8 @@ export async function runReferenceSeed(invocation = 'db:seed:reference') {
     'TRAINING_PROGRAMS',
     'FAQ_ITEM',
     'MESSAGE_INFO',
+    'CUSTOMER',
+    'NEWS',
   ]);
 
   const now = new Date();
@@ -475,6 +477,20 @@ export async function runReferenceSeed(invocation = 'db:seed:reference') {
     rows: secondaryMaintenanceReferenceSeed.messageInfo.map((row) => withSeedMetadata(row, now)),
   });
 
+  const customers = await upsertSeedRows({
+    table: 'CUSTOMER',
+    matchOn: ['customer_name'],
+    preserveOnUpdate: ['customer_id'],
+    rows: secondaryMaintenanceReferenceSeed.customers.map((row) => withSeedMetadata(row, now)),
+  });
+
+  const newsItems = await upsertSeedRows({
+    table: 'NEWS',
+    matchOn: ['news_name'],
+    preserveOnUpdate: ['news_id'],
+    rows: secondaryMaintenanceReferenceSeed.newsItems.map((row) => withSeedMetadata(row, now)),
+  });
+
   logDb(
     `${invocation}: reference seed complete ` +
       `(sites=${sites.length}, suppliers=${suppliers.length}, products=${products.length}, ` +
@@ -485,7 +501,8 @@ export async function runReferenceSeed(invocation = 'db:seed:reference') {
       `partDataCategories=${partDataCategories.length}, partDimensionCategories=${partDimensionCategories.length}, ` +
       `partNoiseCategories=${partNoiseCategories.length}, auditTypes=${auditTypes.length}, criteria=${criterias.length}, ` +
       `supplierInformation=${supplierInformation.length}, certifications=${certifications.length}, groups=${groups.length}, ` +
-      `trainingPrograms=${trainingPrograms.length}, faqItems=${faqItems.length}, messages=${messageInfo.length}).`,
+      `trainingPrograms=${trainingPrograms.length}, faqItems=${faqItems.length}, messages=${messageInfo.length}, ` +
+      `customers=${customers.length}, news=${newsItems.length}).`,
   );
 }
 
