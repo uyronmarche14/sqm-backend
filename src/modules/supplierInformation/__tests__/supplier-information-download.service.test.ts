@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const accessMock = vi.hoisted(() => vi.fn());
 const repositoryMock = vi.hoisted(() => ({
   findByAttachmentId: vi.fn(),
+  findActorRoleName: vi.fn(),
+  findSupplierIdsByUserId: vi.fn(),
 }));
 
 vi.mock('fs/promises', () => ({
@@ -64,9 +66,10 @@ describe('supplierInformationService.downloadAttachment', () => {
       site_id: 'site-1',
       site_name: 'Batam',
     });
+    repositoryMock.findActorRoleName.mockResolvedValue('TIP Administrator (Super User)');
     accessMock.mockResolvedValue(undefined);
 
-    const file = await supplierInformationService.downloadAttachment('att-1');
+    const file = await supplierInformationService.downloadAttachment('att-1', 'user-admin');
 
     expect(file.fileName).toBe('unsafe_name.pdf');
     expect(file.filePath).toContain('att-1.pdf');

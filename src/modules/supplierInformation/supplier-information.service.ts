@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { NotFoundError } from '../../shared/errors/AppError.js';
+import { isAdminRole } from '../../shared/utils/admin.utils.js';
 import { supplierInformationRepository, type SupplierInformationRow } from './supplier-information.repository.js';
 
 export interface SupplierInformationRecord {
@@ -146,38 +147,85 @@ async function findAttachmentPath(fileName: string) {
 }
 
 export class SupplierInformationService {
-  async list() {
+  private async resolveAccessibleSupplierIds(userId: string | undefined): Promise<string[] | null> {
+    if (!userId) {
+      return [];
+    }
+
+    const roleName = await supplierInformationRepository.findActorRoleName(userId);
+    if (isAdminRole(roleName)) {
+      return null;
+    }
+
+    return supplierInformationRepository.findSupplierIdsByUserId(userId);
+  }
+
+  private isRecordAccessible(row: SupplierInformationRow, accessibleSupplierIds: string[] | null): boolean {
+    if (accessibleSupplierIds === null) {
+      return true;
+    }
+
+    return accessibleSupplierIds.includes(row.supplier_id);
+  }
+
+  async list(userId?: string) {
+    const accessibleSupplierIds = await this.resolveAccessibleSupplierIds(userId);
     const rows = await supplierInformationRepository.findAllActive();
-    return rows.map(mapSupplierInformationRecord);
+    const filtered = accessibleSupplierIds === null
+      ? rows
+      : rows.filter((r) => accessibleSupplierIds.includes(r.supplier_id));
+    return filtered.map(mapSupplierInformationRecord);
   }
 
-  async listBySupplier(supplierId: string) {
+  async listBySupplier(supplierId: string, userId?: string) {
+    const accessibleSupplierIds = await this.resolveAccessibleSupplierIds(userId);
+    if (accessibleSupplierIds !== null && !accessibleSupplierIds.includes(supplierId)) {
+      return [];
+    }
+
     const rows = await supplierInformationRepository.findActiveBySupplier(supplierId);
-    return rows.map(mapSupplierInformationRecord);
+    const filtered = accessibleSupplierIds === null
+      ? rows
+      : rows.filter((r) => accessibleSupplierIds.includes(r.supplier_id));
+    return filtered.map(mapSupplierInformationRecord);
   }
 
-  async getById(id: string) {
+  async getById(id: string, userId?: string) {
     const row = await supplierInformationRepository.findById(id);
     if (!row || !toBooleanFlag(row.active_flag)) {
+      throw new NotFoundError('Supplier information record not found');
+    }
+
+    const accessibleSupplierIds = await this.resolveAccessibleSupplierIds(userId);
+    if (!this.isRecordAccessible(row, accessibleSupplierIds)) {
       throw new NotFoundError('Supplier information record not found');
     }
 
     return mapSupplierInformationRecord(row);
   }
 
-  async search(rawKeyword: string) {
+  async search(rawKeyword: string, userId?: string) {
     const keyword = normalizeString(rawKeyword).toLowerCase();
     if (!keyword) {
       return [];
     }
 
+    const accessibleSupplierIds = await this.resolveAccessibleSupplierIds(userId);
     const rows = await supplierInformationRepository.searchActive(keyword);
-    return rows.map(mapSupplierInformationRecord);
+    const filtered = accessibleSupplierIds === null
+      ? rows
+      : rows.filter((r) => accessibleSupplierIds.includes(r.supplier_id));
+    return filtered.map(mapSupplierInformationRecord);
   }
 
-  async downloadAttachment(attachmentId: string): Promise<SupplierInformationAttachmentDownload> {
+  async downloadAttachment(attachmentId: string, userId?: string): Promise<SupplierInformationAttachmentDownload> {
     const row = await supplierInformationRepository.findByAttachmentId(attachmentId);
     if (!row || !toBooleanFlag(row.active_flag)) {
+      throw new NotFoundError('Supplier information attachment not found');
+    }
+
+    const accessibleSupplierIds = await this.resolveAccessibleSupplierIds(userId);
+    if (!this.isRecordAccessible(row, accessibleSupplierIds)) {
       throw new NotFoundError('Supplier information attachment not found');
     }
 

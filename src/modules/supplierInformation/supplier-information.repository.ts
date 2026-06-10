@@ -82,6 +82,28 @@ export class SupplierInformationRepository {
       .orderBy('si.first_name')
       .execute() as SupplierInformationRow[];
   }
+
+  async findSupplierIdsByUserId(userId: string): Promise<string[]> {
+    const rows = await db
+      .selectFrom('SUPPLIERSUSER')
+      .select('supplier_id')
+      .where('user_id', '=', userId)
+      .where('active_flag', '=', 1)
+      .execute();
+
+    return rows.map((r) => r.supplier_id);
+  }
+
+  async findActorRoleName(userId: string): Promise<string | null> {
+    const row = await db
+      .selectFrom('USERS as u')
+      .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
+      .select('r.role_name')
+      .where('u.user_id', '=', userId)
+      .executeTakeFirst();
+
+    return row?.role_name ?? null;
+  }
 }
 
 export const supplierInformationRepository = new SupplierInformationRepository();

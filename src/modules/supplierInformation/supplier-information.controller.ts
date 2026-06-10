@@ -11,7 +11,7 @@ import { supplierInformationService } from './supplier-information.service.js';
 class SupplierInformationController {
   async list(_req: Request, res: Response, next: NextFunction) {
     try {
-      const records = await supplierInformationService.list();
+      const records = await supplierInformationService.list((_req as any).user?.userId);
       return res.json(successResponse(records));
     } catch (error) {
       return next(error);
@@ -21,7 +21,7 @@ class SupplierInformationController {
   async listBySupplier(req: Request, res: Response, next: NextFunction) {
     try {
       const { supplierId } = SupplierInformationBySupplierParamSchema.parse({ params: req.params }).params;
-      const records = await supplierInformationService.listBySupplier(supplierId);
+      const records = await supplierInformationService.listBySupplier(supplierId, (req as any).user?.userId);
       return res.json(successResponse(records));
     } catch (error) {
       return next(error);
@@ -31,7 +31,7 @@ class SupplierInformationController {
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = SupplierInformationIdParamSchema.parse({ params: req.params }).params;
-      const record = await supplierInformationService.getById(id);
+      const record = await supplierInformationService.getById(id, (req as any).user?.userId);
       return res.json(successResponse(record));
     } catch (error) {
       return next(error);
@@ -41,7 +41,7 @@ class SupplierInformationController {
   async search(req: Request, res: Response, next: NextFunction) {
     try {
       const { keyword, q } = SupplierInformationSearchQuerySchema.parse({ query: req.query }).query;
-      const records = await supplierInformationService.search(keyword || q || '');
+      const records = await supplierInformationService.search(keyword || q || '', (req as any).user?.userId);
       return res.json(successResponse(records));
     } catch (error) {
       return next(error);
@@ -51,7 +51,7 @@ class SupplierInformationController {
   async downloadAttachment(req: Request, res: Response, next: NextFunction) {
     try {
       const { attachmentId } = SupplierInformationAttachmentParamSchema.parse({ params: req.params }).params;
-      const file = await supplierInformationService.downloadAttachment(attachmentId);
+      const file = await supplierInformationService.downloadAttachment(attachmentId, (req as any).user?.userId);
 
       res.setHeader('Content-Type', file.mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);

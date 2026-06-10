@@ -24,7 +24,7 @@ describe('SupplierInformationController', () => {
 
     await supplierInformationController.getById(req, res, next);
 
-    expect(supplierInformationServiceMock.getById).toHaveBeenCalledWith('si-1');
+    expect(supplierInformationServiceMock.getById).toHaveBeenCalledWith('si-1', undefined);
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -43,7 +43,7 @@ describe('SupplierInformationController', () => {
 
     await supplierInformationController.downloadAttachment(req, res, next);
 
-    expect(supplierInformationServiceMock.downloadAttachment).toHaveBeenCalledWith('att-1');
+    expect(supplierInformationServiceMock.downloadAttachment).toHaveBeenCalledWith('att-1', undefined);
     expect(res.download).toHaveBeenCalledWith('/tmp/contact.pdf');
   });
 });
