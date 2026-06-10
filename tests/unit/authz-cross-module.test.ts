@@ -1,16 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { ForbiddenError, UnauthorizedError } from '../../shared/errors/AppError.js';
+import { ForbiddenError, UnauthorizedError } from '../../src/shared/errors/AppError.js';
 
 // Mock permission service
-vi.mock('../../shared/services/permission.service.js', () => ({
+vi.mock('../../src/shared/services/permission.service.js', () => ({
   permissionService: {
     checkPermission: vi.fn(),
   },
 }));
 
-import { requirePermission } from '../../shared/middleware/requirePermission.js';
-import { requireAnyPermission } from '../../shared/middleware/requireAnyPermission.js';
-import { permissionService } from '../../shared/services/permission.service.js';
+import { requirePermission } from '../../src/shared/middleware/requirePermission.js';
+import { requireAnyPermission } from '../../src/shared/middleware/requireAnyPermission.js';
+import { permissionService } from '../../src/shared/services/permission.service.js';
 
 const makeReq = (overrides: Record<string, unknown> = {}) => ({
   user: { userId: 'user-1', roleId: 'role-1' },

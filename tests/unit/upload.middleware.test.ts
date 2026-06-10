@@ -2,14 +2,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import multer from 'multer';
 
 // Mock file-storage service before importing upload middleware
-vi.mock('../../shared/services/file-storage.service.js', () => ({
+vi.mock('../../src/shared/services/file-storage.service.js', () => ({
   ATTACHMENT_TYPE_FOLDERS: {
     'mnr-main': 'main',
     'sqpr': 'attachments',
   },
 }));
 
-import { createModuleUpload, handleUploadError } from '../../middleware/upload.middleware.js';
+import { createModuleUpload, handleUploadError } from '../../src/middleware/upload.middleware.js';
 
 describe('Upload Middleware', () => {
   describe('createModuleUpload configuration', () => {
