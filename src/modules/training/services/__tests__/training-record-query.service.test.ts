@@ -4,6 +4,8 @@ const repositoryMock = vi.hoisted(() => ({
   findSchedules: vi.fn(),
   findAttendeesByScheduleIds: vi.fn(),
   findScheduleById: vi.fn(),
+  findUserSiteId: vi.fn(),
+  findActorRoleName: vi.fn(),
 }));
 const checkPermissionMock = vi.hoisted(() => vi.fn());
 
@@ -22,6 +24,8 @@ import { trainingRecordQueryService } from '../training-record-query.service.js'
 describe('trainingRecordQueryService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    repositoryMock.findActorRoleName.mockResolvedValue('Administrator');
+    repositoryMock.findUserSiteId.mockResolvedValue(null);
     checkPermissionMock.mockResolvedValue(true);
   });
 

@@ -82,4 +82,43 @@ describe('FileStorageService - Path Traversal Protection', () => {
     expect(candidates.every((c) => !c.includes('..'))).toBe(true);
     expect(candidates.every((c) => c.endsWith('malicious.txt'))).toBe(true);
   });
+
+  it('should reject stored path that traverses above upload root via deep nesting', () => {
+    const deepPath = path.resolve(tmpDir, 'subfolder', '..', '..', '..', 'etc', 'passwd');
+    const isSafe = fileStorageService.validateStoredPathIsSafe(deepPath, tmpDir);
+    expect(isSafe).toBe(false);
+  });
+
+  it('should reject null-byte poisoned file names', async () => {
+    const candidates = fileStorageService.getStorageCandidates(
+      location,
+      'safe-name.txt',
+    );
+    expect(candidates.every((c) => !c.includes('..'))).toBe(true);
+    expect(candidates.every((c) => !c.includes('\0'))).toBe(true);
+  });
+
+  it('should handle empty stored path gracefully', async () => {
+    const result = await fileStorageService.findFirstExistingFile(
+      location,
+      'test.txt',
+      '',
+    );
+    expect(result).toBeNull();
+  });
+
+  it('should handle null stored path gracefully', async () => {
+    const result = await fileStorageService.findFirstExistingFile(
+      location,
+      'test.txt',
+      null,
+    );
+    expect(result).toBeNull();
+  });
+
+  it('should accept valid stored path within a nested subfolder', () => {
+    const subfolderPath = path.join(tmpDir, 'subfolder', 'document.pdf');
+    const isSafe = fileStorageService.validateStoredPathIsSafe(subfolderPath, tmpDir);
+    expect(isSafe).toBe(true);
+  });
 });

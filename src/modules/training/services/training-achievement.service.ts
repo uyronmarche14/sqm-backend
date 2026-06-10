@@ -1,3 +1,4 @@
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import { trainingRepository } from '../training.repository.js';
 import type { TrainingAchievementQuery } from '../training.schema.js';
 import {
@@ -20,12 +21,31 @@ export class TrainingAchievementService {
     });
 
     const records = await this.queryService.materializeRecords(schedules, userId);
-    const filtered = records.filter((record) => applySearchFilters(record, query));
+    const siteId = await this.resolveUserSiteId(userId);
+    const siteFiltered = siteId === undefined
+      ? records
+      : siteId === null
+        ? []
+        : records.filter((r) => r.siteId === siteId);
+    const filtered = siteFiltered.filter((record) => applySearchFilters(record, query));
 
     return {
       records: filtered,
       metrics: buildTrainingAchievementMetric(filtered),
     };
+  }
+
+  private async resolveUserSiteId(userId: string | undefined): Promise<string | null | undefined> {
+    if (!userId) {
+      return undefined;
+    }
+
+    const roleName = await this.repository.findActorRoleName(userId);
+    if (isAdminRole(roleName)) {
+      return undefined;
+    }
+
+    return this.repository.findUserSiteId(userId);
   }
 }
 

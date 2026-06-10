@@ -1,4 +1,5 @@
 import { permissionService } from '../../../shared/services/permission.service.js';
+import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import { NotFoundError } from '../../../shared/errors/AppError.js';
 import { trainingRepository, type TrainingAttendeeRow, type TrainingScheduleRow } from '../training.repository.js';
 import type { TrainingListQuery, TrainingSearchQuery } from '../training.schema.js';
@@ -30,6 +31,31 @@ export class TrainingRecordQueryService {
     ]);
 
     return { canEdit, canDelete };
+  }
+
+  private async resolveUserSiteId(userId: string | undefined): Promise<string | null | undefined> {
+    if (!userId) {
+      return undefined;
+    }
+
+    const roleName = await this.repository.findActorRoleName(userId);
+    if (isAdminRole(roleName)) {
+      return undefined;
+    }
+
+    return this.repository.findUserSiteId(userId);
+  }
+
+  private filterBySite(records: TrainingRecordReadModel[], siteId: string | null | undefined): TrainingRecordReadModel[] {
+    if (siteId === undefined) {
+      return records;
+    }
+
+    if (siteId === null) {
+      return [];
+    }
+
+    return records.filter((r) => r.siteId === siteId);
   }
 
   async materializeRecords(
@@ -72,7 +98,8 @@ export class TrainingRecordQueryService {
     });
 
     const records = await this.materializeRecords(schedules, userId);
-    return this.applyAssignedScope(records, query.assignedToMe);
+    const siteId = await this.resolveUserSiteId(userId);
+    return this.applyAssignedScope(this.filterBySite(records, siteId), query.assignedToMe);
   }
 
   async calendar(userId: string | undefined, query: TrainingListQuery): Promise<TrainingCalendarEntry[]> {
@@ -87,7 +114,14 @@ export class TrainingRecordQueryService {
     }
 
     const records = await this.materializeRecords([schedule], userId);
-    return records[0];
+    const siteId = await this.resolveUserSiteId(userId ?? undefined);
+    const filtered = this.filterBySite(records, siteId);
+
+    if (filtered.length === 0) {
+      throw new NotFoundError('Training record not found');
+    }
+
+    return filtered[0];
   }
 
   async search(userId: string | undefined, query: TrainingSearchQuery) {
@@ -100,7 +134,8 @@ export class TrainingRecordQueryService {
     });
 
     const records = await this.materializeRecords(schedules, userId);
-    return records.filter((record) => applySearchFilters(record, query));
+    const siteId = await this.resolveUserSiteId(userId);
+    return this.filterBySite(records, siteId).filter((record) => applySearchFilters(record, query));
   }
 }
 

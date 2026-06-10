@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const findSchedulesMock = vi.hoisted(() => vi.fn());
+const findActorRoleNameMock = vi.hoisted(() => vi.fn());
+const findUserSiteIdMock = vi.hoisted(() => vi.fn());
 const materializeRecordsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../training.repository.js', () => ({
   trainingRepository: {
     findSchedules: findSchedulesMock,
+    findActorRoleName: findActorRoleNameMock,
+    findUserSiteId: findUserSiteIdMock,
   },
 }));
 
@@ -21,6 +25,8 @@ describe('trainingAchievementService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     findSchedulesMock.mockResolvedValue([]);
+    findActorRoleNameMock.mockResolvedValue('Administrator');
+    findUserSiteIdMock.mockResolvedValue(null);
   });
 
   it('returns backend-owned aggregate metrics with filtered records', async () => {

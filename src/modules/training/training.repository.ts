@@ -179,6 +179,27 @@ export class TrainingRepository {
         .execute();
     });
   }
+
+  async findUserSiteId(userId: string): Promise<string | null> {
+    const row = await db
+      .selectFrom('USERS')
+      .select('site_id')
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    return row?.site_id ?? null;
+  }
+
+  async findActorRoleName(userId: string): Promise<string | null> {
+    const row = await db
+      .selectFrom('USERS as u')
+      .innerJoin('ROLES as r', 'u.role_id', 'r.role_id')
+      .select('r.role_name')
+      .where('u.user_id', '=', userId)
+      .executeTakeFirst();
+
+    return row?.role_name ?? null;
+  }
 }
 
 export const trainingRepository = new TrainingRepository();
