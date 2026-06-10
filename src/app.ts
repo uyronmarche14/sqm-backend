@@ -105,7 +105,6 @@ import sqmpRoutes from './modules/sqmp/sqmp.routes.js';
 import npiRoutes from './modules/npi/npi.routes.js';
 import ogiRoutes from './modules/ogi/ogi.routes.js';
 import qmqaRoutes from './modules/qmqa/qmqa.routes.js';
-import qmqaMediaRoutes from './modules/qmqa/qmqaMedia.routes.js';
 
 // ==========================================
 // 3. Routes (To be modularized)
@@ -125,7 +124,6 @@ app.use('/api/sqmp', sqmpRoutes);
 app.use('/api/npi', npiRoutes);
 app.use('/api/ogi', ogiRoutes);
 app.use('/api/qmqa', qmqaRoutes);
-app.use('/api/qmqa-media', qmqaMediaRoutes);
 
 // ==========================================
 // 4. Error Handling
