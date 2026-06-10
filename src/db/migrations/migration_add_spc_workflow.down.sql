@@ -1,0 +1,6 @@
+-- Down migration: remove SPC_WORKFLOW table
+
+IF OBJECT_ID('dbo.SPC_WORKFLOW', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE dbo.SPC_WORKFLOW;
+END

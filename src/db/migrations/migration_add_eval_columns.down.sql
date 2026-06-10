@@ -1,0 +1,27 @@
+-- Down migration: remove evaluation columns from TBL_5M1E_Application
+-- Safe: only drops columns IF the table exists AND the column exists
+
+IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'TBL_5M1E_Application')
+BEGIN
+
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'TBL_5M1E_Application' AND COLUMN_NAME = 'RankID')
+    BEGIN
+        ALTER TABLE TBL_5M1E_Application DROP COLUMN RankID;
+    END
+
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'TBL_5M1E_Application' AND COLUMN_NAME = 'ChangeQCProcess')
+    BEGIN
+        ALTER TABLE TBL_5M1E_Application DROP COLUMN ChangeQCProcess;
+    END
+
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'TBL_5M1E_Application' AND COLUMN_NAME = 'ChangeSupplierSpec')
+    BEGIN
+        ALTER TABLE TBL_5M1E_Application DROP COLUMN ChangeSupplierSpec;
+    END
+
+    IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'TBL_5M1E_Application' AND COLUMN_NAME = 'ProcessAuditResult')
+    BEGIN
+        ALTER TABLE TBL_5M1E_Application DROP COLUMN ProcessAuditResult;
+    END
+
+END
