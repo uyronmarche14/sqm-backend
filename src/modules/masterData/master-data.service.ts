@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { sql } from 'kysely';
 import {
   ROLE_ACCESS_DB_FIELD_MAP,
   ROLE_ACCESS_PERMISSION_FIELDS,
@@ -6,6 +7,7 @@ import {
   resolvePageRegistryEntry,
 } from '@sqm/permissions-contract';
 
+import { db } from '../../shared/infrastructure/db.js';
 import { NotFoundError } from '../../shared/errors/AppError.js';
 
 /**
@@ -192,6 +194,65 @@ export const mappers = {
   })
 };
 
+interface ChildCheck {
+  table: string;
+  fkColumn: string;
+  label: string;
+}
+
+const MASTER_DATA_CHILD_CHECKS: Record<string, ChildCheck[]> = {
+  MFG_SITES: [
+    { table: 'MNR_LOTS', fkColumn: 'site_id', label: 'MNR records' },
+    { table: 'SUPPLIERS', fkColumn: 'site_id', label: 'suppliers' },
+    { table: 'PRODUCTS', fkColumn: 'site_id', label: 'products' },
+    { table: 'MODELS', fkColumn: 'site_id', label: 'models' },
+    { table: 'PARTS', fkColumn: 'site_id', label: 'parts' },
+    { table: 'SQMP', fkColumn: 'site_id', label: 'SQMP records' },
+    { table: 'NPI_LOTS', fkColumn: 'site_id', label: 'NPI records' },
+    { table: 'OGI', fkColumn: 'site_id', label: 'OGI records' },
+    { table: 'SPC', fkColumn: 'site_id', label: 'SPC records' },
+    { table: 'USERS', fkColumn: 'site_id', label: 'users' },
+    { table: 'AQL', fkColumn: 'site_id', label: 'AQL plans' },
+    { table: 'SQPR', fkColumn: 'site_id', label: 'SQPR records' },
+    { table: 'PARTCLASS', fkColumn: 'site_id', label: 'part classes' },
+  ],
+  SUPPLIERS: [
+    { table: 'MNR_LOTS', fkColumn: 'supplier_id', label: 'MNR records' },
+    { table: 'SQMP', fkColumn: 'supplier_id', label: 'SQMP records' },
+    { table: 'NPI_LOTS', fkColumn: 'supplier_id', label: 'NPI records' },
+    { table: 'OGI', fkColumn: 'supplier_id', label: 'OGI records' },
+    { table: 'SPC', fkColumn: 'supplier_id', label: 'SPC records' },
+    { table: 'SQPR', fkColumn: 'supplier_id', label: 'SQPR records' },
+    { table: 'SUPPLIER_INFORMATION', fkColumn: 'supplier_id', label: 'supplier contacts' },
+    { table: 'SUPPLIERSUSER', fkColumn: 'supplier_id', label: 'supplier user assignments' },
+    { table: 'SUPPLIERCERTIFICATIONS', fkColumn: 'supplier_id', label: 'supplier certifications' },
+    { table: 'PARTSUPPLIERS', fkColumn: 'supplier_id', label: 'part-supplier links' },
+  ],
+  PARTS: [
+    { table: 'MNR_DETAILS', fkColumn: 'part_id', label: 'MNR detail records' },
+    { table: 'NPI_LOTS', fkColumn: 'part_id', label: 'NPI records' },
+    { table: 'OGI', fkColumn: 'part_id', label: 'OGI records' },
+    { table: 'SPC', fkColumn: 'part_id', label: 'SPC records' },
+    { table: 'PARTDATACATEGORIES', fkColumn: 'part_id', label: 'part data categories' },
+    { table: 'PARTDIMENSIONCATEGORIES', fkColumn: 'part_id', label: 'part dimension categories' },
+    { table: 'PARTNOISECATEGORIES', fkColumn: 'part_id', label: 'part noise categories' },
+    { table: 'MATERIALCERTS', fkColumn: 'part_id', label: 'material certificates' },
+  ],
+  ROLES: [
+    { table: 'USERS', fkColumn: 'role_id', label: 'users' },
+    { table: 'ROLE_ACCESS', fkColumn: 'role_id', label: 'role access records' },
+  ],
+  MODELS: [
+    { table: 'MNR_LOTS', fkColumn: 'model_id', label: 'MNR records' },
+    { table: 'NPI_LOTS', fkColumn: 'model_id', label: 'NPI records' },
+    { table: 'SQMP', fkColumn: 'model_id', label: 'SQMP records' },
+  ],
+  PRODUCTS: [
+    { table: 'MNR_LOTS', fkColumn: 'product_id', label: 'MNR records' },
+    { table: 'MODELS', fkColumn: 'product_id', label: 'models' },
+  ],
+};
+
 type RepoOperationOptions = {
   repo: any;
   mapper: (row: any) => any;
@@ -256,10 +317,36 @@ export class MasterDataService {
   async delete({ repo }: { repo: any }, id: string) {
     const exists = await repo.findById(id);
     if (!exists) throw new NotFoundError('Record not found');
+
+    const tableName = repo.tableName;
+    const childChecks: ChildCheck[] | undefined = (MASTER_DATA_CHILD_CHECKS as any)[tableName];
+
+    if (childChecks && childChecks.length > 0) {
+      const blockers: string[] = [];
+
+      for (const check of childChecks) {
+        const result = await sql<{ cnt: number }>`
+          SELECT COUNT(*) AS cnt FROM ${sql.table(check.table)}
+          WHERE ${sql.raw(check.fkColumn)} = ${id}
+            AND active_flag = 1
+        `.execute(db);
+
+        const count = Number(result.rows[0]?.cnt ?? 0);
+        if (count > 0) {
+          blockers.push(`${count} ${check.label}`);
+        }
+      }
+
+      if (blockers.length > 0) {
+        throw new Error(
+          `Cannot delete: this record is referenced by ${blockers.join(', ')}. Remove those references first.`,
+        );
+      }
+    }
+
     try {
       await repo.delete(id);
     } catch (err: any) {
-      // Surface FK constraint violations with a clear message
       if (err?.number === 547) {
         throw new Error('Cannot delete: this record is referenced by other data. Remove those references first.');
       }

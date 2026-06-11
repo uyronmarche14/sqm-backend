@@ -32,6 +32,13 @@ async function findDownMigrationFilePath(upFileName: string): Promise<string | n
     return legacyPath;
   }
 
+  // Check in db-assets/manual-migrations/ directory
+  const manualMigDir = path.join(path.dirname(__filename), '..', '..', 'db-assets', 'manual-migrations');
+  const manualPath = path.join(manualMigDir, downFileName);
+  if (fs.existsSync(manualPath)) {
+    return manualPath;
+  }
+
   return null;
 }
 

@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { sql } from 'kysely';
+
 import { db } from '../shared/infrastructure/db.js';
 import { getMigrationAllowedForNonLocalTarget, isLocalDatabaseTarget, logDb } from './lib/db-safety.js';
 import {
@@ -16,6 +18,22 @@ const __filename = fileURLToPath(import.meta.url);
 
 const SAFE_MIGRATION_FILES = getSafeMigrationFiles();
 
+async function detectManuallyApplied() {
+  const ssiResult = await sql<{ cnt: number }>`
+    SELECT COUNT(*) AS cnt
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_NAME = 'SSI_PLAN'
+  `.execute(db);
+
+  if (ssiResult.rows[0]?.cnt ?? 0 > 0) {
+    const tracked = await isMigrationApplied('migration_add_ssi_module.sql');
+    if (!tracked) {
+      logDb('detected pre-existing SSI tables, recording migration as already applied');
+      await recordMigration('migration_add_ssi_module.sql');
+    }
+  }
+}
+
 export async function runSafeMigrations(invocation = 'db:migrate:safe') {
   if (!isLocalDatabaseTarget() && !getMigrationAllowedForNonLocalTarget()) {
     throw new Error(
@@ -24,6 +42,7 @@ export async function runSafeMigrations(invocation = 'db:migrate:safe') {
   }
 
   await ensureMigrationsTable();
+  await detectManuallyApplied();
 
   let applied = 0;
   let skipped = 0;

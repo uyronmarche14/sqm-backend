@@ -21,6 +21,7 @@
     "db:seed:forms": "tsx src/db/seeds/forms.seed.ts",
     "db:seed:role-access": "tsx src/db/seeds/role-access.seed.ts",
     "db:seed:all": "tsx src/db/seeds/seed-all.ts",
+    "db:schema:compare": "tsx src/db/schema-compare.ts",
     "migrate": "tsx src/db/migrate.ts",
     "init:db": "tsx src/db/init.ts",
     "init:db:local": "tsx --env-file=.env.local src/db/init.ts"
