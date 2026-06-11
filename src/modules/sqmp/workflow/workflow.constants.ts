@@ -1,0 +1,192 @@
+export const SQMP_STAGE_CODE = {
+  CLOSED: '1',
+  DRAFT: '2',
+  CHECKER: '3',
+  APPROVER: '4',
+  REJECTED_BY_CHECKER: '5',
+  REJECTED_BY_APPROVER: '6',
+  CANCELLED: '9',
+  ISSUER: '10',
+  SUPPLIER: '11',
+  ISSUER_2ND: '15',
+  CHECKER_2ND: '16',
+  APPROVER_2ND: '17',
+  ISSUER_3RD: '19',
+  REJECTED_BY_CHECKER_2ND: '21',
+  REJECTED_BY_APPROVER_2ND: '22',
+  NOT_ACCEPTED_BY_ISSUER: '24',
+} as const;
+
+export type SqmpStageCode = typeof SQMP_STAGE_CODE[keyof typeof SQMP_STAGE_CODE];
+
+export const SQMP_WORKFLOW_STAGE = {
+  CLOSED: 'CLOSED',
+  DRAFT: 'DRAFT',
+  CHECKER: 'CHECKER',
+  APPROVER: 'APPROVER',
+  REJECTED_BY_CHECKER: 'REJECTED_BY_CHECKER',
+  REJECTED_BY_APPROVER: 'REJECTED_BY_APPROVER',
+  CANCELLED: 'CANCELLED',
+  ISSUER: 'ISSUER',
+  SUPPLIER: 'SUPPLIER',
+  ISSUER_2ND: 'ISSUER_2ND',
+  CHECKER_2ND: 'CHECKER_2ND',
+  APPROVER_2ND: 'APPROVER_2ND',
+  ISSUER_3RD: 'ISSUER_3RD',
+  REJECTED_BY_CHECKER_2ND: 'REJECTED_BY_CHECKER_2ND',
+  REJECTED_BY_APPROVER_2ND: 'REJECTED_BY_APPROVER_2ND',
+  NOT_ACCEPTED_BY_ISSUER: 'NOT_ACCEPTED_BY_ISSUER',
+} as const;
+
+export type SqmpWorkflowStage = typeof SQMP_WORKFLOW_STAGE[keyof typeof SQMP_WORKFLOW_STAGE];
+
+export interface SqmpWorkflowStageDefinition {
+  code: SqmpStageCode;
+  name: SqmpWorkflowStage;
+  label: string;
+  status: string;
+}
+
+export const SQMP_WORKFLOW_STAGE_DEFINITION: Record<SqmpStageCode, SqmpWorkflowStageDefinition> = {
+  [SQMP_STAGE_CODE.CLOSED]: {
+    code: SQMP_STAGE_CODE.CLOSED,
+    name: SQMP_WORKFLOW_STAGE.CLOSED,
+    label: 'Closed',
+    status: 'CLOSED',
+  },
+  [SQMP_STAGE_CODE.DRAFT]: {
+    code: SQMP_STAGE_CODE.DRAFT,
+    name: SQMP_WORKFLOW_STAGE.DRAFT,
+    label: 'Draft',
+    status: 'DRAFT',
+  },
+  [SQMP_STAGE_CODE.CHECKER]: {
+    code: SQMP_STAGE_CODE.CHECKER,
+    name: SQMP_WORKFLOW_STAGE.CHECKER,
+    label: 'Checker',
+    status: 'AWAITING_CHECKED',
+  },
+  [SQMP_STAGE_CODE.APPROVER]: {
+    code: SQMP_STAGE_CODE.APPROVER,
+    name: SQMP_WORKFLOW_STAGE.APPROVER,
+    label: 'Approver',
+    status: 'AWAITING_APPROVAL',
+  },
+  [SQMP_STAGE_CODE.REJECTED_BY_CHECKER]: {
+    code: SQMP_STAGE_CODE.REJECTED_BY_CHECKER,
+    name: SQMP_WORKFLOW_STAGE.REJECTED_BY_CHECKER,
+    label: 'Rejected by Checker',
+    status: 'REJECTED',
+  },
+  [SQMP_STAGE_CODE.REJECTED_BY_APPROVER]: {
+    code: SQMP_STAGE_CODE.REJECTED_BY_APPROVER,
+    name: SQMP_WORKFLOW_STAGE.REJECTED_BY_APPROVER,
+    label: 'Rejected by Approver',
+    status: 'REJECTED',
+  },
+  [SQMP_STAGE_CODE.CANCELLED]: {
+    code: SQMP_STAGE_CODE.CANCELLED,
+    name: SQMP_WORKFLOW_STAGE.CANCELLED,
+    label: 'Cancelled',
+    status: 'CANCELLED',
+  },
+  [SQMP_STAGE_CODE.ISSUER]: {
+    code: SQMP_STAGE_CODE.ISSUER,
+    name: SQMP_WORKFLOW_STAGE.ISSUER,
+    label: 'Issuer',
+    status: 'APPROVED',
+  },
+  [SQMP_STAGE_CODE.SUPPLIER]: {
+    code: SQMP_STAGE_CODE.SUPPLIER,
+    name: SQMP_WORKFLOW_STAGE.SUPPLIER,
+    label: 'Supplier',
+    status: 'ISSUED',
+  },
+  [SQMP_STAGE_CODE.ISSUER_2ND]: {
+    code: SQMP_STAGE_CODE.ISSUER_2ND,
+    name: SQMP_WORKFLOW_STAGE.ISSUER_2ND,
+    label: 'Issuer 2nd',
+    status: 'RESPONSE_SUBMITTED',
+  },
+  [SQMP_STAGE_CODE.CHECKER_2ND]: {
+    code: SQMP_STAGE_CODE.CHECKER_2ND,
+    name: SQMP_WORKFLOW_STAGE.CHECKER_2ND,
+    label: 'Checker 2nd',
+    status: 'RESPONSE_AWAITING_CHECKED',
+  },
+  [SQMP_STAGE_CODE.APPROVER_2ND]: {
+    code: SQMP_STAGE_CODE.APPROVER_2ND,
+    name: SQMP_WORKFLOW_STAGE.APPROVER_2ND,
+    label: 'Approver 2nd',
+    status: 'RESPONSE_AWAITING_APPROVAL',
+  },
+  [SQMP_STAGE_CODE.ISSUER_3RD]: {
+    code: SQMP_STAGE_CODE.ISSUER_3RD,
+    name: SQMP_WORKFLOW_STAGE.ISSUER_3RD,
+    label: 'Issuer 3rd',
+    status: 'RESPONSE_AWAITING_APPROVAL',
+  },
+  [SQMP_STAGE_CODE.REJECTED_BY_CHECKER_2ND]: {
+    code: SQMP_STAGE_CODE.REJECTED_BY_CHECKER_2ND,
+    name: SQMP_WORKFLOW_STAGE.REJECTED_BY_CHECKER_2ND,
+    label: 'Rejected by Checker 2nd',
+    status: 'RESPONSE_REJECTED',
+  },
+  [SQMP_STAGE_CODE.REJECTED_BY_APPROVER_2ND]: {
+    code: SQMP_STAGE_CODE.REJECTED_BY_APPROVER_2ND,
+    name: SQMP_WORKFLOW_STAGE.REJECTED_BY_APPROVER_2ND,
+    label: 'Rejected by Approver 2nd',
+    status: 'RESPONSE_REJECTED',
+  },
+  [SQMP_STAGE_CODE.NOT_ACCEPTED_BY_ISSUER]: {
+    code: SQMP_STAGE_CODE.NOT_ACCEPTED_BY_ISSUER,
+    name: SQMP_WORKFLOW_STAGE.NOT_ACCEPTED_BY_ISSUER,
+    label: 'Not Accepted by Issuer',
+    status: 'RESPONSE_REJECTED',
+  },
+};
+
+export const SQMP_WORKFLOW_ACTION = {
+  SUBMIT_MAIN: 'submit-main',
+  CHECK_MAIN: 'check-main',
+  APPROVE_MAIN: 'approve-main',
+  REJECT_MAIN: 'reject-main',
+  ISSUE_MAIN: 'issue-main',
+  CANCEL_MAIN: 'cancel-main',
+  SAVE_RESPONSE: 'save-response',
+  SUBMIT_RESPONSE: 'submit-response',
+  SAVE_CLOSURE: 'save-closure',
+  SUBMIT_CLOSURE: 'submit-closure',
+  CHECK_CLOSURE: 'check-closure',
+  APPROVE_CLOSURE: 'approve-closure',
+  REJECT_CLOSURE: 'reject-closure',
+  ACCEPT_CLOSURE: 'accept-closure',
+  NOT_ACCEPT_CLOSURE: 'not-accept-closure',
+} as const;
+
+export type SqmpWorkflowAction = typeof SQMP_WORKFLOW_ACTION[keyof typeof SQMP_WORKFLOW_ACTION];
+
+export const SQMP_WORKFLOW_ACTION_LABEL: Record<SqmpWorkflowAction, string> = {
+  [SQMP_WORKFLOW_ACTION.SUBMIT_MAIN]: 'Submit Main',
+  [SQMP_WORKFLOW_ACTION.CHECK_MAIN]: 'Check Main',
+  [SQMP_WORKFLOW_ACTION.APPROVE_MAIN]: 'Approve Main',
+  [SQMP_WORKFLOW_ACTION.REJECT_MAIN]: 'Reject Main',
+  [SQMP_WORKFLOW_ACTION.ISSUE_MAIN]: 'Issue Main',
+  [SQMP_WORKFLOW_ACTION.CANCEL_MAIN]: 'Cancel Main',
+  [SQMP_WORKFLOW_ACTION.SAVE_RESPONSE]: 'Save Response',
+  [SQMP_WORKFLOW_ACTION.SUBMIT_RESPONSE]: 'Submit Response',
+  [SQMP_WORKFLOW_ACTION.SAVE_CLOSURE]: 'Save Closure',
+  [SQMP_WORKFLOW_ACTION.SUBMIT_CLOSURE]: 'Submit Closure',
+  [SQMP_WORKFLOW_ACTION.CHECK_CLOSURE]: 'Check Closure',
+  [SQMP_WORKFLOW_ACTION.APPROVE_CLOSURE]: 'Approve Closure',
+  [SQMP_WORKFLOW_ACTION.REJECT_CLOSURE]: 'Reject Closure',
+  [SQMP_WORKFLOW_ACTION.ACCEPT_CLOSURE]: 'Accept Closure',
+  [SQMP_WORKFLOW_ACTION.NOT_ACCEPT_CLOSURE]: 'Not Accept Closure',
+};
+
+export const SQMP_REOPENABLE_RESPONSE_STAGE_CODES = new Set<string>([
+  SQMP_STAGE_CODE.SUPPLIER,
+  SQMP_STAGE_CODE.REJECTED_BY_CHECKER_2ND,
+  SQMP_STAGE_CODE.REJECTED_BY_APPROVER_2ND,
+  SQMP_STAGE_CODE.NOT_ACCEPTED_BY_ISSUER,
+]);

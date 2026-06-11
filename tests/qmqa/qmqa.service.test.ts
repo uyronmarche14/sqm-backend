@@ -1,0 +1,661 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const controlNumberServiceMock = vi.hoisted(() => ({
+  buildQmqaAuditPlan: vi.fn(),
+  getControlNoState: vi.fn(),
+}));
+
+const repositoryMock = vi.hoisted(() => ({
+  findAllSchedules: vi.fn(),
+  findAllRecordsDetailed: vi.fn(),
+  findRecordByIdDetailed: vi.fn(),
+  findScheduleById: vi.fn(),
+  findLatestResponsesByQmqaIds: vi.fn(),
+  findSupplierIdsByUserId: vi.fn(),
+  executeTransaction: vi.fn(),
+  findPlanAttachments: vi.fn(),
+  findAttachments: vi.fn(),
+  findCcList: vi.fn(),
+  findResponseByQmqaId: vi.fn(),
+  findResponseInitialAttachments: vi.fn(),
+  findResponseFinalAttachments: vi.fn(),
+  findResponseVerificationAttachments: vi.fn(),
+  findAttachmentOwner: vi.fn(),
+}));
+
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
+
+const attachmentServiceMock = vi.hoisted(() => ({
+  downloadAttachment: vi.fn(),
+  syncAttachments: vi.fn(),
+}));
+
+vi.mock('../../src/modules/qmqa/qmqa.repository.js', () => ({
+  qmqaRepository: repositoryMock,
+}));
+
+vi.mock('../../src/shared/services/control-number.service.js', () => ({
+  controlNumberService: controlNumberServiceMock,
+}));
+
+vi.mock('../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
+}));
+
+vi.mock('../../src/shared/services/attachment.service.js', () => ({
+  attachmentService: attachmentServiceMock,
+}));
+
+import { qmqaService } from '../../src/modules/qmqa/qmqa.service.js';
+
+describe('QmqaService workflow metadata hydration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repositoryMock.findLatestResponsesByQmqaIds.mockResolvedValue([]);
+    repositoryMock.findSupplierIdsByUserId.mockResolvedValue([]);
+    repositoryMock.executeTransaction.mockImplementation(async (callback: any) => callback({}));
+    repositoryMock.findPlanAttachments.mockResolvedValue([]);
+    repositoryMock.findAttachments.mockResolvedValue([]);
+    repositoryMock.findCcList.mockResolvedValue([]);
+    repositoryMock.findResponseInitialAttachments.mockResolvedValue([]);
+    repositoryMock.findResponseFinalAttachments.mockResolvedValue([]);
+    repositoryMock.findResponseVerificationAttachments.mockResolvedValue([]);
+    repositoryMock.findAttachmentOwner.mockResolvedValue(null);
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    controlNumberServiceMock.buildQmqaAuditPlan.mockResolvedValue('AUDIT-2026-3-1-SITE');
+    controlNumberServiceMock.getControlNoState.mockReturnValue('final');
+    attachmentServiceMock.downloadAttachment.mockResolvedValue({
+      filePath: '/tmp/test.pdf',
+      fileName: 'test.pdf',
+      mimeType: 'application/pdf',
+    });
+    attachmentServiceMock.syncAttachments.mockResolvedValue({
+      kept: [],
+      created: [],
+      updated: [],
+      removed: [],
+      cleanupQueue: [],
+    });
+  });
+
+  it('includes workflow metadata on detail reads', async () => {
+    repositoryMock.findRecordByIdDetailed.mockResolvedValue({
+      qmqa_id: 'qmqa-1',
+      control_no: 'QMQA-001',
+      request_status: '3',
+      created_date: new Date('2026-03-14'),
+      site_id: 'site-1',
+      site_name: 'Site',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier',
+      audit_category_id: 'category-1',
+      category_name: 'Category',
+      audit_plan_date: new Date('2026-03-14'),
+      sqe_pic_id: 'sqe-1',
+      sqe_pic_name: 'SQE',
+      audit_type_id: 'type-1',
+      audit_type_name: 'Type',
+      attention_id: 'attention-1',
+      attention_name: 'Attention',
+      pic_auditor_id: 'auditor-1',
+      pic_auditor_name: 'Auditor',
+      audit_rating: 95,
+      due_date: new Date('2026-03-20'),
+      audit_date: new Date('2026-03-14'),
+      issued_date: null,
+      auditees: 'Team',
+      auditors: 'Auditors',
+      attendees: 'Attendees',
+      remarks: 'Remarks',
+      encoder_id: 'encoder-1',
+      encoder_name: 'Encoder',
+      issuer_id: 'issuer-1',
+      issuer_name: 'Issuer',
+      checker_id: 'checker-1',
+      checker_name: 'Checker',
+      approver_id: 'approver-1',
+      approver_name: 'Approver',
+      last_update: new Date('2026-03-14'),
+      updateby: 'issuer-1',
+    });
+    repositoryMock.findResponseByQmqaId.mockResolvedValue(null);
+
+    const result = await qmqaService.getRecordById('qmqa-1', { userId: 'checker-1' });
+
+    expect(result).toEqual(expect.objectContaining({
+      status: 'AWAITING_CHECKED',
+      workflowStage: 'CHECKER',
+      workflowStageCode: '3',
+      workflowStageLabel: 'Cycle 1 Checker',
+      availableActions: ['check-main', 'reject-main'],
+      nextApproverId: 'checker-1',
+      nextApproverName: 'Checker',
+    }));
+  });
+
+  it('adds actor-aware cycle 1 actions on list reads', async () => {
+    repositoryMock.findAllRecordsDetailed.mockResolvedValue([
+      {
+        qmqa_id: 'qmqa-1',
+        control_no: 'QMQA-001',
+        request_status: '3',
+        supplier_name: 'Supplier',
+        site_name: 'Site',
+        issuer_name: 'Issuer',
+        checker_name: 'Checker',
+        approver_name: 'Approver',
+        category_name: 'Category',
+        audit_type_name: 'Type',
+        attention_name: 'Attention',
+        encoder_name: 'Encoder',
+        issuer_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        attention_id: 'attention-1',
+        supplier_id: 'supplier-1',
+        created_date: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+      },
+    ]);
+
+    const result = await qmqaService.getAllRecords({ status: 'AWAITING_APPROVAL' }, { userId: 'checker-1' });
+
+    expect(repositoryMock.findAllRecordsDetailed).toHaveBeenCalledWith(expect.objectContaining({
+      mappedStatus: expect.arrayContaining(['4', 'CK']),
+      actorContext: {
+        userId: 'checker-1',
+        supplierIds: [],
+        roleName: null,
+      },
+    }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      status: 'AWAITING_CHECKED',
+      workflowStage: 'CHECKER',
+      workflowStageCode: '3',
+      availableActions: ['check-main', 'reject-main'],
+      nextApproverId: 'checker-1',
+      nextApproverName: 'Checker',
+    }));
+  });
+
+  it('hydrates cycle 2 next approver names from the latest QMQA response row on list reads', async () => {
+    repositoryMock.findAllRecordsDetailed.mockResolvedValue([
+      {
+        qmqa_id: 'qmqa-2',
+        control_no: 'QMQA-002',
+        request_status: '16',
+        supplier_name: 'Supplier',
+        site_name: 'Site',
+        issuer_name: 'Issuer',
+        checker_name: 'Checker',
+        approver_name: 'Approver',
+        category_name: 'Category',
+        audit_type_name: 'Type',
+        attention_name: 'Attention',
+        encoder_name: 'Encoder',
+        issuer_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        attention_id: 'attention-1',
+        supplier_id: 'supplier-1',
+        created_date: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+      },
+    ]);
+    repositoryMock.findLatestResponsesByQmqaIds.mockResolvedValue([
+      {
+        qmqa_id: 'qmqa-2',
+        checker_id: 'checker-2',
+        checker_name: 'Cycle 2 Checker',
+        approver_id: 'approver-2',
+        approver_name: 'Cycle 2 Approver',
+      },
+    ]);
+
+    const result = await qmqaService.getAllRecords(
+      { status: 'RESPONSE_AWAIT_APPROVAL' },
+      { userId: 'checker-2' },
+    );
+
+    expect(result[0]).toEqual(expect.objectContaining({
+      status: 'RESPONSE_AWAIT_APPROVAL',
+      workflowStage: 'CHECKER_2ND',
+      workflowStageCode: '16',
+      availableActions: ['check-response', 'reject-response'],
+      nextApproverId: 'checker-2',
+      nextApproverName: 'Cycle 2 Checker',
+      checker_id: 'checker-1',
+      approver_id: 'approver-1',
+    }));
+  });
+
+  it('hydrates supplier response actions when the actor matches the attention assignment', async () => {
+    repositoryMock.findAllRecordsDetailed.mockResolvedValue([
+      {
+        qmqa_id: 'qmqa-3',
+        control_no: 'QMQA-003',
+        request_status: '11',
+        supplier_name: 'Supplier',
+        site_name: 'Site',
+        issuer_name: 'Issuer',
+        checker_name: 'Checker',
+        approver_name: 'Approver',
+        category_name: 'Category',
+        audit_type_name: 'Type',
+        attention_name: 'Supplier Attention',
+        encoder_name: 'Encoder',
+        issuer_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        attention_id: 'supplier-attn-1',
+        supplier_id: 'supplier-1',
+        created_date: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+      },
+    ]);
+
+    const result = await qmqaService.getAllRecords(
+      { status: 'ISSUED' },
+      { userId: 'supplier-attn-1' },
+    );
+
+    expect(result[0]).toEqual(expect.objectContaining({
+      status: 'ISSUED',
+      workflowStage: 'SUPPLIER',
+      workflowStageCode: '11',
+      availableActions: ['save-response', 'submit-initial-response'],
+      nextApproverId: 'supplier-attn-1',
+      nextApproverName: 'Supplier Attention',
+    }));
+  });
+
+  it('does not let non-admin queue viewList widen active queue visibility', async () => {
+    repositoryMock.findAllRecordsDetailed.mockResolvedValue([
+      {
+        qmqa_id: 'qmqa-4',
+        control_no: 'QMQA-004',
+        request_status: '4',
+        supplier_name: 'Supplier',
+        site_name: 'Site',
+        issuer_name: 'Issuer',
+        checker_name: 'Checker',
+        approver_name: 'Approver',
+        category_name: 'Category',
+        audit_type_name: 'Type',
+        attention_name: 'Attention',
+        encoder_name: 'Encoder',
+        issuer_id: 'issuer-1',
+        checker_id: 'checker-1',
+        approver_id: 'approver-1',
+        attention_id: 'attention-1',
+        supplier_id: 'supplier-1',
+        created_date: new Date('2026-03-14'),
+        last_update: new Date('2026-03-14'),
+      },
+    ]);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) => {
+      return formId === 'QMQA-05-03';
+    });
+
+    const result = await qmqaService.getAllRecords(
+      { status: 'AWAITING_APPROVAL', scope: 'history' },
+      { userId: 'viewer-1', roleName: 'QMQA VIEWER' },
+      'QMQA',
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('does not let standard QMQA role viewList unlock QMQA media detail access', async () => {
+    repositoryMock.findRecordByIdDetailed.mockResolvedValue({
+      qmqa_id: 'qmqa-media-1',
+      control_no: 'QMQA-MEDIA-001',
+      request_status: '4',
+      created_date: new Date('2026-03-14'),
+      site_id: 'site-1',
+      site_name: 'Site',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier',
+      audit_category_id: 'category-1',
+      category_name: 'Category',
+      audit_plan_date: new Date('2026-03-14'),
+      sqe_pic_id: 'sqe-1',
+      sqe_pic_name: 'SQE',
+      audit_type_id: 'type-1',
+      audit_type_name: 'Type',
+      attention_id: 'attention-1',
+      attention_name: 'Attention',
+      pic_auditor_id: 'auditor-1',
+      pic_auditor_name: 'Auditor',
+      audit_rating: 95,
+      due_date: new Date('2026-03-20'),
+      audit_date: new Date('2026-03-14'),
+      issued_date: null,
+      auditees: 'Team',
+      auditors: 'Auditors',
+      attendees: 'Attendees',
+      remarks: 'Remarks',
+      encoder_id: 'encoder-1',
+      encoder_name: 'Encoder',
+      issuer_id: 'issuer-1',
+      issuer_name: 'Issuer',
+      checker_id: 'checker-1',
+      checker_name: 'Checker',
+      approver_id: 'approver-1',
+      approver_name: 'Approver',
+      last_update: new Date('2026-03-14'),
+      updateby: 'issuer-1',
+    });
+    repositoryMock.findResponseByQmqaId.mockResolvedValue(null);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) => {
+      return formId === 'QMQA-05-03';
+    });
+
+    await expect(
+      qmqaService.getRecordById(
+        'qmqa-media-1',
+        { userId: 'viewer-1', roleName: 'QMQA VIEWER' },
+        'QMQA_MEDIA',
+      ),
+    ).rejects.toThrow(/do not have permission to view/i);
+  });
+
+  it('does not let standard QMQA role viewList unlock active QMQA detail access', async () => {
+    repositoryMock.findRecordByIdDetailed.mockResolvedValue({
+      qmqa_id: 'qmqa-1',
+      control_no: 'QMQA-001',
+      request_status: '4',
+      created_date: new Date('2026-03-14'),
+      site_id: 'site-1',
+      site_name: 'Site',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier',
+      audit_category_id: 'category-1',
+      category_name: 'Category',
+      audit_plan_date: new Date('2026-03-14'),
+      sqe_pic_id: 'sqe-1',
+      sqe_pic_name: 'SQE',
+      audit_type_id: 'type-1',
+      audit_type_name: 'Type',
+      attention_id: 'attention-1',
+      attention_name: 'Attention',
+      pic_auditor_id: 'auditor-1',
+      pic_auditor_name: 'Auditor',
+      audit_rating: 95,
+      due_date: new Date('2026-03-20'),
+      audit_date: new Date('2026-03-14'),
+      issued_date: null,
+      auditees: 'Team',
+      auditors: 'Auditors',
+      attendees: 'Attendees',
+      remarks: 'Remarks',
+      encoder_id: 'encoder-1',
+      encoder_name: 'Encoder',
+      issuer_id: 'issuer-1',
+      issuer_name: 'Issuer',
+      checker_id: 'checker-1',
+      checker_name: 'Checker',
+      approver_id: 'approver-1',
+      approver_name: 'Approver',
+      last_update: new Date('2026-03-14'),
+      updateby: 'issuer-1',
+    });
+    repositoryMock.findResponseByQmqaId.mockResolvedValue(null);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) => {
+      return formId === 'QMQA-05-03';
+    });
+
+    await expect(
+      qmqaService.getRecordById(
+        'qmqa-1',
+        { userId: 'viewer-1', roleName: 'QMQA VIEWER' },
+        'QMQA',
+      ),
+    ).rejects.toThrow(/do not have permission to view/i);
+  });
+
+  it('blocks attachment downloads when the user only has queue viewList for an active record', async () => {
+    repositoryMock.findAttachmentOwner.mockResolvedValue({ qmqa_id: 'qmqa-1' });
+    repositoryMock.findRecordByIdDetailed.mockResolvedValue({
+      qmqa_id: 'qmqa-1',
+      control_no: 'QMQA-001',
+      request_status: '4',
+      created_date: new Date('2026-03-14'),
+      site_id: 'site-1',
+      site_name: 'Site',
+      supplier_id: 'supplier-1',
+      supplier_name: 'Supplier',
+      audit_category_id: 'category-1',
+      category_name: 'Category',
+      audit_plan_date: new Date('2026-03-14'),
+      sqe_pic_id: 'sqe-1',
+      sqe_pic_name: 'SQE',
+      audit_type_id: 'type-1',
+      audit_type_name: 'Type',
+      attention_id: 'attention-1',
+      attention_name: 'Attention',
+      pic_auditor_id: 'auditor-1',
+      pic_auditor_name: 'Auditor',
+      audit_rating: 95,
+      due_date: new Date('2026-03-20'),
+      audit_date: new Date('2026-03-14'),
+      issued_date: null,
+      auditees: 'Team',
+      auditors: 'Auditors',
+      attendees: 'Attendees',
+      remarks: 'Remarks',
+      encoder_id: 'encoder-1',
+      encoder_name: 'Encoder',
+      issuer_id: 'issuer-1',
+      issuer_name: 'Issuer',
+      checker_id: 'checker-1',
+      checker_name: 'Checker',
+      approver_id: 'approver-1',
+      approver_name: 'Approver',
+      last_update: new Date('2026-03-14'),
+      updateby: 'issuer-1',
+    });
+    repositoryMock.findResponseByQmqaId.mockResolvedValue(null);
+    permissionServiceMock.checkRolePermission.mockImplementation(async (_userId: string, formId: string) => {
+      return formId === 'QMQA-05-03';
+    });
+
+    await expect(
+      qmqaService.downloadAttachment(
+        'qmqa-record',
+        'attachment-1',
+        { userId: 'viewer-1', roleName: 'QMQA VIEWER' },
+        'QMQA',
+      ),
+    ).rejects.toThrow(/do not have permission to view/i);
+    expect(attachmentServiceMock.downloadAttachment).not.toHaveBeenCalled();
+  });
+
+  it('retries schedule control number generation after a duplicate-key collision', async () => {
+    const insertedControlNos: string[] = [];
+    controlNumberServiceMock.buildQmqaAuditPlan
+      .mockResolvedValueOnce('AUD-2026-3-2-SITE')
+      .mockResolvedValueOnce('AUD-2026-3-3-SITE');
+
+    repositoryMock.executeTransaction
+      .mockImplementationOnce(async (callback: any) => callback({
+        selectFrom: () => ({
+          select: () => ({
+            where: () => ({
+              orderBy: () => ({
+                executeTakeFirst: async () => ({ control_no: 'P-2026-0001' })
+              })
+            })
+          })
+        }),
+        insertInto: () => ({
+          values: (payload: any) => ({
+            execute: async () => {
+              insertedControlNos.push(payload.control_no);
+              const error = new Error("Violation of UNIQUE KEY constraint 'QMQA_AUDIT_PLAN'. The duplicate key value is (P-2026-0002).");
+              (error as any).number = 2627;
+              throw error;
+            }
+          })
+        })
+      }))
+      .mockImplementationOnce(async (callback: any) => callback({
+        selectFrom: () => ({
+          select: () => ({
+            where: () => ({
+              orderBy: () => ({
+                executeTakeFirst: async () => ({ control_no: 'P-2026-0001' })
+              })
+            })
+          })
+        }),
+        insertInto: () => ({
+          values: (payload: any) => ({
+            execute: async () => {
+              insertedControlNos.push(payload.control_no);
+            }
+          })
+        })
+      }));
+
+    const result = await qmqaService.createSchedule({
+      site_id: 'site-1',
+      supplier_id: 'supplier-1',
+      audit_category_id: 'category-1',
+      audit_plan_date: '2026-03-26',
+      sqe_pic_id: 'sqe-1',
+      remarks: 'Plan remarks',
+    } as any, 'admin-1');
+
+    expect(insertedControlNos).toEqual(['AUD-2026-3-2-SITE', 'AUD-2026-3-3-SITE']);
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      controlNo: 'AUD-2026-3-3-SITE',
+    }));
+  });
+
+  it('blocks schedule creation when control-number source fields are missing', async () => {
+    await expect(qmqaService.createSchedule({
+      supplier_id: 'supplier-1',
+      audit_category_id: 'category-1',
+      audit_plan_date: '2026-03-26',
+      sqe_pic_id: 'sqe-1',
+    } as any, 'admin-1')).rejects.toMatchObject({
+      message: 'Site is required before creating a QMQA schedule.',
+    });
+  });
+
+  it('reuses the selected audit plan when schedule_id is provided even without from_schedule', async () => {
+    const insertedTables: string[] = [];
+    const updatedTables: string[] = [];
+    const updatedPlanPayloads: Array<Record<string, unknown>> = [];
+
+    repositoryMock.executeTransaction.mockImplementationOnce(async (callback: any) => callback({
+      updateTable: (table: string) => {
+        updatedTables.push(table);
+        return {
+          set: (values: Record<string, unknown>) => {
+            if (table === 'QMQA_AUDIT_PLAN') {
+              updatedPlanPayloads.push(values);
+            }
+            return {
+              where: () => ({
+                execute: async () => undefined,
+              }),
+            };
+          },
+        };
+      },
+      selectFrom: () => ({
+        select: () => ({
+          where: () => ({
+            executeTakeFirst: async () => ({ control_no: 'AUD-2026-3-9-SITE' }),
+          }),
+        }),
+      }),
+      insertInto: (table: string) => {
+        insertedTables.push(table);
+        return {
+          values: () => ({
+            execute: async () => undefined,
+          }),
+        };
+      },
+    }));
+
+    const result = await qmqaService.createRecord({
+      schedule_id: 'plan-1',
+      audit_type_id: 'audit-type-1',
+      audit_date: '2026-03-26',
+      checker_id: '',
+      approver_id: '',
+    } as any, 'admin-1');
+
+    expect(updatedTables).toContain('QMQA_AUDIT_PLAN');
+    expect(insertedTables).toContain('QMQA');
+    expect(insertedTables).not.toContain('QMQA_AUDIT_PLAN');
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      apid: 'plan-1',
+      controlNo: 'AUD-2026-3-9-SITE',
+      controlNoState: 'final',
+    }));
+    expect(updatedPlanPayloads[0]).toEqual(expect.objectContaining({
+      request_status: 'PL',
+    }));
+  });
+
+  it('returns canonical linked schedule metadata for schedule reads', async () => {
+    repositoryMock.findScheduleById.mockResolvedValue({
+      qmqa_audit_plan_id: 'plan-1',
+      control_no: 'P-2026-001',
+      request_status: 'PL',
+      record_id: 'record-1',
+      record_status: '2',
+      created_date: new Date('2026-03-10'),
+      last_update: new Date('2026-03-12'),
+      site_id: 'site-1',
+      supplier_id: 'supplier-1',
+      audit_category_id: 'category-1',
+      sqe_pic_id: 'sqe-1',
+      audit_plan_date: new Date('2026-03-20'),
+    });
+
+    const result = await qmqaService.getScheduleById('plan-1');
+
+    expect(result).toEqual(expect.objectContaining({
+      status: 'PLANNED',
+      recordId: 'record-1',
+      recordStatus: 'DRAFT',
+      created_at: expect.any(Date),
+      updated_at: expect.any(Date),
+    }));
+  });
+
+  it('blocks schedule updates once a linked audit report exists', async () => {
+    repositoryMock.findScheduleById.mockResolvedValue({
+      qmqa_audit_plan_id: 'plan-1',
+      request_status: 'PL',
+      record_id: 'record-1',
+    });
+
+    await expect(qmqaService.updateSchedule('plan-1', {
+      remarks: 'Updated remark',
+    }, 'admin-1')).rejects.toMatchObject({
+      message: 'Cannot update a QMQA schedule after the audit report has been created.',
+    });
+  });
+
+  it('blocks ad hoc QMQA creation when control-number source fields are missing', async () => {
+    await expect(qmqaService.createRecord({
+      audit_type_id: 'audit-type-1',
+      audit_date: '2026-03-26',
+      checker_id: '',
+      approver_id: '',
+    } as any, 'admin-1')).rejects.toMatchObject({
+      message: 'Site is required before creating an ad hoc QMQA record.',
+    });
+  });
+});

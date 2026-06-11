@@ -1,0 +1,43 @@
+# ---- Build Stage ----
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace config and shared packages
+COPY pnpm-workspace.yaml pnpm-lock.yaml .npmrc* ./
+COPY packages/permissions-contract ./packages/permissions-contract
+
+# Install dependencies
+COPY sqm-backend/package.json ./sqm-backend/
+WORKDIR /app/sqm-backend
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy source and build
+COPY sqm-backend/. ./
+RUN pnpm run build
+
+# ---- Production Stage ----
+FROM node:20-alpine AS production
+
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+# Copy only production artifacts
+COPY --from=builder --chown=appuser:appgroup /app/sqm-backend/dist ./dist
+COPY --from=builder --chown=appuser:appgroup /app/sqm-backend/node_modules ./node_modules
+COPY --from=builder --chown=appuser:appgroup /app/sqm-backend/package.json ./
+
+USER appuser
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health || exit 1
+
+CMD ["node", "dist/server.js"]
