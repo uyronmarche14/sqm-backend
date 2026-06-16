@@ -283,24 +283,23 @@ describe('FiveM1EService', () => {
     );
   });
 
-  it('allows setting stage-owned fields on draft creation (guards apply to updates only)', async () => {
+  it('rejects non-empty stage-owned fields on DRAFT create (Option B enforcement)', async () => {
     const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
 
-    const result = await service.createApplication(
-      {
-        title: 'Draft 5M1E',
-        vendor_id: 'UNKNOWN',
-        item_id: 'item-1',
-        mpd_approver: 'approver-1',
-      } as any,
-      'creator-1',
-      [],
-    );
+    await expect(
+      service.createApplication(
+        {
+          title: 'Draft 5M1E',
+          vendor_id: 'UNKNOWN',
+          item_id: 'item-1',
+          mpd_approver: 'approver-1',
+        } as any,
+        'creator-1',
+        [],
+      ),
+    ).rejects.toThrow('5M1E generic save cannot modify mpd_approver during DRAFT');
 
-    expect(repositoryMock.createWithApproval).toHaveBeenCalled();
-    expect(result.data).toEqual(expect.objectContaining({
-      controlNo: expect.any(String),
-    }));
+    expect(repositoryMock.createWithApproval).not.toHaveBeenCalled();
   });
 
   it('hides unrelated records on assigned scope', async () => {

@@ -744,7 +744,7 @@ describe('FiveM1EWorkflowService', () => {
     );
   });
 
-  it('moves the assigned approver to approved with condition when requested', async () => {
+  it('routes SQE approved-with-condition through branch logic (not a direct bypass)', async () => {
     repository.findWithApproval.mockResolvedValue(
       createRecord({
         approval_status: 'FOR APPROVAL',
@@ -757,17 +757,17 @@ describe('FiveM1EWorkflowService', () => {
 
     expect(repository.updateApprovalStatus).toHaveBeenCalledWith(
       '5M-001',
-      'APRDWCOND',
+      'FOR APPROVAL',
       expect.objectContaining({
-        ApprovalSeq: 14,
-        AprStatus: 'aprdwcond',
+        ApprovalSeq: 13,
+        AprStatus: 'approved',
         ApproverDtAprd: expect.any(Date),
         ModifiedDate: expect.any(Date),
       }),
     );
     expect(result.data).toEqual(expect.objectContaining({
-      status: 'APRDWCOND',
-      workflowStageCode: '14',
+      status: 'FOR APPROVAL',
+      workflowStageCode: '13',
     }));
   });
 

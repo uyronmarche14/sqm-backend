@@ -38,21 +38,6 @@ function getCanonicalControlNo(record: FiveM1EWorkflowRecord, fallback: string) 
   return getString(record, 'ControlNo', 'control_no') || fallback;
 }
 
-function normalizeRequestedFinalStatus(requestedStatus?: string) {
-  const normalized = requestedStatus?.trim().toUpperCase();
-  if (
-    normalized === 'APPROVEDWC' ||
-    normalized === 'APPROVED W/CONDITION' ||
-    normalized === 'APPROVED W/ CONDITION' ||
-    normalized === 'APPROVED WITH CONDITION' ||
-    normalized === 'APRDWCOND'
-  ) {
-    return 'APRDWCOND';
-  }
-
-  return 'APPROVED';
-}
-
 export class FiveM1EWorkflowService {
   constructor(
     private readonly repository = fiveM1ERepository,
@@ -679,6 +664,11 @@ export class FiveM1EWorkflowService {
       };
     }
 
+    // Legacy confirmed: QA_CHECKER (seq 13) → FOR APPROVAL (seq 7 = FINAL_APPROVER).
+    // Legacy ref: ReportApproval.aspx.vb line 907-910:
+    //   Case 13 'QA Checker
+    //     Update5M1EApproverStatus(..., "QACheckerStatus", "QACheckerDtAprd")
+    //     Update5M1EStatus(..., "for approval", 7)
     if (stage === FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER) {
       await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.CHECK, 'Only the assigned QA checker can check this 5M1E application.');
       await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
@@ -721,7 +711,7 @@ export class FiveM1EWorkflowService {
     throw new BadRequestError(`Cannot check 5M1E from ${stage}.`);
   }
 
-  async approveApplication(controlNo: string, userId: string, remarks?: string, requestedStatus = 'APPROVED') {
+  async approveApplication(controlNo: string, userId: string, remarks?: string, _requestedStatus = 'APPROVED') {
     const record = await this.getRecordOrThrow(controlNo);
     const canonicalControlNo = getCanonicalControlNo(record, controlNo);
     const stage = normalizeFiveM1EWorkflowStage(record);
@@ -768,47 +758,9 @@ export class FiveM1EWorkflowService {
 
     if (stage === FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER) {
       await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.APPROVE, 'Only the assigned SQE approver can approve this 5M1E application.');
-      const nextStatus = normalizeRequestedFinalStatus(requestedStatus);
-
-      if (nextStatus === 'APRDWCOND') {
-        await this.repository.updateApprovalStatus(canonicalControlNo, 'APRDWCOND', {
-          ApprovalSeq: 14,
-          AprStatus: 'aprdwcond',
-          FADtAprd: new Date(),
-          ApproverDtAprd: new Date(),
-          ModifiedDate: new Date(),
-        });
-        await this.persistStatusRemark(canonicalControlNo, userId, 'APRDWCOND', remarks);
-        const result = await this.buildResult(
-            {
-              ...record,
-              approval_status: 'APRDWCOND',
-              approval_seq: 14,
-              apr_status: 'aprdwcond',
-            },
-            canonicalControlNo,
-            userId,
-          );
-        await this.dispatchWorkflowNotification({
-          eventKey: 'fivem1e.approved_with_condition',
-          record: {
-            ...record,
-            approval_status: 'APRDWCOND',
-            approval_seq: 14,
-            apr_status: 'aprdwcond',
-          },
-          controlNo: canonicalControlNo,
-          userId,
-          pic: 'SQEApprover',
-          action: 'APPROVE',
-          message: 'The 5M1E application has been approved with condition.',
-        });
-        return {
-          ...result,
-          message: 'Application approved successfully',
-        };
-      }
-
+      // Always route through branch logic per legacy behavior.
+      // "Approved with condition" is a final-approver judgment, not an SQE routing option.
+      // Legacy ref: ReportApproval.aspx.vb line 906-911.
       const nextSeq = getPostSqeApprovalSeq(record);
       await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
         ApprovalSeq: nextSeq,

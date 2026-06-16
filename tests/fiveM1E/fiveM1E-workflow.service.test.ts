@@ -182,4 +182,160 @@ describe('FiveM1EWorkflowService notifications', () => {
 
     errorSpy.mockRestore();
   });
+
+  it('sends approved notification when MPD approver approves', async () => {
+    workflowPermissionMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecDes-06-17' && action === 'approve',
+    );
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      mpd_approver: 'mpd-approver-1',
+      approval_status: 'CHECKED',
+      approval_seq: 2,
+    });
+
+    const service = new FiveM1EWorkflowService(
+      repositoryMock as any,
+      workflowPermissionMock as any,
+      notificationMock as any,
+    );
+
+    await service.approveApplication('5M-001', 'mpd-approver-1', 'approved');
+
+    expect(notificationMock.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'fivem1e.approved',
+        controlNo: '5M-001',
+        pic: 'MPDApprover',
+        action: 'APPROVE',
+      }),
+    );
+  });
+
+  it('sends approved notification when design approver approves', async () => {
+    workflowPermissionMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecDes-06-17' && action === 'approve',
+    );
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      design_approver_id: 'design-approver-1',
+      approval_status: 'FOR APPROVAL',
+      approval_seq: 10,
+    });
+
+    const service = new FiveM1EWorkflowService(
+      repositoryMock as any,
+      workflowPermissionMock as any,
+      notificationMock as any,
+    );
+
+    await service.approveApplication('5M-001', 'design-approver-1', 'approved');
+
+    expect(notificationMock.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'fivem1e.approved',
+        controlNo: '5M-001',
+        pic: 'DESIGNApprover',
+        action: 'APPROVE',
+      }),
+    );
+  });
+
+  it('sends approved notification when environment approver approves', async () => {
+    workflowPermissionMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecEnvi-06-17' && action === 'approve',
+    );
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      envi_approver_id: 'envi-approver-1',
+      approval_status: 'FOR APPROVAL',
+      approval_seq: 12,
+    });
+
+    const service = new FiveM1EWorkflowService(
+      repositoryMock as any,
+      workflowPermissionMock as any,
+      notificationMock as any,
+    );
+
+    await service.approveApplication('5M-001', 'envi-approver-1', 'approved');
+
+    expect(notificationMock.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'fivem1e.approved',
+        controlNo: '5M-001',
+        pic: 'ENVIApprover',
+        action: 'APPROVE',
+      }),
+    );
+  });
+
+  it('sends checked notification when QA checker checks', async () => {
+    workflowPermissionMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        formId === '5M1EApprovalSecQA-06-17' && action === 'check',
+    );
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      qa_checker_id: 'qa-checker-1',
+      approval_status: 'FOR APPROVAL',
+      approval_seq: 13,
+    });
+
+    const service = new FiveM1EWorkflowService(
+      repositoryMock as any,
+      workflowPermissionMock as any,
+      notificationMock as any,
+    );
+
+    await service.checkApplication('5M-001', 'qa-checker-1', 'checked');
+
+    expect(notificationMock.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'fivem1e.checked',
+        controlNo: '5M-001',
+        pic: 'QAChecker',
+        action: 'CHECK',
+      }),
+    );
+  });
+
+  it('sends approved notification when final approver approves', async () => {
+    workflowPermissionMock.checkRolePermission.mockImplementation(
+      async (_userId: string, formId: string, action: string) =>
+        (formId === '5M1EApprovalSecSQE-06-17' || formId === '5M1EJudgementSec-06-17') && action === 'approve',
+    );
+    repositoryMock.findWithApproval.mockResolvedValue({
+      ControlNo: '5M-001',
+      CreatedBy: 'creator-1',
+      final_approver: 'final-1',
+      fa_full_name: 'Final Approver',
+      approval_status: 'FOR APPROVAL',
+      approval_seq: 7,
+    });
+
+    const service = new FiveM1EWorkflowService(
+      repositoryMock as any,
+      workflowPermissionMock as any,
+      notificationMock as any,
+    );
+
+    await service.approveApplication('5M-001', 'final-1', 'approved');
+
+    expect(notificationMock.sendWorkflowNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: 'fivem1e.approved',
+        controlNo: '5M-001',
+        pic: 'QAApprover',
+        action: 'APPROVE',
+      }),
+    );
+  });
 });

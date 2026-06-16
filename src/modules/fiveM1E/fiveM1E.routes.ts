@@ -121,6 +121,5 @@ router.post('/:id/release', requireFiveM1EWorkflowAccess('release'), fiveM1ECont
  * Attachment Downloader
  */
 router.get('/attachments/:attachmentId', requireModuleAccess('5M1E', 'view'), fiveM1EController.downloadAttachment);
-router.get('/download/:attachmentId', requireModuleAccess('5M1E', 'view'), fiveM1EController.downloadAttachment);
 
 export default router;
