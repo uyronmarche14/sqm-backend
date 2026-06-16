@@ -1,3 +1,4 @@
+import { FIVE_M1E_STAGE_FORM_MAP } from '@sqm/permissions-contract';
 import {
   FIVE_M1E_APPROVAL_SEQ,
   FIVE_M1E_WORKFLOW_ACTION,
@@ -270,39 +271,7 @@ export function resolveFiveM1EWorkflowStageOwner(record: RecordLike, stage: Five
 }
 
 export function getFiveM1EWorkflowStageFormIds(stage: FiveM1EWorkflowStage) {
-  switch (stage) {
-    case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
-      return ['5M1EMAIN-11-01', '5M1ESupplier_Submition'];
-    case FIVE_M1E_WORKFLOW_STAGE.RAR:
-    case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
-      return ['5M1ERAR-06-17', '5M1ESupplier_Submition'];
-    case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
-    case FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER:
-      return ['5M1EApprovalSecDes-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.REVIEWER:
-    case FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC:
-    case FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER:
-    case FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER:
-      return ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER:
-      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER:
-      return ['5M1EApprovalSecDes-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
-      return ['5M1EApprovalSecEnvi-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
-      return ['5M1EApprovalSecQA-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
-      return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
-      return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
-      return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
-    case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
-      return ['5M1ERELEASE-06-17', '5M1EJudgementSec-06-17'];
-    default:
-      return [];
-  }
+  return FIVE_M1E_STAGE_FORM_MAP[stage] || [];
 }
 
 export function getFiveM1EWorkflowActionForStage(stage: FiveM1EWorkflowStage): FiveM1EWorkflowAction | null {

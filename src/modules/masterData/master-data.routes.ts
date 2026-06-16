@@ -84,13 +84,13 @@ router.get('/lookup/inspection-categories', workflowLookupAccess(['INSPECTIONCAT
 router.get('/lookup/inspection-methods', workflowLookupAccess(['INSPECTIONMETHOD-09-01', 'INSPECTIONMETHOD-09-02'], ['NEWPARTS']), ctrl.inspMethodsCtrl.getAll);
 router.get('/lookup/inspectors', workflowLookupAccess(['INSPECTOR-08-01', 'INSPECTOR-08-02'], ['NEWPARTS']), ctrl.inspectorsCtrl.getAll);
 router.get('/lookup/mnr-types', workflowLookupAccess(['MNRTYPE-02-01', 'MNRTYPE-02-02'], ['MNR']), ctrl.generalMasterCtrl.getAll);
-router.get('/lookup/general', workflowLookupAccess(['MNRTYPE-02-01', 'MNRTYPE-02-02'], ['MNR']), ctrl.generalMasterCtrl.getAll);
-router.get('/lookup/parts', workflowLookupAccess(['PART-06-01', 'PART-06-02'], ['NEWPARTS']), ctrl.partClassCtrl.getAll);
+router.get('/lookup/general', workflowLookupAccess(['MNRTYPE-02-01', 'MNRTYPE-02-02'], ['MNR', '5M1E']), ctrl.generalMasterCtrl.getAll);
+router.get('/lookup/parts', workflowLookupAccess(['PART-06-01', 'PART-06-02'], ['NEWPARTS', '5M1E']), ctrl.partClassCtrl.getAll);
 router.get('/lookup/part-types', workflowLookupAccess(['PARTTYPE-06-01', 'PARTTYPE-06-02'], ['NEWPARTS', '5M1E']), ctrl.partTypesCtrl.getAll);
 router.get('/lookup/part-data-categories', workflowLookupAccess(['PARTDATACATEGORY-08-01', 'PARTDATACATEGORY-08-02'], ['NEWPARTS']), ctrl.partDataCatsCtrl.getAll);
 router.get('/lookup/part-dim-categories', workflowLookupAccess(['PARTDIMENSIONCATEGORY-08-01', 'PARTDIMENSIONCATEGORY-08-02'], ['NEWPARTS']), ctrl.partDimCatsCtrl.getAll);
 router.get('/lookup/part-noise-categories', workflowLookupAccess(['PARTNOISECATEGORY-08-01', 'PARTNOISECATEGORY-08-02'], ['NEWPARTS']), ctrl.partNoiseCatsCtrl.getAll);
-router.get('/lookup/parts-catalog', workflowLookupAccess(['PART-06-01', 'PART-06-02'], ['MNR', 'NEWPARTS', 'OGI']), ctrl.partsCatalogCtrl.getAll);
+router.get('/lookup/parts-catalog', workflowLookupAccess(['PART-06-01', 'PART-06-02'], ['MNR', 'NEWPARTS', 'OGI', '5M1E']), ctrl.partsCatalogCtrl.getAll);
 router.get('/lookup/supplier-incharges', workflowLookupAccess(['SUPPLIERINCHARGE-08-01', 'SUPPLIERINCHARGE-08-02'], ['MNR', 'SQM_PLAN', 'SQPR', 'QMQA', 'QMQA_MEDIA']), ctrl.supplierInchargesCtrl.getAll);
 router.get('/lookup/supplier-information', workflowLookupAccess(['SUPPLIERINFORMATION-02-01', 'SUPPLIERINFORMATION-02-02', 'SUPPLIERINFORMATION-02-03', 'SUPPLIERINFORMATION-02-04'], []), ctrl.supplierInfoCtrl.getAll);
 router.get('/lookup/supplier-information/by-supplier/:supplierId', workflowLookupAccess(['SUPPLIERINFORMATION-02-01', 'SUPPLIERINFORMATION-02-02', 'SUPPLIERINFORMATION-02-03', 'SUPPLIERINFORMATION-02-04'], []), ctrl.getSupplierInfoBySupplier);

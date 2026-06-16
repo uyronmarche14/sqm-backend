@@ -7,6 +7,7 @@ const permissionServiceMock = vi.hoisted(() => ({
 
 const userControllerMock = vi.hoisted(() => ({
   getLookupUsers: vi.fn(),
+  getAssignmentLookupUsers: vi.fn(),
   testEmail: vi.fn(),
   getAssignmentCoverage: vi.fn(),
   getAllUsers: vi.fn(),

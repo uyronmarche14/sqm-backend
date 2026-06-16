@@ -1,3 +1,4 @@
+import { FIVE_M1E_FORM_IDS } from '@sqm/permissions-contract';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors/AppError.js';
 import { permissionService, type PermissionAction } from '../../../shared/services/permission.service.js';
 import { fiveM1ERepository } from '../fiveM1E.repository.js';
@@ -394,7 +395,7 @@ export class FiveM1EWorkflowService {
 
   private getNotificationFallbackFormIds(stage: ReturnType<typeof normalizeFiveM1EWorkflowStage>) {
     if (stage === FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER) {
-      return ['5M1EApprovalSecDes-06-17'];
+      return [FIVE_M1E_FORM_IDS.APPROVAL_SEC_DES];
     }
 
     if (
@@ -410,7 +411,7 @@ export class FiveM1EWorkflowService {
       stage === FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION ||
       stage === FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE
     ) {
-      return ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17'];
+      return [FIVE_M1E_FORM_IDS.APPROVAL_SEC_ENVI, FIVE_M1E_FORM_IDS.APPROVAL_SEC_QA];
     }
 
     return [];

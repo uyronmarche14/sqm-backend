@@ -1,4 +1,5 @@
 import express from 'express';
+import { FIVE_M1E_FORM_IDS } from '@sqm/permissions-contract';
 import { fiveM1EController } from './fiveM1E.controller.js';
 import { requireAuth } from '../../shared/middleware/requireAuth.js';
 import { validate } from '../../shared/middleware/validate.js';
@@ -16,9 +17,9 @@ import { requireModuleAccess } from '../../shared/middleware/requireModuleAccess
 const router = express.Router();
 const upload = createModuleUpload('5m1e', { attachmentType: '5m1e-main' });
 const FIVE_M1E_DELETE_PERMISSION_FORM_IDS = [
-  '5M1EMAIN-11-01',
-  '5M1ESupplier_Submition',
-  '5M1ERAR-06-17',
+  FIVE_M1E_FORM_IDS.MAIN,
+  FIVE_M1E_FORM_IDS.SUPPLIER_SUBMISSION,
+  FIVE_M1E_FORM_IDS.RAR,
 ];
 
 /**

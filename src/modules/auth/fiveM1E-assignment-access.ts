@@ -1,3 +1,4 @@
+import { FIVE_M1E_FORM_IDS } from '@sqm/permissions-contract';
 import {
   normalizeFiveM1EWorkflowStage,
   resolveFiveM1EWorkflowStageOwner,
@@ -30,12 +31,12 @@ export function resolveAssignedFiveM1EForms(
   switch (stage) {
     case FIVE_M1E_WORKFLOW_STAGE.DRAFT:
     case FIVE_M1E_WORKFLOW_STAGE.SUPPLIER_UPDATE:
-      return isSupplierOwner ? ['5M1ESupplier_Submition'] : [];
+      return isSupplierOwner ? [FIVE_M1E_FORM_IDS.SUPPLIER_SUBMISSION] : [];
     case FIVE_M1E_WORKFLOW_STAGE.RAR:
-      return isSupplierOwner ? ['5M1ERAR-06-17', '5M1ESupplier_Submition'] : [];
+      return isSupplierOwner ? [FIVE_M1E_FORM_IDS.RAR, FIVE_M1E_FORM_IDS.SUPPLIER_SUBMISSION] : [];
     case FIVE_M1E_WORKFLOW_STAGE.MPD_CHECKER:
     case FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER:
-      return isCurrentStageOwner ? ['5M1EApprovalSecDes-06-17'] : [];
+      return isCurrentStageOwner ? [FIVE_M1E_FORM_IDS.APPROVAL_SEC_DES] : [];
     case FIVE_M1E_WORKFLOW_STAGE.REVIEWER:
     case FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC:
     case FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER:
@@ -45,17 +46,17 @@ export function resolveAssignedFiveM1EForms(
     case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
     case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
       return isCurrentStageOwner
-        ? ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17']
+        ? [FIVE_M1E_FORM_IDS.APPROVAL_SEC_ENVI, FIVE_M1E_FORM_IDS.APPROVAL_SEC_QA]
         : [];
     case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
       return isCurrentStageOwner
-        ? ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17']
+        ? [FIVE_M1E_FORM_IDS.RELEASE, FIVE_M1E_FORM_IDS.APPROVAL_SEC_SQE, FIVE_M1E_FORM_IDS.JUDGEMENT_SEC]
         : [];
     case FIVE_M1E_WORKFLOW_STAGE.RELEASED:
       return isCurrentStageOwner
-        ? ['5M1ERELEASE-06-17', '5M1EJudgementSec-06-17']
+        ? [FIVE_M1E_FORM_IDS.RELEASE, FIVE_M1E_FORM_IDS.JUDGEMENT_SEC]
         : [];
     default:
       return [];
