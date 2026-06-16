@@ -9,7 +9,7 @@ import {
   AssignmentCoverageRequestPayload,
   LookupUsersQueryPayload,
 } from './user.schema.js';
-import { ConflictError, NotFoundError } from '../../shared/errors/AppError.js';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/AppError.js';
 import { permissionService } from '../../shared/services/permission.service.js';
 import { roleQualifiesForAssignment } from '../../shared/utils/assignment-validation.utils.js';
 import { isAdminRole } from '../../shared/utils/admin.utils.js';
@@ -93,6 +93,68 @@ export class UserService {
     return filteredUsers.filter(
       (user): user is Exclude<(typeof filteredUsers)[number], null> => user !== null,
     );
+  }
+
+  async getAssignmentLookupUsers(
+    requestingUserId: string,
+    requestingRoleName: string | null | undefined,
+    formId: string,
+    assignmentRole: 'owner' | 'issuer' | 'checker' | 'approver' | 'supplier',
+  ) {
+    const isAdmin = isAdminRole(requestingRoleName);
+    if (!isAdmin) {
+      const hasFormAccess =
+        (await permissionService.checkRolePermission(requestingUserId, formId, 'viewlist')) ||
+        (await permissionService.checkRolePermission(requestingUserId, formId, 'view'));
+      if (!hasFormAccess) {
+        throw new ForbiddenError('You do not have access to query users for this form.');
+      }
+    }
+
+    const users = await this.repository.findLookupUsers();
+    const qualificationByRoleId = new Map<string, Promise<boolean>>();
+    const result: Array<{
+      user_id: string;
+      full_name: string;
+      site_id: string | null;
+      active_flag: boolean | number | null;
+    }> = [];
+
+    for (const user of users) {
+      const isActive = user.active_flag === true || user.active_flag === 1;
+      if (!isActive) continue;
+
+      if (isAdminRole(user.role_name)) {
+        result.push({
+          user_id: user.user_id,
+          full_name: user.full_name,
+          site_id: user.site_id,
+          active_flag: user.active_flag,
+        });
+        continue;
+      }
+
+      if (!user.role_id) continue;
+
+      if (!qualificationByRoleId.has(user.role_id)) {
+        qualificationByRoleId.set(
+          user.role_id,
+          roleQualifiesForAssignment(user.role_id, assignmentRole, [formId]),
+        );
+      }
+
+      const isQualified = await qualificationByRoleId.get(user.role_id)!;
+      if (isQualified) {
+        result.push({
+          user_id: user.user_id,
+          full_name: user.full_name,
+          site_id: user.site_id,
+          active_flag: user.active_flag,
+        });
+      }
+    }
+
+    return result;
   }
 
   async getUserById(id: string) {

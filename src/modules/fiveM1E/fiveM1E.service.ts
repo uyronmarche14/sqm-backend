@@ -853,7 +853,9 @@ export class FiveM1EService {
     // Normalize field aliases (class → class_id, class_type → class_type_id)
     this.assertCreateStatusPayload(data as Record<string, unknown>);
     const normalized = this.stripIgnoredWriteFields(normalizeInput(data));
-    await this.assertStageOwnedWriteFields(normalized, FIVE_M1E_WORKFLOW_STAGE.DRAFT);
+    // Stage-owned field assertion is skipped at creation — guarded fields
+    // prevent UPDATING stage-specific values, not setting them initially.
+    // validateStageAssignmentChanges is a no-op at DRAFT (no allowedStages matches).
     await this.validateStageAssignmentChanges(normalized, FIVE_M1E_WORKFLOW_STAGE.DRAFT);
 
     // Automap Frontend Fields to DB Columns using SmartMapper

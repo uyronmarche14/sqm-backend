@@ -13,6 +13,10 @@ router.use(requireAuth);
 // Lookup is scoped: only users with any module access can enumerate users.
 // When called without filters, minimal fields are returned.
 router.get('/lookup', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getLookupUsers);
+
+// Scoped assignment lookup — any authenticated user with form access can query
+// eligible assignees for a given form+role. Returns minimal fields only.
+router.get('/assignment-lookup', userController.getAssignmentLookupUsers);
 router.post('/test-email', requireAnyPermission(USER_FORM_IDS, 'add'), userController.testEmail);
 router.post('/:id/assignment-coverage-preview', requireAnyPermission(USER_FORM_IDS, 'viewlist'), userController.getAssignmentCoverage);
 

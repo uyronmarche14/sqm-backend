@@ -5,8 +5,16 @@ const assignmentValidationMock = vi.hoisted(() => ({
   roleQualifiesForAssignment: vi.fn(),
 }));
 
+const permissionServiceMock = vi.hoisted(() => ({
+  checkRolePermission: vi.fn(),
+}));
+
 vi.mock('../../../../src/shared/utils/assignment-validation.utils.js', () => ({
   roleQualifiesForAssignment: assignmentValidationMock.roleQualifiesForAssignment,
+}));
+
+vi.mock('../../../../src/shared/services/permission.service.js', () => ({
+  permissionService: permissionServiceMock,
 }));
 
 import { UserService } from '../../../../src/modules/users/user.service.js';
@@ -238,5 +246,79 @@ describe('UserService.createUser', () => {
       'checker',
       ['5M1EApprovalSecQA-06-17'],
     );
+  });
+});
+
+describe('UserService.getAssignmentLookupUsers', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    permissionServiceMock.checkRolePermission.mockResolvedValue(false);
+    assignmentValidationMock.roleQualifiesForAssignment.mockResolvedValue(false);
+  });
+
+  it('rejects a user without access to the requested form', async () => {
+    const repository = makeRepositoryMock();
+    const notifier = makeNotifierMock();
+
+    const service = new UserService(repository, notifier);
+
+    await expect(
+      service.getAssignmentLookupUsers('user-1', 'USER', 'SOMEFORM-01', 'approver'),
+    ).rejects.toThrow('You do not have access to query users for this form.');
+  });
+
+  it('allows admin users to query any form', async () => {
+    const repository = makeRepositoryMock();
+    const notifier = makeNotifierMock();
+    repository.findLookupUsers.mockResolvedValue([]);
+
+    const service = new UserService(repository, notifier);
+
+    const result = await service.getAssignmentLookupUsers('admin-1', 'TIP_ADMIN', 'SOMEFORM-01', 'approver');
+
+    expect(result).toEqual([]);
+    expect(permissionServiceMock.checkRolePermission).not.toHaveBeenCalled();
+  });
+
+  it('returns active users who are role-qualified for the assignment', async () => {
+    permissionServiceMock.checkRolePermission.mockResolvedValue(true);
+    const repository = makeRepositoryMock();
+    const notifier = makeNotifierMock();
+    repository.findLookupUsers.mockResolvedValue([
+      {
+        user_id: 'admin-1',
+        full_name: 'Admin User',
+        email: 'admin@example.com',
+        role_id: 'role-admin',
+        active_flag: 1,
+        role_name: 'TIP_ADMIN',
+      },
+      {
+        user_id: 'checker-1',
+        full_name: 'Checker User',
+        email: 'checker@example.com',
+        role_id: 'role-checker',
+        active_flag: 1,
+        role_name: 'SQE',
+      },
+      {
+        user_id: 'inactive-1',
+        full_name: 'Inactive User',
+        email: 'inactive@example.com',
+        role_id: 'role-checker',
+        active_flag: 0,
+        role_name: 'SQE',
+      },
+    ]);
+    assignmentValidationMock.roleQualifiesForAssignment.mockImplementation(async (roleId: string) => roleId === 'role-checker');
+
+    const service = new UserService(repository, notifier);
+
+    const results = await service.getAssignmentLookupUsers('user-1', 'USER', '5M1EApprovalSecQA-06-17', 'checker');
+
+    expect(results.map((r) => r.user_id)).toEqual(['admin-1', 'checker-1']);
+    expect(results[0]).not.toHaveProperty('email');
+    expect(results[0]).not.toHaveProperty('role_name');
+    expect(results[0]).not.toHaveProperty('role_id');
   });
 });

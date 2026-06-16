@@ -15,6 +15,7 @@ vi.mock('../../../../src/shared/services/permission.service.js', () => ({
 vi.mock('../../../../src/modules/users/user.service.js', () => ({
   userService: {
     getLookupUsers: vi.fn(),
+    getAssignmentLookupUsers: vi.fn(),
     getAllUsers: vi.fn(),
     getUserById: vi.fn(),
     createUser: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../../../../src/modules/users/user.service.js', () => ({
   },
 }));
 
+import { userService } from '../../../../src/modules/users/user.service.js';
 import userRoutes from '../../../../src/modules/users/user.routes.js';
 import { errorHandler } from '../../../../src/shared/middleware/error-handler.js';
 import { generateAccessToken } from '../../../../src/shared/utils/jwt.js';
@@ -61,11 +63,18 @@ async function invokeRoute(options: {
   body?: Record<string, unknown>;
   token?: string;
 }) {
+  const parsedUrl = new URL(`http://localhost${options.url}`);
+  const query: Record<string, string> = {};
+  parsedUrl.searchParams.forEach((value, key) => {
+    query[key] = value;
+  });
+
   const req = {
     method: options.method,
     url: options.url,
     originalUrl: options.url,
-    path: options.url,
+    path: parsedUrl.pathname,
+    query,
     body: options.body ?? {},
     headers: options.token ? { authorization: `Bearer ${options.token}` } : {},
     cookies: {},
@@ -175,5 +184,83 @@ describe('POST /api/users/test-email', () => {
         internetUrl: 'http://localhost:5000/auth/login',
       },
     });
+  });
+});
+
+describe('GET /api/users/assignment-lookup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+  });
+
+  it('requires auth', async () => {
+    const response = await invokeRoute({
+      method: 'GET',
+      url: '/assignment-lookup',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('rejects request without formId', async () => {
+    const token = generateAccessToken({ userId: 'user-1', roleId: 'role-1' });
+
+    const response = await invokeRoute({
+      method: 'GET',
+      url: '/assignment-lookup?assignmentRole=approver',
+      token,
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects request without assignmentRole', async () => {
+    const token = generateAccessToken({ userId: 'user-1', roleId: 'role-1' });
+
+    const response = await invokeRoute({
+      method: 'GET',
+      url: '/assignment-lookup?formId=5M1EApprovalSecDes-06-17',
+      token,
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects invalid assignmentRole value', async () => {
+    const token = generateAccessToken({ userId: 'user-1', roleId: 'role-1' });
+
+    const response = await invokeRoute({
+      method: 'GET',
+      url: '/assignment-lookup?formId=5M1EApprovalSecDes-06-17&assignmentRole=invalid',
+      token,
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns eligible users for a valid formId and assignmentRole', async () => {
+    const mockUsers = [
+      { user_id: 'user-1', full_name: 'Alice', site_id: 'site-1', active_flag: 1 },
+      { user_id: 'user-2', full_name: 'Bob', site_id: 'site-1', active_flag: 1 },
+    ];
+    (userService.getAssignmentLookupUsers as ReturnType<typeof vi.fn>).mockResolvedValue(mockUsers);
+
+    const token = generateAccessToken({ userId: 'user-1', roleId: 'role-1' });
+
+    const response = await invokeRoute({
+      method: 'GET',
+      url: '/assignment-lookup?formId=5M1EApprovalSecDes-06-17&assignmentRole=approver',
+      token,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual(mockUsers);
+    expect(userService.getAssignmentLookupUsers).toHaveBeenCalledWith(
+      'user-1',
+      undefined,
+      '5M1EApprovalSecDes-06-17',
+      'approver',
+    );
   });
 });

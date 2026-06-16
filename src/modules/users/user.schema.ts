@@ -80,6 +80,11 @@ export const LookupUsersQuerySchema = z.object({
   }
 });
 
+export const AssignmentLookupQuerySchema = z.object({
+  formId: z.string().min(1, 'formId is required'),
+  assignmentRole: z.enum(['owner', 'issuer', 'checker', 'approver', 'supplier']),
+});
+
 // ==========================================
 // 3. Extracted Types
 // ==========================================

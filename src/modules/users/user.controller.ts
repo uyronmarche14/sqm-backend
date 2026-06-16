@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { userService } from './user.service.js';
 import {
+  AssignmentLookupQuerySchema,
   CreateUserSchema,
   UpdateUserSchema,
   ChangePasswordSchema,
@@ -31,6 +32,21 @@ export const userController = {
     try {
       const query = LookupUsersQuerySchema.parse(req.query);
       const users = await userService.getLookupUsers(query);
+      res.json(users);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  getAssignmentLookupUsers: async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const query = AssignmentLookupQuerySchema.parse(req.query);
+      const users = await userService.getAssignmentLookupUsers(
+        req.user!.userId,
+        (req.user as any).roleName || (req.user as any).role_name || (req.user as any).role,
+        query.formId,
+        query.assignmentRole,
+      );
       res.json(users);
     } catch (error) {
       next(error);

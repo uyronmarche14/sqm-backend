@@ -283,11 +283,15 @@ export function getFiveM1EWorkflowStageFormIds(stage: FiveM1EWorkflowStage) {
     case FIVE_M1E_WORKFLOW_STAGE.EVALUATION_IC:
     case FIVE_M1E_WORKFLOW_STAGE.SQE_CHECKER:
     case FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER:
-    case FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER:
-    case FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER:
-    case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
-    case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
       return ['5M1EApprovalSecEnvi-06-17', '5M1EApprovalSecQA-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER:
+      return ['5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER:
+      return ['5M1EApprovalSecDes-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
+      return ['5M1EApprovalSecEnvi-06-17'];
+    case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
+      return ['5M1EApprovalSecQA-06-17'];
     case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
       return ['5M1ERELEASE-06-17', '5M1EApprovalSecSQE-06-17', '5M1EJudgementSec-06-17'];
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
@@ -314,6 +318,16 @@ export function getFiveM1EWorkflowActionForStage(stage: FiveM1EWorkflowStage): F
       return FIVE_M1E_WORKFLOW_ACTION.CHECK;
     case FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER:
       return FIVE_M1E_WORKFLOW_ACTION.APPROVE;
+    case FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER:
+      return FIVE_M1E_WORKFLOW_ACTION.APPROVE;
+    case FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER:
+      return FIVE_M1E_WORKFLOW_ACTION.APPROVE;
+    case FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER:
+      return FIVE_M1E_WORKFLOW_ACTION.APPROVE;
+    case FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER:
+      return FIVE_M1E_WORKFLOW_ACTION.APPROVE;
+    case FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER:
+      return FIVE_M1E_WORKFLOW_ACTION.CHECK;
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED:
     case FIVE_M1E_WORKFLOW_STAGE.APPROVED_WITH_CONDITION:
     case FIVE_M1E_WORKFLOW_STAGE.FOR_RELEASE:
@@ -385,6 +399,28 @@ export function buildFiveM1EWorkflowMetadata(record: RecordLike, context: ActorC
   if (workflowStage === FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER) {
     if (isActionableActor) {
       availableActions.push(FIVE_M1E_WORKFLOW_ACTION.APPROVE, FIVE_M1E_WORKFLOW_ACTION.REJECT);
+    }
+  }
+
+  if (workflowStage === FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER) {
+    if (isActionableActor) {
+      availableActions.push(FIVE_M1E_WORKFLOW_ACTION.APPROVE, FIVE_M1E_WORKFLOW_ACTION.REJECT);
+    }
+  }
+
+  if (
+    workflowStage === FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER ||
+    workflowStage === FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER ||
+    workflowStage === FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER
+  ) {
+    if (isActionableActor) {
+      availableActions.push(FIVE_M1E_WORKFLOW_ACTION.APPROVE, FIVE_M1E_WORKFLOW_ACTION.REJECT);
+    }
+  }
+
+  if (workflowStage === FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER) {
+    if (isActionableActor) {
+      availableActions.push(FIVE_M1E_WORKFLOW_ACTION.CHECK, FIVE_M1E_WORKFLOW_ACTION.REJECT);
     }
   }
 

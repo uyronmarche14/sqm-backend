@@ -5,12 +5,15 @@ import {
   buildFiveM1EWorkflowMetadata,
   getFiveM1EWorkflowActionForStage,
   getFiveM1EWorkflowStageFormIds,
+  getPostDesignApprovalSeq,
+  getPostEnviApprovalSeq,
+  getPostSqeApprovalSeq,
   normalizeFiveM1EWorkflowStage,
   resolveFiveM1EWorkflowStageOwner,
   type FiveM1EWorkflowMetadata,
   type FiveM1EWorkflowOwnerMode,
 } from './fiveM1E-workflow.utils.js';
-import { FIVE_M1E_WORKFLOW_ACTION, FIVE_M1E_WORKFLOW_STAGE } from './fiveM1E-workflow.constants.js';
+import { FIVE_M1E_APPROVAL_SEQ, FIVE_M1E_WORKFLOW_ACTION, FIVE_M1E_WORKFLOW_STAGE } from './fiveM1E-workflow.constants.js';
 import { controlNumberService } from '../../../shared/services/control-number.service.js';
 import { isAdminRole } from '../../../shared/utils/admin.utils.js';
 import {
@@ -675,6 +678,45 @@ export class FiveM1EWorkflowService {
       };
     }
 
+    if (stage === FIVE_M1E_WORKFLOW_STAGE.QA_CHECKER) {
+      await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.CHECK, 'Only the assigned QA checker can check this 5M1E application.');
+      await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
+        ApprovalSeq: FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER,
+        QACheckerStatus: '1',
+        QACheckerDtAprd: new Date(),
+        ModifiedDate: new Date(),
+      });
+      await this.persistStatusRemark(canonicalControlNo, userId, 'FOR APPROVAL', remarks);
+      const result = await this.buildResult(
+          {
+            ...record,
+            approval_status: 'FOR APPROVAL',
+            approval_seq: FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER,
+            qa_checker_status: '1',
+          },
+          canonicalControlNo,
+          userId,
+        );
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.checked',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: FIVE_M1E_APPROVAL_SEQ.FINAL_APPROVER,
+          qa_checker_status: '1',
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'QAChecker',
+        action: 'CHECK',
+        message: 'The 5M1E application has been checked by QA and forwarded to the final approver.',
+      });
+      return {
+        ...result,
+        message: 'Application checked successfully',
+      };
+    }
+
     throw new BadRequestError(`Cannot check 5M1E from ${stage}.`);
   }
 
@@ -682,6 +724,46 @@ export class FiveM1EWorkflowService {
     const record = await this.getRecordOrThrow(controlNo);
     const canonicalControlNo = getCanonicalControlNo(record, controlNo);
     const stage = normalizeFiveM1EWorkflowStage(record);
+
+    if (stage === FIVE_M1E_WORKFLOW_STAGE.MPD_APPROVER) {
+      await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.APPROVE, 'Only the assigned MPD approver can approve this 5M1E application.');
+      const nextSeq = FIVE_M1E_APPROVAL_SEQ.REVIEWER;
+      await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
+        ApprovalSeq: nextSeq,
+        MPDApproverStatus: 'approved',
+        MPDAprDtAprd: new Date(),
+        ModifiedDate: new Date(),
+      });
+      await this.persistStatusRemark(canonicalControlNo, userId, 'FOR APPROVAL', remarks);
+      const result = await this.buildResult(
+          {
+            ...record,
+            approval_status: 'FOR APPROVAL',
+            approval_seq: nextSeq,
+            mpd_approver_status: 'approved',
+          },
+          canonicalControlNo,
+          userId,
+        );
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.approved',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: nextSeq,
+          mpd_approver_status: 'approved',
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'MPDApprover',
+        action: 'APPROVE',
+        message: 'The 5M1E application has been approved by the MPD approver.',
+      });
+      return {
+        ...result,
+        message: 'Application approved successfully',
+      };
+    }
 
     if (stage === FIVE_M1E_WORKFLOW_STAGE.SQE_APPROVER) {
       await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.APPROVE, 'Only the assigned SQE approver can approve this 5M1E application.');
@@ -726,18 +808,19 @@ export class FiveM1EWorkflowService {
         };
       }
 
-      await this.repository.updateApprovalStatus(canonicalControlNo, 'APPROVED', {
-        ApprovalSeq: 7,
+      const nextSeq = getPostSqeApprovalSeq(record);
+      await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
+        ApprovalSeq: nextSeq,
         AprStatus: 'approved',
         ApproverDtAprd: new Date(),
         ModifiedDate: new Date(),
       });
-      await this.persistStatusRemark(canonicalControlNo, userId, 'APPROVED', remarks);
+      await this.persistStatusRemark(canonicalControlNo, userId, 'FOR APPROVAL', remarks);
       const result = await this.buildResult(
           {
             ...record,
-            approval_status: 'APPROVED',
-            approval_seq: 7,
+            approval_status: 'FOR APPROVAL',
+            approval_seq: nextSeq,
             apr_status: 'approved',
           },
           canonicalControlNo,
@@ -747,15 +830,135 @@ export class FiveM1EWorkflowService {
         eventKey: 'fivem1e.approved',
         record: {
           ...record,
-          approval_status: 'APPROVED',
-          approval_seq: 7,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: nextSeq,
           apr_status: 'approved',
         },
         controlNo: canonicalControlNo,
         userId,
         pic: 'SQEApprover',
         action: 'APPROVE',
-        message: 'The 5M1E application has been approved.',
+        message: 'The 5M1E application has been approved by the SQE approver.',
+      });
+      return {
+        ...result,
+        message: 'Application approved successfully',
+      };
+    }
+
+    if (stage === FIVE_M1E_WORKFLOW_STAGE.DESIGN_APPROVER) {
+      await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.APPROVE, 'Only the assigned design approver can approve this 5M1E application.');
+      const nextSeq = getPostDesignApprovalSeq(record);
+      await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
+        ApprovalSeq: nextSeq,
+        DesignApproverStatus: 'approved',
+        DesignApproverDtAprd: new Date(),
+        ModifiedDate: new Date(),
+      });
+      await this.persistStatusRemark(canonicalControlNo, userId, 'FOR APPROVAL', remarks);
+      const result = await this.buildResult(
+          {
+            ...record,
+            approval_status: 'FOR APPROVAL',
+            approval_seq: nextSeq,
+            design_approver_status: 'approved',
+          },
+          canonicalControlNo,
+          userId,
+        );
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.approved',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: nextSeq,
+          design_approver_status: 'approved',
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'DESIGNApprover',
+        action: 'APPROVE',
+        message: 'The 5M1E application has been approved by the design approver.',
+      });
+      return {
+        ...result,
+        message: 'Application approved successfully',
+      };
+    }
+
+    if (stage === FIVE_M1E_WORKFLOW_STAGE.ENVI_APPROVER) {
+      await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.APPROVE, 'Only the assigned environment approver can approve this 5M1E application.');
+      const nextSeq = getPostEnviApprovalSeq(record);
+      await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR APPROVAL', {
+        ApprovalSeq: nextSeq,
+        EnviApproveStatus: 'approved',
+        EnviApproveDtAprd: new Date(),
+        ModifiedDate: new Date(),
+      });
+      await this.persistStatusRemark(canonicalControlNo, userId, 'FOR APPROVAL', remarks);
+      const result = await this.buildResult(
+          {
+            ...record,
+            approval_status: 'FOR APPROVAL',
+            approval_seq: nextSeq,
+            envi_approve_status: 'approved',
+          },
+          canonicalControlNo,
+          userId,
+        );
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.approved',
+        record: {
+          ...record,
+          approval_status: 'FOR APPROVAL',
+          approval_seq: nextSeq,
+          envi_approve_status: 'approved',
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'ENVIApprover',
+        action: 'APPROVE',
+        message: 'The 5M1E application has been approved by the environment approver.',
+      });
+      return {
+        ...result,
+        message: 'Application approved successfully',
+      };
+    }
+
+    if (stage === FIVE_M1E_WORKFLOW_STAGE.FINAL_APPROVER) {
+      await this.ensureActor(record, userId, FIVE_M1E_WORKFLOW_ACTION.APPROVE, 'Only the assigned final approver can approve this 5M1E application.');
+      const nextSeq = FIVE_M1E_APPROVAL_SEQ.FOR_RELEASE;
+      await this.repository.updateApprovalStatus(canonicalControlNo, 'FOR RELEASE', {
+        ApprovalSeq: nextSeq,
+        FAStatus: 'approved',
+        FADtAprd: new Date(),
+        ModifiedDate: new Date(),
+      });
+      await this.persistStatusRemark(canonicalControlNo, userId, 'FOR RELEASE', remarks);
+      const result = await this.buildResult(
+          {
+            ...record,
+            approval_status: 'FOR RELEASE',
+            approval_seq: nextSeq,
+            fa_status: 'approved',
+          },
+          canonicalControlNo,
+          userId,
+        );
+      await this.dispatchWorkflowNotification({
+        eventKey: 'fivem1e.approved',
+        record: {
+          ...record,
+          approval_status: 'FOR RELEASE',
+          approval_seq: nextSeq,
+          fa_status: 'approved',
+        },
+        controlNo: canonicalControlNo,
+        userId,
+        pic: 'QAApprover',
+        action: 'APPROVE',
+        message: 'The 5M1E application has been approved by the final approver.',
       });
       return {
         ...result,

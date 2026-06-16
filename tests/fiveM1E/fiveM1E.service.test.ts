@@ -283,23 +283,24 @@ describe('FiveM1EService', () => {
     );
   });
 
-  it('rejects procurement assignee mutation on create before persistence', async () => {
+  it('allows setting stage-owned fields on draft creation (guards apply to updates only)', async () => {
     const service = new FiveM1EService(undefined as any, permissionServiceMock as any, attachmentServiceMock as any);
 
-    await expect(
-      service.createApplication(
-        {
-          title: 'Draft 5M1E',
-          vendor_id: 'UNKNOWN',
-          item_id: 'item-1',
-          mpd_approver: 'approver-1',
-        } as any,
-        'creator-1',
-        [],
-      ),
-    ).rejects.toThrow('5M1E generic save cannot modify mpd_approver during DRAFT');
+    const result = await service.createApplication(
+      {
+        title: 'Draft 5M1E',
+        vendor_id: 'UNKNOWN',
+        item_id: 'item-1',
+        mpd_approver: 'approver-1',
+      } as any,
+      'creator-1',
+      [],
+    );
 
-    expect(repositoryMock.createWithApproval).not.toHaveBeenCalled();
+    expect(repositoryMock.createWithApproval).toHaveBeenCalled();
+    expect(result.data).toEqual(expect.objectContaining({
+      controlNo: expect.any(String),
+    }));
   });
 
   it('hides unrelated records on assigned scope', async () => {
@@ -467,8 +468,12 @@ describe('FiveM1EService', () => {
       ownerMode: 'assigned',
     });
     permissionServiceMock.checkRolePermission.mockImplementation(
-      async (_userId: string, formId: string, action: string) =>
-        formId === '5M1EApprovalSecEnvi-06-17' && (action === 'view' || action === 'viewlist'),
+      async (_userId: string, formId: string, action: string) => {
+        if (formId === '5M1EApprovalSecEnvi-06-17' && (action === 'view' || action === 'viewlist')) return true;
+        if (formId === '5M1EApprovalSecSQE-06-17' && (action === 'view' || action === 'viewlist')) return true;
+        if (formId === '5M1EJudgementSec-06-17' && (action === 'view' || action === 'viewlist')) return true;
+        return false;
+      },
     );
 
     const service = new FiveM1EService(undefined as any, permissionServiceMock as any);
